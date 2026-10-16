@@ -1,0 +1,10 @@
+// Сжимать нативные библиотеки в APK (extractNativeLibs=true): полная Fermata
+// укладывается в предел GitHub 100 МБ на файл. Код Fermata не меняется.
+allprojects {
+    plugins.withId('com.android.application') {
+        android.packaging.jniLibs.useLegacyPackaging = true
+    }
+    plugins.withId('com.android.dynamic-feature') {
+        android.packaging.jniLibs.useLegacyPackaging = true
+    }
+}
