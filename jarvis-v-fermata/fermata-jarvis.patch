@@ -315,19 +315,130 @@ index 0000000..f885fab
 +		}
 +	}
 +}
+diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
+new file mode 100644
+index 0000000..74978c3
+--- /dev/null
++++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
+@@ -0,0 +1,88 @@
++package me.aap.fermata.jarvis;
++
++import android.content.Context;
++import android.graphics.Bitmap;
++import android.graphics.BitmapFactory;
++import android.graphics.Canvas;
++import android.graphics.ColorFilter;
++import android.graphics.Matrix;
++import android.graphics.Paint;
++import android.graphics.PixelFormat;
++import android.graphics.Rect;
++import android.graphics.drawable.Drawable;
++import android.util.DisplayMetrics;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import me.aap.fermata.R;
++import me.aap.utils.log.Log;
++
++/**
++ * Фон темы JARVIS: фото jarvis_wallpaper (drawable-port-nodpi — телефон, drawable-nodpi — остальное),
++ * растянутое с обрезкой краёв, без искажения пропорций — как centerCrop.
++ * Вертикальное фото — для телефона, широкое — для экрана машины.
++ */
++public final class JarvisWallpaper extends Drawable {
++	private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
++	private final Matrix matrix = new Matrix();
++	@Nullable
++	private final Bitmap bitmap;
++
++	public JarvisWallpaper(Context ctx) {
++		bitmap = decode(ctx);
++	}
++
++	@Nullable
++	private static Bitmap decode(Context ctx) {
++		try {
++			DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
++			int max = Math.max(dm.widthPixels, dm.heightPixels);
++			BitmapFactory.Options o = new BitmapFactory.Options();
++			o.inJustDecodeBounds = true;
++			BitmapFactory.decodeResource(ctx.getResources(), R.drawable.jarvis_wallpaper, o);
++			int big = Math.max(o.outWidth, o.outHeight);
++			int sample = 1;
++			while (big / (sample * 2) >= max) sample *= 2;
++			o = new BitmapFactory.Options();
++			o.inSampleSize = sample;
++			return BitmapFactory.decodeResource(ctx.getResources(), R.drawable.jarvis_wallpaper, o);
++		} catch (Throwable ex) {
++			Log.e(ex, "JARVIS: failed to load wallpaper");
++			return null;
++		}
++	}
++
++	@Override
++	protected void onBoundsChange(@NonNull Rect b) {
++		super.onBoundsChange(b);
++		if (bitmap == null || b.isEmpty()) return;
++		float bw = bitmap.getWidth(), bh = bitmap.getHeight();
++		float scale = Math.max(b.width() / bw, b.height() / bh);
++		matrix.setScale(scale, scale);
++		// Машина на фото внизу: по высоте прижимаем к низу, по ширине — по центру
++		matrix.postTranslate(b.left + (b.width() - bw * scale) / 2f,
++				b.top + (b.height() - bh * scale));
++	}
++
++	@Override
++	public void draw(@NonNull Canvas c) {
++		c.drawColor(0xFF000000);
++		if (bitmap != null) c.drawBitmap(bitmap, matrix, paint);
++	}
++
++	@Override
++	public void setAlpha(int alpha) {
++		paint.setAlpha(alpha);
++	}
++
++	@Override
++	public void setColorFilter(@Nullable ColorFilter cf) {
++		paint.setColorFilter(cf);
++	}
++
++	@Override
++	public int getOpacity() {
++		return PixelFormat.OPAQUE;
++	}
++}
 diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
-index 03dfc56..be9c361 100644
+index 03dfc56..5d2b460 100644
 --- a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 +++ b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
-@@ -95,6 +95,7 @@ import me.aap.fermata.addon.FermataActivityAddon;
+@@ -62,6 +62,7 @@ import android.view.Gravity;
+ import android.view.KeyEvent;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.ViewGroup;
+ import android.widget.EditText;
+ 
+ import androidx.annotation.LayoutRes;
+@@ -95,6 +96,8 @@ import me.aap.fermata.addon.FermataActivityAddon;
  import me.aap.fermata.addon.FermataAddon;
  import me.aap.fermata.addon.FermataFragmentAddon;
  import me.aap.fermata.addon.MediaLibAddon;
 +import me.aap.fermata.jarvis.JarvisBridge;
++import me.aap.fermata.jarvis.JarvisWallpaper;
  import me.aap.fermata.media.engine.MediaEngineManager;
  import me.aap.fermata.media.lib.AtvInterface;
  import me.aap.fermata.media.lib.DefaultMediaLib;
-@@ -830,13 +831,19 @@ public class MainActivityDelegate extends ActivityDelegate
+@@ -474,6 +477,7 @@ public class MainActivityDelegate extends ActivityDelegate
+ 			case MainActivityPrefs.THEME_STAR_WARS -> R.style.AppTheme_BlackStarWars;
+ 			case MainActivityPrefs.THEME_PURPLE -> R.style.AppTheme_Purple;
+ 			case MainActivityPrefs.THEME_CLASSIC -> R.style.AppTheme_Classic;
++			case MainActivityPrefs.THEME_JARVIS -> R.style.AppTheme_Jarvis;
+ 			default -> R.style.AppTheme_Dark;
+ 		};
+ 		ctx.setTheme(theme);
+@@ -830,13 +834,19 @@ public class MainActivityDelegate extends ActivityDelegate
  			} else if (getAppActivity().isInputActive()) {
  				getAppActivity().setTextInput(q.get(0));
  			} else {
@@ -350,6 +461,61 @@ index 03dfc56..be9c361 100644
  	public FutureSupplier<List<String>> startSpeechRecognizer() {
  		return startSpeechRecognizer(null, false);
  	}
+@@ -989,6 +999,12 @@ public class MainActivityDelegate extends ActivityDelegate
+ 	private void init() {
+ 		FermataActivity a = getAppActivity();
+ 		a.setContentView(getLayout());
++		if (getPrefs().getThemePref(isCarActivity()) == MainActivityPrefs.THEME_JARVIS) {
++			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками
++			ViewGroup content = a.findViewById(android.R.id.content);
++			if ((content != null) && (content.getChildCount() > 0))
++				content.getChildAt(0).setBackground(new JarvisWallpaper(a.getContext()));
++		}
+ 		toolBar = a.findViewById(R.id.tool_bar);
+ 		progressBar = a.findViewById(R.id.content_loading_progress);
+ 		navBar = a.findViewById(R.id.nav_bar);
+diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityPrefs.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityPrefs.java
+index 2998873..bf82e3f 100644
+--- a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityPrefs.java
++++ b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityPrefs.java
+@@ -31,12 +31,14 @@ public interface MainActivityPrefs
+ 	int THEME_STAR_WARS = 4;
+ 	int THEME_PURPLE = 5;
+ 	int THEME_CLASSIC = 6;
++	/** Золото на чёрном, фоном — фото (JARVIS Auto). */
++	int THEME_JARVIS = 7;
+ 	int CLOCK_POS_NONE = 0;
+ 	int CLOCK_POS_LEFT = 1;
+ 	int CLOCK_POS_RIGHT = 2;
+ 	int CLOCK_POS_CENTER = 3;
+ 
+-	Pref<IntSupplier> THEME_MAIN = Pref.i("THEME_MAIN", THEME_CLASSIC);
++	Pref<IntSupplier> THEME_MAIN = Pref.i("THEME_MAIN", THEME_JARVIS);
+ 	Pref<BooleanSupplier> HIDE_BARS = Pref.b("HIDE_BARS", false);
+ 	Pref<BooleanSupplier> FULLSCREEN = Pref.b("FULLSCREEN", false);
+ 	Pref<BooleanSupplier> SHOW_PG_UP_DOWN = Pref.b("SHOW_PG_UP_DOWN", true);
+@@ -67,7 +69,7 @@ public interface MainActivityPrefs
+ 	Pref<IntSupplier> LOCALE =
+ 			Pref.i("LOCALE", () -> Lang.get(Locale.getDefault().getLanguage()).ordinal());
+ 
+-	Pref<IntSupplier> THEME_AA = Pref.i("THEME_AA", THEME_DARK);
++	Pref<IntSupplier> THEME_AA = Pref.i("THEME_AA", THEME_JARVIS);
+ 	Pref<BooleanSupplier> HIDE_BARS_AA = AUTO ? Pref.b("HIDE_BARS_AA", false) : null;
+ 	Pref<BooleanSupplier> FULLSCREEN_AA = AUTO ? Pref.b("FULLSCREEN_AA", false) : null;
+ 	Pref<BooleanSupplier> SHOW_PG_UP_DOWN_AA = AUTO ? Pref.b("SHOW_PG_UP_DOWN_AA", true) : null;
+diff --git a/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java b/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
+index 7364cb3..591bf20 100644
+--- a/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
++++ b/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
+@@ -693,7 +693,7 @@ public class SettingsFragment extends MainActivityFragment
+ 			o.formatSubtitle = true;
+ 			o.values = new int[]{R.string.theme_dark, R.string.theme_light, R.string.theme_system,
+ 					R.string.theme_black, R.string.theme_star_wars, R.string.theme_purple,
+-					R.string.theme_classic};
++					R.string.theme_classic, R.string.theme_jarvis};
+ 		});
+ 		ps.addBooleanPref(o -> {
+ 			o.store = a.getPrefs();
 diff --git a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml b/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
 index 3f4c913..7d68890 100644
 --- a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
@@ -367,6 +533,14 @@ index 3f4c913..7d68890 100644
 +    <foreground android:drawable="@drawable/jarvis_fg" />
 +    <monochrome android:drawable="@drawable/jarvis_fg" />
 +</adaptive-icon>
+diff --git a/fermata/src/main/res/drawable-nodpi/jarvis_wallpaper.webp b/fermata/src/main/res/drawable-nodpi/jarvis_wallpaper.webp
+new file mode 100644
+index 0000000..392a91d
+Binary files /dev/null and b/fermata/src/main/res/drawable-nodpi/jarvis_wallpaper.webp differ
+diff --git a/fermata/src/main/res/drawable-port-nodpi/jarvis_wallpaper.webp b/fermata/src/main/res/drawable-port-nodpi/jarvis_wallpaper.webp
+new file mode 100644
+index 0000000..af603c1
+Binary files /dev/null and b/fermata/src/main/res/drawable-port-nodpi/jarvis_wallpaper.webp differ
 diff --git a/fermata/src/main/res/drawable/jarvis_bg.xml b/fermata/src/main/res/drawable/jarvis_bg.xml
 new file mode 100644
 index 0000000..6eed6b8
@@ -486,7 +660,7 @@ index 346317f..ed8337f 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..94f1ea3 100644
+index 77a9b17..f28d2ba 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
 @@ -1,15 +1,15 @@
@@ -509,7 +683,7 @@ index 77a9b17..94f1ea3 100644
      <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
      <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
      <string name="engine_mp_name" translatable="false">MediaPlayer</string>
-@@ -26,9 +26,11 @@
+@@ -26,9 +26,12 @@
      <string name="addon_name_tv">TV</string>
      <string name="addon_name_web_browser">Web browser</string>
      <string name="addon_name_youtube" translatable="false">Youtube</string>
@@ -518,10 +692,11 @@ index 77a9b17..94f1ea3 100644
      <string name="addon_name_cast" translatable="false">Google Cast</string>
      <string name="addon_name_chat" translatable="false">ChatGPT</string>
 +    <string name="addon_name_jarvis" translatable="false">JARVIS</string>
++    <string name="theme_jarvis" translatable="false">JARVIS</string>
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
-@@ -367,11 +369,13 @@
+@@ -367,11 +370,13 @@
      <string name="open_log">Open log file</string>
      <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
      <string name="screen_capture_rejected">Screen capture request rejected.</string>
@@ -537,6 +712,58 @@ index 77a9b17..94f1ea3 100644
          <p>Fermata Media Player is a free, open source audio and video player with a simple and
          intuitive interface.</p>
          <p><b>Author:</b> Andrey Pavlenko</p>
+diff --git a/fermata/src/main/res/values/theme_jarvis.xml b/fermata/src/main/res/values/theme_jarvis.xml
+new file mode 100644
+index 0000000..da37b6f
+--- /dev/null
++++ b/fermata/src/main/res/values/theme_jarvis.xml
+@@ -0,0 +1,46 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++
++    <!-- Тема «JARVIS»: золото на чёрном, фоном — фото (drawable/jarvis_wallpaper,
++         ставит MainActivityDelegate). Слои полупрозрачные, чтобы фото было видно. -->
++    <style name="AppTheme.Jarvis">
++
++        <item name="android:colorBackground">#00000000</item>
++        <item name="android:editTextColor">#FFF1D0</item>
++
++        <!-- Status bar-->
++        <item name="colorPrimaryDark">#000000</item>
++
++        <!-- Tool/Nav bars -->
++        <item name="colorPrimary">#B3000000</item>
++        <item name="colorOnPrimary">#FFC14D</item>
++        <item name="android:textColorPrimary">#FFF1D0</item>
++
++        <!-- List/Media items -->
++        <item name="colorSecondary">#73000000</item>
++        <item name="colorOnSecondary">#FFB23A</item>
++        <item name="android:textColorSecondary">#FFF1D0</item>
++        <item name="boxStrokeColor">#FFB23A</item>
++
++        <!-- Active media item -->
++        <item name="alpha">0.7</item>
++        <item name="colorSecondaryVariant">#99805A1E</item>
++        <item name="android:textColorTertiary">#FFFFFF</item>
++
++        <!-- Popup menu -->
++        <item name="colorSurface">#F01A140C</item>
++        <item name="colorOnSurface">#FFC14D</item>
++        <item name="colorPrimarySurface">#000000</item>
++        <item name="colorOnPrimarySurface">#FFF1D0</item>
++
++        <item name="colorAccent">#FFB23A</item>
++        <item name="rippleColor">#66FFB23A</item>
++
++        <item name="android:textColorHint">#8C7A5C</item>
++
++        <item name="colorControlNormal">#FFF1D0</item>
++        <item name="colorControlActivated">#FFB23A</item>
++
++    </style>
++
++</resources>
 diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
 new file mode 100644
 index 0000000..7e46197
@@ -612,10 +839,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
-index 0000000..5c2b500
+index 0000000..83e514e
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,333 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.lang.Math.abs;
@@ -719,6 +946,75 @@ index 0000000..5c2b500
 +					0.5f + ((i * 37) % 11) / 30f,
 +					0.02f + ((i * 13) % 7) / 600f);
 +		}
++	}
++
++	/**
++	 * Фрагмент «голограммы» на поверхности сферы (образец — золотая сфера
++	 * JARVIS из фильма): широта и долгота в радианах, длина штриха по долготе,
++	 * фаза мерцания, толщина.
++	 */
++	public static final class Bit {
++		public final float lat;
++		public final float lon;
++		public final float len;
++		public final float phase;
++		public final float w;
++
++		Bit(float lat, float lon, float len, float phase, float w) {
++			this.lat = lat;
++			this.lon = lon;
++			this.len = len;
++			this.phase = phase;
++			this.w = w;
++		}
++	}
++
++	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
++	public static final float SPHERE_TILT = 0.38f;
++
++	public static final Bit[] BITS = new Bit[300];
++
++	static {
++		for (int i = 0; i < BITS.length; i++) {
++			// Детерминированный разброс: одинаковый рисунок при каждом запуске
++			float a = (float) Math.sin(i * 12.9898) * 43758.5453f;
++			float r1 = a - (float) Math.floor(a);
++			float b = (float) Math.sin(i * 78.233) * 12543.531f;
++			float r2 = b - (float) Math.floor(b);
++			float lat = (float) Math.asin(2f * r1 - 1f) * 0.92f;
++			float lon = r2 * TWO_PI;
++			BITS[i] = new Bit(lat, lon, 0.04f + ((i * 7) % 11) / 90f, (i * 1.37f) % TWO_PI,
++					0.6f + ((i * 5) % 4) * 0.45f);
++		}
++	}
++
++	/**
++	 * Проекция точки сферы (широта, долгота) при повороте вокруг вертикальной
++	 * оси на rot и наклоне {@link #SPHERE_TILT}: out[0], out[1] — смещение от
++	 * центра в долях радиуса (по модулю не больше 1), out[2] — глубина:
++	 * больше нуля — передняя половина.
++	 */
++	public static void project(float lat, float lon, float rot, float[] out) {
++		double cl = Math.cos(lat);
++		double x = cl * Math.sin(lon + rot);
++		double y = Math.sin(lat);
++		double z = cl * Math.cos(lon + rot);
++		double ct = Math.cos(SPHERE_TILT), st = Math.sin(SPHERE_TILT);
++		out[0] = (float) x;
++		out[1] = (float) (-(y * ct - z * st));
++		out[2] = (float) (y * st + z * ct);
++	}
++
++	/** Радиус сферы: дышит с громкостью, раскрывается вместе с кругом. */
++	public static float sphereRadius(float size, float level, float open) {
++		return max(0f, size * (0.32f + level * 0.04f) * (0.5f + 0.5f * open));
++	}
++
++	/** Яркость фрагмента: мерцание по фазе, сзади — тусклее. */
++	public static float bitAlpha(Bit b, float t, float depth, float level) {
++		float flicker = 0.55f + 0.45f * (float) Math.sin(t * 3.1f + b.phase);
++		float side = (depth >= 0f) ? 1f : 0.28f;
++		return clamp(flicker * side * (0.6f + 0.4f * level), 0f, 1f);
 +	}
 +
 +	private HudMath() {
@@ -1205,10 +1501,10 @@ index 0000000..848147a
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
 new file mode 100644
-index 0000000..bb85c4a
+index 0000000..9a4907f
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
-@@ -0,0 +1,290 @@
+@@ -0,0 +1,376 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static me.aap.fermata.addon.jarvis.HudMath.NODES;
@@ -1242,11 +1538,12 @@ index 0000000..bb85c4a
 + * Кадры идут, только пока вид показан на экране.
 + */
 +public class JarvisHudView extends View {
-+	private static final int ARC = 0xFF3FD6FF;
-+	private static final int ARC_SOFT = 0xFF1C7FA3;
-+	private static final int INK = 0xFFCFEFFF;
-+	/** В JARVIS фон полупрозрачный поверх экрана; во вкладке — свой, непрозрачный. */
-+	private static final int BACKDROP = 0xFF03080D;
++	// Золото, как сфера JARVIS из фильма (в самом JARVIS круг голубой)
++	private static final int ARC = 0xFFFFB23A;
++	private static final int ARC_SOFT = 0xFFB5651D;
++	private static final int INK = 0xFFFFF1D0;
++	/** Полупрозрачный: в теме JARVIS сквозь круг видно фото. */
++	private static final int BACKDROP = 0x8C000000;
 +	private static final float RAD_TO_DEG = (float) (180.0 / Math.PI);
 +
 +	private final HudMath.Animator animator = new HudMath.Animator();
@@ -1259,6 +1556,10 @@ index 0000000..bb85c4a
 +	private final Typeface wordFace = Typeface.create(Typeface.SANS_SERIF, 500, false);
 +	private final Path tickPath = new Path();
 +	private final RectF box = new RectF();
++	private final Path frontPath = new Path();
++	private final Path backPath = new Path();
++	private final float[] pt = new float[3];
++	private final float[] pt2 = new float[3];
 +	private final String title;
 +	private final String listening;
 +	private final String thinking;
@@ -1349,7 +1650,7 @@ index 0000000..bb85c4a
 +		// Свечение ядра
 +		float coreR = HudMath.coreRadius(s, level, open) * 2.6f;
 +		plus.setShader(new RadialGradient(cx, cy, coreR,
-+				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 220, 250, 255),
++				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 255, 228, 170),
 +						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
 +				new float[]{0f, 0.18f, 1f}, Shader.TileMode.CLAMP));
 +		c.drawCircle(cx, cy, coreR, plus);
@@ -1360,7 +1661,7 @@ index 0000000..bb85c4a
 +		if (flare > 0.01f) {
 +			float half = s * 0.006f * (1f + flare * 2f);
 +			plus.setShader(new LinearGradient(cx - s * 0.5f, 0f, cx + s * 0.5f, 0f,
-+					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 230, 252, 255),
++					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 255, 236, 190),
 +							withAlpha(ARC, 0f)},
 +					new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
 +			c.drawRect(cx - s * 0.5f, cy - half, cx + s * 0.5f, cy + half, plus);
@@ -1385,6 +1686,10 @@ index 0000000..bb85c4a
 +			c.drawCircle(px, py, Math.max(0f, s * n.s * 0.15f), plus);
 +		}
 +
++		// Сфера-голограмма внутри колец
++		drawSphere(c, cx, cy, HudMath.sphereRadius(s, level, open),
++				t * 0.35f * animator.getSpin(), t, level, open);
++
 +		// Кольца
 +		for (int i = 0; i < RINGS.length; i++) {
 +			HudMath.Ring ring = RINGS[i];
@@ -1393,7 +1698,8 @@ index 0000000..bb85c4a
 +			float r = HudMath.ringRadius(s, ring, i, level, appear);
 +			float base = animator.rotations[i] * TWO_PI;
 +			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
-+			float alpha = HudMath.ringAlpha(ring, appear, level);
++			// Кольца — рамка, главная — сфера: приглушены
++			float alpha = HudMath.ringAlpha(ring, appear, level) * 0.5f;
 +			float width = ring.w * dp;
 +			float glow = ((ring.w > 3f) ? 14f : 6f) * dp;
 +			box.set(cx - r, cy - r, cx + r, cy + r);
@@ -1484,6 +1790,82 @@ index 0000000..bb85c4a
 +		}
 +	}
 +
++	/**
++	 * Золотая сфера: широты, вращающиеся меридианы, мерцающие фрагменты
++	 * «схем» на поверхности, светящийся контур и вихрь в центре. Дышит с
++	 * громкостью (радиус и яркость — от level), вращается быстрее при «думаю».
++	 */
++	private void drawSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
++													float level, float open) {
++		if (rs <= 0f) return;
++		float tilt = HudMath.SPHERE_TILT;
++		float ct = (float) Math.cos(tilt), st = (float) Math.sin(tilt);
++
++		// Широты: эллипсы из-за наклона оси
++		stroke.setStrokeWidth(dp);
++		stroke.setColor(withAlpha(ARC_SOFT, 0.45f * open));
++		for (int k = -2; k <= 2; k++) {
++			float lat = k * 0.5f;
++			float r = rs * (float) Math.cos(lat);
++			float y = cy - rs * (float) Math.sin(lat) * ct;
++			box.set(cx - r, y - r * st, cx + r, y + r * st);
++			c.drawOval(box, stroke);
++		}
++
++		// Меридианы: передняя половина ярче задней
++		frontPath.rewind();
++		backPath.rewind();
++		for (int m = 0; m < 8; m++) {
++			float lon = m * (float) Math.PI / 8f;
++			for (int j = 0; j < 24; j++) {
++				float la = -1.5708f + j * 3.1416f / 24f;
++				float lb = la + 3.1416f / 24f;
++				HudMath.project(la, lon, rot, pt);
++				HudMath.project(lb, lon, rot, pt2);
++				Path p = (pt[2] + pt2[2] >= 0f) ? frontPath : backPath;
++				p.moveTo(cx + pt[0] * rs, cy + pt[1] * rs);
++				p.lineTo(cx + pt2[0] * rs, cy + pt2[1] * rs);
++			}
++		}
++		stroke.setColor(withAlpha(ARC_SOFT, 0.18f * open));
++		c.drawPath(backPath, stroke);
++		stroke.setColor(withAlpha(ARC, 0.4f * open));
++		c.drawPath(frontPath, stroke);
++
++		// Фрагменты «схем» и искры
++		for (HudMath.Bit b : HudMath.BITS) {
++			HudMath.project(b.lat, b.lon, rot, pt);
++			HudMath.project(b.lat, b.lon + b.len, rot, pt2);
++			float a = HudMath.bitAlpha(b, t, pt[2], level) * open;
++			stroke.setStrokeWidth(b.w * dp * (1f + level * 0.6f));
++			stroke.setColor(withAlpha((b.phase > 3f) ? INK : ARC, a));
++			c.drawLine(cx + pt[0] * rs, cy + pt[1] * rs, cx + pt2[0] * rs, cy + pt2[1] * rs, stroke);
++			if (pt[2] > 0.3f) {
++				plus.setColor(withAlpha(INK, a * 0.9f));
++				c.drawCircle(cx + pt[0] * rs, cy + pt[1] * rs, (0.8f + level) * dp, plus);
++			}
++		}
++
++		// Светящийся контур сферы
++		stroke.setStrokeWidth(6f * dp);
++		stroke.setColor(withAlpha(ARC, 0.12f * open * (0.7f + level)));
++		c.drawCircle(cx, cy, rs, stroke);
++		stroke.setStrokeWidth(1.5f * dp);
++		stroke.setColor(withAlpha(ARC, 0.65f * open));
++		c.drawCircle(cx, cy, rs, stroke);
++
++		// Вихрь в центре: дуга навстречу вращению сферы
++		float vr = rs * (0.62f + 0.06f * level);
++		float va = (-t * 1.3f * RAD_TO_DEG) % 360f;
++		box.set(cx - vr, cy - vr * 0.62f, cx + vr, cy + vr * 0.62f);
++		stroke.setStrokeWidth(9f * dp);
++		stroke.setColor(withAlpha(ARC, 0.18f * open));
++		c.drawArc(box, va, 250f, false, stroke);
++		stroke.setStrokeWidth(2.5f * dp);
++		stroke.setColor(withAlpha(INK, 0.75f * open));
++		c.drawArc(box, va, 250f, false, stroke);
++	}
++
 +	/** Строка с центром в точке (x, y) — как drawCentered в JARVIS. */
 +	private void drawCentered(Canvas c, String s, float x, float y) {
 +		Paint.FontMetrics fm = text.getFontMetrics();
@@ -1517,10 +1899,10 @@ index 0000000..bef1a81
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
 new file mode 100644
-index 0000000..a9ee663
+index 0000000..f8cb3f3
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,155 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -1647,6 +2029,33 @@ index 0000000..a9ee663
 +			max = Math.max(max, l);
 +		}
 +		assertTrue("пульсация должна быть заметной", max - min > 0.2f);
++	}
++
++	@Test
++	public void sphereProjectionStaysOnDisc() {
++		float[] o = new float[3];
++		for (HudMath.Bit b : HudMath.BITS) {
++			for (float rot = 0f; rot < 7f; rot += 0.7f) {
++				HudMath.project(b.lat, b.lon, rot, o);
++				assertTrue(o[0] * o[0] + o[1] * o[1] <= 1.0001f);
++				assertTrue(Math.abs(o[2]) <= 1.0001f);
++			}
++		}
++		// Точка на экваторе прямо перед зрителем — в передней половине
++		HudMath.project(0f, 0f, 0f, o);
++		assertTrue(o[2] > 0f);
++		assertEquals(0f, o[0], 1e-6f);
++	}
++
++	@Test
++	public void sphereBreathesWithLevel() {
++		assertTrue(HudMath.sphereRadius(500f, 1f, 1f) > HudMath.sphereRadius(500f, 0f, 1f));
++		assertEquals(0f, HudMath.sphereRadius(500f, 0f, 0f) - 500f * 0.32f * 0.5f, 1e-4f);
++		for (HudMath.Bit b : HudMath.BITS) {
++			float a = HudMath.bitAlpha(b, 1.3f, -0.5f, 0.5f);
++			assertTrue(a >= 0f && a <= 1f);
++			assertTrue(HudMath.bitAlpha(b, 1.3f, 0.5f, 0.5f) >= a);
++		}
 +	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle

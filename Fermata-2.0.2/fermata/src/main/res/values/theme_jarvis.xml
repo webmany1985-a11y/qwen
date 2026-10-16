@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Тема «JARVIS»: золото на чёрном, фоном — фото (drawable/jarvis_wallpaper,
+         ставит MainActivityDelegate). Слои полупрозрачные, чтобы фото было видно. -->
+    <style name="AppTheme.Jarvis">
+
+        <item name="android:colorBackground">#00000000</item>
+        <item name="android:editTextColor">#FFF1D0</item>
+
+        <!-- Status bar-->
+        <item name="colorPrimaryDark">#000000</item>
+
+        <!-- Tool/Nav bars -->
+        <item name="colorPrimary">#B3000000</item>
+        <item name="colorOnPrimary">#FFC14D</item>
+        <item name="android:textColorPrimary">#FFF1D0</item>
+
+        <!-- List/Media items -->
+        <item name="colorSecondary">#73000000</item>
+        <item name="colorOnSecondary">#FFB23A</item>
+        <item name="android:textColorSecondary">#FFF1D0</item>
+        <item name="boxStrokeColor">#FFB23A</item>
+
+        <!-- Active media item -->
+        <item name="alpha">0.7</item>
+        <item name="colorSecondaryVariant">#99805A1E</item>
+        <item name="android:textColorTertiary">#FFFFFF</item>
+
+        <!-- Popup menu -->
+        <item name="colorSurface">#F01A140C</item>
+        <item name="colorOnSurface">#FFC14D</item>
+        <item name="colorPrimarySurface">#000000</item>
+        <item name="colorOnPrimarySurface">#FFF1D0</item>
+
+        <item name="colorAccent">#FFB23A</item>
+        <item name="rippleColor">#66FFB23A</item>
+
+        <item name="android:textColorHint">#8C7A5C</item>
+
+        <item name="colorControlNormal">#FFF1D0</item>
+        <item name="colorControlActivated">#FFB23A</item>
+
+    </style>
+
+</resources>

@@ -31,11 +31,12 @@ import androidx.annotation.NonNull;
  * Кадры идут, только пока вид показан на экране.
  */
 public class JarvisHudView extends View {
-	private static final int ARC = 0xFF3FD6FF;
-	private static final int ARC_SOFT = 0xFF1C7FA3;
-	private static final int INK = 0xFFCFEFFF;
-	/** В JARVIS фон полупрозрачный поверх экрана; во вкладке — свой, непрозрачный. */
-	private static final int BACKDROP = 0xFF03080D;
+	// Золото, как сфера JARVIS из фильма (в самом JARVIS круг голубой)
+	private static final int ARC = 0xFFFFB23A;
+	private static final int ARC_SOFT = 0xFFB5651D;
+	private static final int INK = 0xFFFFF1D0;
+	/** Полупрозрачный: в теме JARVIS сквозь круг видно фото. */
+	private static final int BACKDROP = 0x8C000000;
 	private static final float RAD_TO_DEG = (float) (180.0 / Math.PI);
 
 	private final HudMath.Animator animator = new HudMath.Animator();
@@ -48,6 +49,10 @@ public class JarvisHudView extends View {
 	private final Typeface wordFace = Typeface.create(Typeface.SANS_SERIF, 500, false);
 	private final Path tickPath = new Path();
 	private final RectF box = new RectF();
+	private final Path frontPath = new Path();
+	private final Path backPath = new Path();
+	private final float[] pt = new float[3];
+	private final float[] pt2 = new float[3];
 	private final String title;
 	private final String listening;
 	private final String thinking;
@@ -138,7 +143,7 @@ public class JarvisHudView extends View {
 		// Свечение ядра
 		float coreR = HudMath.coreRadius(s, level, open) * 2.6f;
 		plus.setShader(new RadialGradient(cx, cy, coreR,
-				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 220, 250, 255),
+				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 255, 228, 170),
 						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
 				new float[]{0f, 0.18f, 1f}, Shader.TileMode.CLAMP));
 		c.drawCircle(cx, cy, coreR, plus);
@@ -149,7 +154,7 @@ public class JarvisHudView extends View {
 		if (flare > 0.01f) {
 			float half = s * 0.006f * (1f + flare * 2f);
 			plus.setShader(new LinearGradient(cx - s * 0.5f, 0f, cx + s * 0.5f, 0f,
-					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 230, 252, 255),
+					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 255, 236, 190),
 							withAlpha(ARC, 0f)},
 					new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
 			c.drawRect(cx - s * 0.5f, cy - half, cx + s * 0.5f, cy + half, plus);
@@ -174,6 +179,10 @@ public class JarvisHudView extends View {
 			c.drawCircle(px, py, Math.max(0f, s * n.s * 0.15f), plus);
 		}
 
+		// Сфера-голограмма внутри колец
+		drawSphere(c, cx, cy, HudMath.sphereRadius(s, level, open),
+				t * 0.35f * animator.getSpin(), t, level, open);
+
 		// Кольца
 		for (int i = 0; i < RINGS.length; i++) {
 			HudMath.Ring ring = RINGS[i];
@@ -182,7 +191,8 @@ public class JarvisHudView extends View {
 			float r = HudMath.ringRadius(s, ring, i, level, appear);
 			float base = animator.rotations[i] * TWO_PI;
 			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
-			float alpha = HudMath.ringAlpha(ring, appear, level);
+			// Кольца — рамка, главная — сфера: приглушены
+			float alpha = HudMath.ringAlpha(ring, appear, level) * 0.5f;
 			float width = ring.w * dp;
 			float glow = ((ring.w > 3f) ? 14f : 6f) * dp;
 			box.set(cx - r, cy - r, cx + r, cy + r);
@@ -271,6 +281,82 @@ public class JarvisHudView extends View {
 				c.drawRect(x, y, x + bw, y + bh, fill);
 			}
 		}
+	}
+
+	/**
+	 * Золотая сфера: широты, вращающиеся меридианы, мерцающие фрагменты
+	 * «схем» на поверхности, светящийся контур и вихрь в центре. Дышит с
+	 * громкостью (радиус и яркость — от level), вращается быстрее при «думаю».
+	 */
+	private void drawSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
+													float level, float open) {
+		if (rs <= 0f) return;
+		float tilt = HudMath.SPHERE_TILT;
+		float ct = (float) Math.cos(tilt), st = (float) Math.sin(tilt);
+
+		// Широты: эллипсы из-за наклона оси
+		stroke.setStrokeWidth(dp);
+		stroke.setColor(withAlpha(ARC_SOFT, 0.45f * open));
+		for (int k = -2; k <= 2; k++) {
+			float lat = k * 0.5f;
+			float r = rs * (float) Math.cos(lat);
+			float y = cy - rs * (float) Math.sin(lat) * ct;
+			box.set(cx - r, y - r * st, cx + r, y + r * st);
+			c.drawOval(box, stroke);
+		}
+
+		// Меридианы: передняя половина ярче задней
+		frontPath.rewind();
+		backPath.rewind();
+		for (int m = 0; m < 8; m++) {
+			float lon = m * (float) Math.PI / 8f;
+			for (int j = 0; j < 24; j++) {
+				float la = -1.5708f + j * 3.1416f / 24f;
+				float lb = la + 3.1416f / 24f;
+				HudMath.project(la, lon, rot, pt);
+				HudMath.project(lb, lon, rot, pt2);
+				Path p = (pt[2] + pt2[2] >= 0f) ? frontPath : backPath;
+				p.moveTo(cx + pt[0] * rs, cy + pt[1] * rs);
+				p.lineTo(cx + pt2[0] * rs, cy + pt2[1] * rs);
+			}
+		}
+		stroke.setColor(withAlpha(ARC_SOFT, 0.18f * open));
+		c.drawPath(backPath, stroke);
+		stroke.setColor(withAlpha(ARC, 0.4f * open));
+		c.drawPath(frontPath, stroke);
+
+		// Фрагменты «схем» и искры
+		for (HudMath.Bit b : HudMath.BITS) {
+			HudMath.project(b.lat, b.lon, rot, pt);
+			HudMath.project(b.lat, b.lon + b.len, rot, pt2);
+			float a = HudMath.bitAlpha(b, t, pt[2], level) * open;
+			stroke.setStrokeWidth(b.w * dp * (1f + level * 0.6f));
+			stroke.setColor(withAlpha((b.phase > 3f) ? INK : ARC, a));
+			c.drawLine(cx + pt[0] * rs, cy + pt[1] * rs, cx + pt2[0] * rs, cy + pt2[1] * rs, stroke);
+			if (pt[2] > 0.3f) {
+				plus.setColor(withAlpha(INK, a * 0.9f));
+				c.drawCircle(cx + pt[0] * rs, cy + pt[1] * rs, (0.8f + level) * dp, plus);
+			}
+		}
+
+		// Светящийся контур сферы
+		stroke.setStrokeWidth(6f * dp);
+		stroke.setColor(withAlpha(ARC, 0.12f * open * (0.7f + level)));
+		c.drawCircle(cx, cy, rs, stroke);
+		stroke.setStrokeWidth(1.5f * dp);
+		stroke.setColor(withAlpha(ARC, 0.65f * open));
+		c.drawCircle(cx, cy, rs, stroke);
+
+		// Вихрь в центре: дуга навстречу вращению сферы
+		float vr = rs * (0.62f + 0.06f * level);
+		float va = (-t * 1.3f * RAD_TO_DEG) % 360f;
+		box.set(cx - vr, cy - vr * 0.62f, cx + vr, cy + vr * 0.62f);
+		stroke.setStrokeWidth(9f * dp);
+		stroke.setColor(withAlpha(ARC, 0.18f * open));
+		c.drawArc(box, va, 250f, false, stroke);
+		stroke.setStrokeWidth(2.5f * dp);
+		stroke.setColor(withAlpha(INK, 0.75f * open));
+		c.drawArc(box, va, 250f, false, stroke);
 	}
 
 	/** Строка с центром в точке (x, y) — как drawCentered в JARVIS. */

@@ -125,4 +125,31 @@ public class HudMathTest {
 		}
 		assertTrue("пульсация должна быть заметной", max - min > 0.2f);
 	}
+
+	@Test
+	public void sphereProjectionStaysOnDisc() {
+		float[] o = new float[3];
+		for (HudMath.Bit b : HudMath.BITS) {
+			for (float rot = 0f; rot < 7f; rot += 0.7f) {
+				HudMath.project(b.lat, b.lon, rot, o);
+				assertTrue(o[0] * o[0] + o[1] * o[1] <= 1.0001f);
+				assertTrue(Math.abs(o[2]) <= 1.0001f);
+			}
+		}
+		// Точка на экваторе прямо перед зрителем — в передней половине
+		HudMath.project(0f, 0f, 0f, o);
+		assertTrue(o[2] > 0f);
+		assertEquals(0f, o[0], 1e-6f);
+	}
+
+	@Test
+	public void sphereBreathesWithLevel() {
+		assertTrue(HudMath.sphereRadius(500f, 1f, 1f) > HudMath.sphereRadius(500f, 0f, 1f));
+		assertEquals(0f, HudMath.sphereRadius(500f, 0f, 0f) - 500f * 0.32f * 0.5f, 1e-4f);
+		for (HudMath.Bit b : HudMath.BITS) {
+			float a = HudMath.bitAlpha(b, 1.3f, -0.5f, 0.5f);
+			assertTrue(a >= 0f && a <= 1f);
+			assertTrue(HudMath.bitAlpha(b, 1.3f, 0.5f, 0.5f) >= a);
+		}
+	}
 }

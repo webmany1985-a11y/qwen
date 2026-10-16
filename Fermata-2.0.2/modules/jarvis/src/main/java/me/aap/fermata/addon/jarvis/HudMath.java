@@ -103,6 +103,75 @@ public final class HudMath {
 		}
 	}
 
+	/**
+	 * Фрагмент «голограммы» на поверхности сферы (образец — золотая сфера
+	 * JARVIS из фильма): широта и долгота в радианах, длина штриха по долготе,
+	 * фаза мерцания, толщина.
+	 */
+	public static final class Bit {
+		public final float lat;
+		public final float lon;
+		public final float len;
+		public final float phase;
+		public final float w;
+
+		Bit(float lat, float lon, float len, float phase, float w) {
+			this.lat = lat;
+			this.lon = lon;
+			this.len = len;
+			this.phase = phase;
+			this.w = w;
+		}
+	}
+
+	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
+	public static final float SPHERE_TILT = 0.38f;
+
+	public static final Bit[] BITS = new Bit[300];
+
+	static {
+		for (int i = 0; i < BITS.length; i++) {
+			// Детерминированный разброс: одинаковый рисунок при каждом запуске
+			float a = (float) Math.sin(i * 12.9898) * 43758.5453f;
+			float r1 = a - (float) Math.floor(a);
+			float b = (float) Math.sin(i * 78.233) * 12543.531f;
+			float r2 = b - (float) Math.floor(b);
+			float lat = (float) Math.asin(2f * r1 - 1f) * 0.92f;
+			float lon = r2 * TWO_PI;
+			BITS[i] = new Bit(lat, lon, 0.04f + ((i * 7) % 11) / 90f, (i * 1.37f) % TWO_PI,
+					0.6f + ((i * 5) % 4) * 0.45f);
+		}
+	}
+
+	/**
+	 * Проекция точки сферы (широта, долгота) при повороте вокруг вертикальной
+	 * оси на rot и наклоне {@link #SPHERE_TILT}: out[0], out[1] — смещение от
+	 * центра в долях радиуса (по модулю не больше 1), out[2] — глубина:
+	 * больше нуля — передняя половина.
+	 */
+	public static void project(float lat, float lon, float rot, float[] out) {
+		double cl = Math.cos(lat);
+		double x = cl * Math.sin(lon + rot);
+		double y = Math.sin(lat);
+		double z = cl * Math.cos(lon + rot);
+		double ct = Math.cos(SPHERE_TILT), st = Math.sin(SPHERE_TILT);
+		out[0] = (float) x;
+		out[1] = (float) (-(y * ct - z * st));
+		out[2] = (float) (y * st + z * ct);
+	}
+
+	/** Радиус сферы: дышит с громкостью, раскрывается вместе с кругом. */
+	public static float sphereRadius(float size, float level, float open) {
+		return max(0f, size * (0.32f + level * 0.04f) * (0.5f + 0.5f * open));
+	}
+
+	/** Яркость фрагмента: мерцание по фазе, сзади — тусклее. */
+	public static float bitAlpha(Bit b, float t, float depth, float level) {
+		float flicker = 0.55f + 0.45f * (float) Math.sin(t * 3.1f + b.phase);
+		float side = (depth >= 0f) ? 1f : 0.28f;
+		return clamp(flicker * side * (0.6f + 0.4f * level), 0f, 1f);
+	}
+
 	private HudMath() {
 	}
 

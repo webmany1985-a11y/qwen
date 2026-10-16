@@ -62,6 +62,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 
 import androidx.annotation.LayoutRes;
@@ -96,6 +97,7 @@ import me.aap.fermata.addon.FermataAddon;
 import me.aap.fermata.addon.FermataFragmentAddon;
 import me.aap.fermata.addon.MediaLibAddon;
 import me.aap.fermata.jarvis.JarvisBridge;
+import me.aap.fermata.jarvis.JarvisWallpaper;
 import me.aap.fermata.media.engine.MediaEngineManager;
 import me.aap.fermata.media.lib.AtvInterface;
 import me.aap.fermata.media.lib.DefaultMediaLib;
@@ -475,6 +477,7 @@ public class MainActivityDelegate extends ActivityDelegate
 			case MainActivityPrefs.THEME_STAR_WARS -> R.style.AppTheme_BlackStarWars;
 			case MainActivityPrefs.THEME_PURPLE -> R.style.AppTheme_Purple;
 			case MainActivityPrefs.THEME_CLASSIC -> R.style.AppTheme_Classic;
+			case MainActivityPrefs.THEME_JARVIS -> R.style.AppTheme_Jarvis;
 			default -> R.style.AppTheme_Dark;
 		};
 		ctx.setTheme(theme);
@@ -996,6 +999,12 @@ public class MainActivityDelegate extends ActivityDelegate
 	private void init() {
 		FermataActivity a = getAppActivity();
 		a.setContentView(getLayout());
+		if (getPrefs().getThemePref(isCarActivity()) == MainActivityPrefs.THEME_JARVIS) {
+			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками
+			ViewGroup content = a.findViewById(android.R.id.content);
+			if ((content != null) && (content.getChildCount() > 0))
+				content.getChildAt(0).setBackground(new JarvisWallpaper(a.getContext()));
+		}
 		toolBar = a.findViewById(R.id.tool_bar);
 		progressBar = a.findViewById(R.id.content_loading_progress);
 		navBar = a.findViewById(R.id.nav_bar);

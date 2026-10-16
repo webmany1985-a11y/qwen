@@ -31,6 +31,7 @@
     <string name="addon_name_cast" translatable="false">Google Cast</string>
     <string name="addon_name_chat" translatable="false">ChatGPT</string>
     <string name="addon_name_jarvis" translatable="false">JARVIS</string>
+    <string name="theme_jarvis" translatable="false">JARVIS</string>
     <string name="addon_name_translate" translatable="false">Language translator</string>
     <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
     <string name="addon_name_whisper" translatable="false">Whisper</string>
