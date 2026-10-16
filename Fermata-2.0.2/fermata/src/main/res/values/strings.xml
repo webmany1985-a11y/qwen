@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name_mobile_release" translatable="false">Fermata</string>
-    <string name="app_name_auto_release" translatable="false">Fermata Auto</string>
+    <string name="app_name_auto_release" translatable="false">JARVIS Auto</string>
     <string name="app_name_mobile_debug" translatable="false">Debug Fermata</string>
     <string name="app_name_auto_debug" translatable="false">Debug Fermata Auto</string>
-    <string name="mirror_service_name_release" translatable="false">Fermata Mirror</string>
+    <string name="mirror_service_name_release" translatable="false">JARVIS Экран</string>
     <string name="mirror_service_name_debug" translatable="false">Debug Fermata Mirror</string>
-    <string name="mirror_fs_service_name_release" translatable="false">FS Fermata Mirror</string>
+    <string name="mirror_fs_service_name_release" translatable="false">JARVIS Экран (полный)</string>
     <string name="mirror_fs_service_name_debug" translatable="false">Debug FS Fermata Mirror</string>
     <string name="media_service_name_mobile_release" translatable="false">@string/app_name_mobile_release</string>
-    <string name="media_service_name_auto_release" translatable="false">Fermata Media Service</string>
+    <string name="media_service_name_auto_release" translatable="false">JARVIS Музыка</string>
     <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
     <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
     <string name="engine_mp_name" translatable="false">MediaPlayer</string>
@@ -368,11 +368,13 @@
     <string name="open_log">Open log file</string>
     <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
     <string name="screen_capture_rejected">Screen capture request rejected.</string>
-    <string name="accessibility_dsc">The accessibility service is used by Fermata Mirror to simulate touch screen events.</string>
+    <string name="accessibility_dsc">The accessibility service is used by JARVIS Экран (Fermata Mirror) to simulate touch screen events.</string>
     <string name="media_projection_action_text">Start now</string>
 
     <string name="about">About</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
+    <string name="about_html"><![CDATA[<H1 align="center">JARVIS Auto</H1>
+        <p>JARVIS Auto is a modified build of Fermata Media Player (GPL-3.0): renamed, with the
+        JARVIS voice assistant tab and command bridge added (16.10.2026).</p>
         <p>Fermata Media Player is a free, open source audio and video player with a simple and
         intuitive interface.</p>
         <p><b>Author:</b> Andrey Pavlenko</p>

@@ -1,3 +1,86 @@
+diff --git a/fermata/src/auto/res/drawable-anydpi-v26/media_service.xml b/fermata/src/auto/res/drawable-anydpi-v26/media_service.xml
+index 0f95a2e..7d68890 100644
+--- a/fermata/src/auto/res/drawable-anydpi-v26/media_service.xml
++++ b/fermata/src/auto/res/drawable-anydpi-v26/media_service.xml
+@@ -1,5 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Значок JARVIS Auto: тот же, что у JARVIS -->
+ <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+-    <background android:drawable="@drawable/media_service_bg" />
+-    <foreground android:drawable="@drawable/media_service_s" />
+-</adaptive-icon>
+\ No newline at end of file
++    <background android:drawable="@drawable/jarvis_bg" />
++    <foreground android:drawable="@drawable/jarvis_fg" />
++    <monochrome android:drawable="@drawable/jarvis_fg" />
++</adaptive-icon>
+diff --git a/fermata/src/auto/res/drawable-anydpi-v26/mirror.xml b/fermata/src/auto/res/drawable-anydpi-v26/mirror.xml
+index 401c888..7d68890 100644
+--- a/fermata/src/auto/res/drawable-anydpi-v26/mirror.xml
++++ b/fermata/src/auto/res/drawable-anydpi-v26/mirror.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Значок JARVIS Auto: тот же, что у JARVIS -->
+ <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+-    <background android:drawable="@drawable/mirror_bg" />
+-    <foreground android:drawable="@drawable/mirror_s" />
+-    <monochrome android:drawable="@drawable/mirror_s" />
+-</adaptive-icon>
+\ No newline at end of file
++    <background android:drawable="@drawable/jarvis_bg" />
++    <foreground android:drawable="@drawable/jarvis_fg" />
++    <monochrome android:drawable="@drawable/jarvis_fg" />
++</adaptive-icon>
+diff --git a/fermata/src/auto/res/drawable-anydpi-v26/mirror_fs.xml b/fermata/src/auto/res/drawable-anydpi-v26/mirror_fs.xml
+index d5947fc..7d68890 100644
+--- a/fermata/src/auto/res/drawable-anydpi-v26/mirror_fs.xml
++++ b/fermata/src/auto/res/drawable-anydpi-v26/mirror_fs.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Значок JARVIS Auto: тот же, что у JARVIS -->
+ <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+-    <background android:drawable="@drawable/mirror_fs_bg" />
+-    <foreground android:drawable="@drawable/mirror_s" />
+-    <monochrome android:drawable="@drawable/mirror_s" />
+-</adaptive-icon>
+\ No newline at end of file
++    <background android:drawable="@drawable/jarvis_bg" />
++    <foreground android:drawable="@drawable/jarvis_fg" />
++    <monochrome android:drawable="@drawable/jarvis_fg" />
++</adaptive-icon>
+diff --git a/fermata/src/auto/res/drawable/media_service.xml b/fermata/src/auto/res/drawable/media_service.xml
+index f9462a1..769ac7f 100644
+--- a/fermata/src/auto/res/drawable/media_service.xml
++++ b/fermata/src/auto/res/drawable/media_service.xml
+@@ -1,4 +1,4 @@
+ <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+-    <item android:drawable="@drawable/media_service_bg" />
+-    <item android:drawable="@drawable/media_service_l" />
++    <item android:drawable="@drawable/jarvis_bg" />
++    <item android:drawable="@drawable/jarvis_fg" />
+ </layer-list>
+diff --git a/fermata/src/auto/res/drawable/mirror.xml b/fermata/src/auto/res/drawable/mirror.xml
+index 29acde1..769ac7f 100644
+--- a/fermata/src/auto/res/drawable/mirror.xml
++++ b/fermata/src/auto/res/drawable/mirror.xml
+@@ -1,4 +1,4 @@
+ <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+-    <item android:drawable="@drawable/mirror_bg" />
+-    <item android:drawable="@drawable/mirror_l" />
++    <item android:drawable="@drawable/jarvis_bg" />
++    <item android:drawable="@drawable/jarvis_fg" />
+ </layer-list>
+diff --git a/fermata/src/auto/res/drawable/mirror_fs.xml b/fermata/src/auto/res/drawable/mirror_fs.xml
+index 83422e2..769ac7f 100644
+--- a/fermata/src/auto/res/drawable/mirror_fs.xml
++++ b/fermata/src/auto/res/drawable/mirror_fs.xml
+@@ -1,4 +1,4 @@
+ <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+-    <item android:drawable="@drawable/mirror_fs_bg" />
+-    <item android:drawable="@drawable/mirror_l" />
++    <item android:drawable="@drawable/jarvis_bg" />
++    <item android:drawable="@drawable/jarvis_fg" />
+ </layer-list>
 diff --git a/fermata/src/main/AndroidManifest.xml b/fermata/src/main/AndroidManifest.xml
 index 4911c14..d03de6c 100644
 --- a/fermata/src/main/AndroidManifest.xml
@@ -267,6 +350,108 @@ index 03dfc56..be9c361 100644
  	public FutureSupplier<List<String>> startSpeechRecognizer() {
  		return startSpeechRecognizer(null, false);
  	}
+diff --git a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml b/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
+index 3f4c913..7d68890 100644
+--- a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
++++ b/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
+@@ -1,6 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
++<!-- Значок JARVIS Auto: тот же, что у JARVIS -->
+ <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+-    <background android:drawable="@drawable/fermata_bg" />
+-    <foreground android:drawable="@drawable/fermata_s" />
+-    <monochrome android:drawable="@drawable/fermata_s" />
+-</adaptive-icon>
+\ No newline at end of file
++    <background android:drawable="@drawable/jarvis_bg" />
++    <foreground android:drawable="@drawable/jarvis_fg" />
++    <monochrome android:drawable="@drawable/jarvis_fg" />
++</adaptive-icon>
+diff --git a/fermata/src/main/res/drawable/jarvis_bg.xml b/fermata/src/main/res/drawable/jarvis_bg.xml
+new file mode 100644
+index 0000000..6eed6b8
+--- /dev/null
++++ b/fermata/src/main/res/drawable/jarvis_bg.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Фон значка JARVIS (#0B0F14, как ic_launcher_background в JARVIS) -->
++<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
++    <solid android:color="#0B0F14" />
++</shape>
+diff --git a/fermata/src/main/res/drawable/jarvis_fg.xml b/fermata/src/main/res/drawable/jarvis_fg.xml
+new file mode 100644
+index 0000000..9174478
+--- /dev/null
++++ b/fermata/src/main/res/drawable/jarvis_fg.xml
+@@ -0,0 +1,36 @@
++<?xml version="1.0" encoding="utf-8"?>
++<!-- Значок JARVIS (android-team, prilozheniya/jarvis, ic_launcher_foreground) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="108dp"
++    android:height="108dp"
++    android:viewportWidth="108"
++    android:viewportHeight="108">
++
++    <path
++        android:fillColor="#35D6ED"
++        android:pathData="M54,48 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
++
++    <path
++        android:strokeColor="#35D6ED"
++        android:strokeWidth="2.5"
++        android:strokeAlpha="0.9"
++        android:pathData="M54,30 A18,18 0 0,1 72,48" />
++
++    <path
++        android:strokeColor="#35D6ED"
++        android:strokeWidth="2.5"
++        android:strokeAlpha="0.9"
++        android:pathData="M54,66 A18,18 0 0,1 36,48" />
++
++    <path
++        android:strokeColor="#35D6ED"
++        android:strokeWidth="1.5"
++        android:strokeAlpha="0.5"
++        android:pathData="M54,22 A26,26 0 0,1 80,48" />
++
++    <path
++        android:strokeColor="#35D6ED"
++        android:strokeWidth="1.5"
++        android:strokeAlpha="0.5"
++        android:pathData="M54,74 A26,26 0 0,1 28,48" />
++</vector>
+diff --git a/fermata/src/main/res/drawable/launcher.xml b/fermata/src/main/res/drawable/launcher.xml
+index 4ec9226..769ac7f 100644
+--- a/fermata/src/main/res/drawable/launcher.xml
++++ b/fermata/src/main/res/drawable/launcher.xml
+@@ -1,4 +1,4 @@
+ <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+-    <item android:drawable="@drawable/fermata_bg" />
+-    <item android:drawable="@drawable/fermata_l" />
++    <item android:drawable="@drawable/jarvis_bg" />
++    <item android:drawable="@drawable/jarvis_fg" />
+ </layer-list>
+diff --git a/fermata/src/main/res/values-ru/strings.xml b/fermata/src/main/res/values-ru/strings.xml
+index 97bd633..5892f47 100644
+--- a/fermata/src/main/res/values-ru/strings.xml
++++ b/fermata/src/main/res/values-ru/strings.xml
+@@ -358,11 +358,14 @@
+     <string name="open_log">Открыть лог файл</string>
+     <string name="unlock_phone_and_grant">Разблокируйте телефон и предоставьте запрошенные разрешения.</string>
+     <string name="screen_capture_rejected">Запрос на трянсляцию экрана отклонен.</string>
+-    <string name="accessibility_dsc">Эта служба используется Fermata Mirror для взаимодействия с экраном телефона.</string>
++    <string name="accessibility_dsc">Эта служба используется JARVIS Экран (Fermata Mirror) для взаимодействия с экраном телефона.</string>
+     <string name="media_projection_action_text">Начать</string>
+ 
+     <string name="about">О приложении</string>
+-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
++    <string name="about_html"><![CDATA[<H1 align="center">JARVIS Auto</H1>
++        <p>JARVIS Auto — изменённая сборка Fermata Media Player (лицензия GPL-3.0): другое
++        название и значок, добавлены вкладка голосового ассистента JARVIS и передача ему
++        голосовых команд (16.10.2026).</p>
+         <p>Fermata Media Player - это бесплатный, с открытым исходным кодом, аудио и видео плеер
+         с простым и интуитивным интерфейсом.</p>
+         <p><b>Автор:</b> Андрей Павленко</p>
 diff --git a/fermata/src/main/res/values/ids.xml b/fermata/src/main/res/values/ids.xml
 index 346317f..60744bb 100644
 --- a/fermata/src/main/res/values/ids.xml
@@ -280,9 +465,29 @@ index 346317f..60744bb 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..3dba5e9 100644
+index 77a9b17..7849934 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
+@@ -1,15 +1,15 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+     <string name="app_name_mobile_release" translatable="false">Fermata</string>
+-    <string name="app_name_auto_release" translatable="false">Fermata Auto</string>
++    <string name="app_name_auto_release" translatable="false">JARVIS Auto</string>
+     <string name="app_name_mobile_debug" translatable="false">Debug Fermata</string>
+     <string name="app_name_auto_debug" translatable="false">Debug Fermata Auto</string>
+-    <string name="mirror_service_name_release" translatable="false">Fermata Mirror</string>
++    <string name="mirror_service_name_release" translatable="false">JARVIS Экран</string>
+     <string name="mirror_service_name_debug" translatable="false">Debug Fermata Mirror</string>
+-    <string name="mirror_fs_service_name_release" translatable="false">FS Fermata Mirror</string>
++    <string name="mirror_fs_service_name_release" translatable="false">JARVIS Экран (полный)</string>
+     <string name="mirror_fs_service_name_debug" translatable="false">Debug FS Fermata Mirror</string>
+     <string name="media_service_name_mobile_release" translatable="false">@string/app_name_mobile_release</string>
+-    <string name="media_service_name_auto_release" translatable="false">Fermata Media Service</string>
++    <string name="media_service_name_auto_release" translatable="false">JARVIS Музыка</string>
+     <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
+     <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
+     <string name="engine_mp_name" translatable="false">MediaPlayer</string>
 @@ -29,6 +29,7 @@
      <string name="addon_name_felex" translatable="false">Felex</string>
      <string name="addon_name_cast" translatable="false">Google Cast</string>
@@ -291,6 +496,22 @@ index 77a9b17..3dba5e9 100644
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
+@@ -367,11 +368,13 @@
+     <string name="open_log">Open log file</string>
+     <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
+     <string name="screen_capture_rejected">Screen capture request rejected.</string>
+-    <string name="accessibility_dsc">The accessibility service is used by Fermata Mirror to simulate touch screen events.</string>
++    <string name="accessibility_dsc">The accessibility service is used by JARVIS Экран (Fermata Mirror) to simulate touch screen events.</string>
+     <string name="media_projection_action_text">Start now</string>
+ 
+     <string name="about">About</string>
+-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
++    <string name="about_html"><![CDATA[<H1 align="center">JARVIS Auto</H1>
++        <p>JARVIS Auto is a modified build of Fermata Media Player (GPL-3.0): renamed, with the
++        JARVIS voice assistant tab and command bridge added (16.10.2026).</p>
+         <p>Fermata Media Player is a free, open source audio and video player with a simple and
+         intuitive interface.</p>
+         <p><b>Author:</b> Andrey Pavlenko</p>
 diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
 new file mode 100644
 index 0000000..7e46197

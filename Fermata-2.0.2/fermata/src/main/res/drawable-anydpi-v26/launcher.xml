@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Значок JARVIS Auto: тот же, что у JARVIS -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/fermata_bg" />
-    <foreground android:drawable="@drawable/fermata_s" />
-    <monochrome android:drawable="@drawable/fermata_s" />
+    <background android:drawable="@drawable/jarvis_bg" />
+    <foreground android:drawable="@drawable/jarvis_fg" />
+    <monochrome android:drawable="@drawable/jarvis_fg" />
 </adaptive-icon>
