@@ -193,7 +193,7 @@ public class HudMathTest {
 		float spread = 0f;
 		for (float rn = 0f; rn <= 1f; rn += 0.1f)
 			spread = Math.max(spread, Math.abs(HudMath.twist(rn, 2f, 0.5f) - HudMath.twist(0f, 2f, 0.5f)));
-		assertTrue(spread > 0.1f);
+		assertTrue(spread > 0.05f);
 		// Разные участки края в один момент сдвинуты по-разному
 		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
 	}

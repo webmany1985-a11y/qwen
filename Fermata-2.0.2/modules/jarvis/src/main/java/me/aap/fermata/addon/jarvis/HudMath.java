@@ -216,7 +216,8 @@ public final class HudMath {
 		float a = 0.16f * (float) Math.sin(rn * 6f - t * 1.1f) +
 				0.11f * (float) Math.sin(rn * 11f + t * 1.7f + 0.8f) +
 				0.08f * l * (float) Math.sin(rn * 17f - t * 4.3f);
-		return clamp(a * (0.7f + 0.8f * l), -TWIST_MAX, TWIST_MAX);
+		// Размах умеренный: сильный поворот слоёв растягивал мелкие детали в смаз
+		return clamp(a * (0.3f + 0.4f * l), -TWIST_MAX, TWIST_MAX);
 	}
 
 	/** Наклон оси сферы к зрителю: широты видны эллипсами. */

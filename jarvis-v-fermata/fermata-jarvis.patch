@@ -4231,10 +4231,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
-index 0000000..df6e17f
+index 0000000..380500e
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
-@@ -0,0 +1,428 @@
+@@ -0,0 +1,429 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.lang.Math.abs;
@@ -4453,7 +4453,8 @@ index 0000000..df6e17f
 +		float a = 0.16f * (float) Math.sin(rn * 6f - t * 1.1f) +
 +				0.11f * (float) Math.sin(rn * 11f + t * 1.7f + 0.8f) +
 +				0.08f * l * (float) Math.sin(rn * 17f - t * 4.3f);
-+		return clamp(a * (0.7f + 0.8f * l), -TWIST_MAX, TWIST_MAX);
++		// Размах умеренный: сильный поворот слоёв растягивал мелкие детали в смаз
++		return clamp(a * (0.3f + 0.4f * l), -TWIST_MAX, TWIST_MAX);
 +	}
 +
 +	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
@@ -5212,10 +5213,10 @@ index 0000000..10cb510
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
 new file mode 100644
-index 0000000..4b603a2
+index 0000000..fb2e3f9
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
-@@ -0,0 +1,479 @@
+@@ -0,0 +1,474 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static me.aap.fermata.addon.jarvis.HudMath.NODES;
@@ -5377,8 +5378,8 @@ index 0000000..4b603a2
 +
 +		c.drawColor(BACKDROP);
 +
-+		// Свечение ядра
-+		float coreR = HudMath.coreRadius(s, level, open) * 2.6f;
++		// Свечение ядра. Под сферой-картинкой — меньше: иначе центр засвечен и мутный
++		float coreR = HudMath.coreRadius(s, level, open) * ((sfera != null) ? 1.6f : 2.6f);
 +		plus.setShader(new RadialGradient(cx, cy, coreR,
 +				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 255, 228, 170),
 +						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
@@ -5636,15 +5637,10 @@ index 0000000..4b603a2
 +				mesh[k++] = cy + (x * s2 + y * c2) * sc;
 +			}
 +		}
-+		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
++		// Один слой: второй, увеличенный слой-свечение двоил картинку — сфера
++		// выглядела размытой (замечание 16.10.2026: «должно быть чётче»)
++		image.setAlpha(Math.round(255f * clamp(open * (0.85f + 0.15f * level), 0f, 1f)));
 +		c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
-+		if (level > 0.05f) {
-+			c.save();
-+			c.scale(1.05f, 1.05f, cx, cy);
-+			image.setAlpha(Math.round(255f * clamp(open * 0.4f * level, 0f, 1f)));
-+			c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
-+			c.restore();
-+		}
 +
 +		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
 +		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
@@ -10567,7 +10563,7 @@ index 0000000..8d95005
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
 new file mode 100644
-index 0000000..69a5e20
+index 0000000..41ab3a2
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
 @@ -0,0 +1,200 @@
@@ -10766,7 +10762,7 @@ index 0000000..69a5e20
 +		float spread = 0f;
 +		for (float rn = 0f; rn <= 1f; rn += 0.1f)
 +			spread = Math.max(spread, Math.abs(HudMath.twist(rn, 2f, 0.5f) - HudMath.twist(0f, 2f, 0.5f)));
-+		assertTrue(spread > 0.1f);
++		assertTrue(spread > 0.05f);
 +		// Разные участки края в один момент сдвинуты по-разному
 +		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
 +	}

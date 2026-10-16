@@ -159,8 +159,8 @@ public class JarvisHudView extends View {
 
 		c.drawColor(BACKDROP);
 
-		// Свечение ядра
-		float coreR = HudMath.coreRadius(s, level, open) * 2.6f;
+		// Свечение ядра. Под сферой-картинкой — меньше: иначе центр засвечен и мутный
+		float coreR = HudMath.coreRadius(s, level, open) * ((sfera != null) ? 1.6f : 2.6f);
 		plus.setShader(new RadialGradient(cx, cy, coreR,
 				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 255, 228, 170),
 						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
@@ -418,15 +418,10 @@ public class JarvisHudView extends View {
 				mesh[k++] = cy + (x * s2 + y * c2) * sc;
 			}
 		}
-		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
+		// Один слой: второй, увеличенный слой-свечение двоил картинку — сфера
+		// выглядела размытой (замечание 16.10.2026: «должно быть чётче»)
+		image.setAlpha(Math.round(255f * clamp(open * (0.85f + 0.15f * level), 0f, 1f)));
 		c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
-		if (level > 0.05f) {
-			c.save();
-			c.scale(1.05f, 1.05f, cx, cy);
-			image.setAlpha(Math.round(255f * clamp(open * 0.4f * level, 0f, 1f)));
-			c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
-			c.restore();
-		}
 
 		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
 		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
