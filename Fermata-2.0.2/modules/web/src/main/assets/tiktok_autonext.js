@@ -4,7 +4,13 @@
 // Проверено на tiktok.com 16.10.2026 (мобильная версия, Chromium).
 (function () {
   if (window.__jarvisTt) return;
-  var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0, key: null, keySince: 0 };
+  var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0, key: null, keySince: 0, userAt: 0 };
+  // Пока вы листаете сами, скрипт не вмешивается (замечание 16.10.2026:
+  // при ручном перелистывании лента подвисала)
+  var USER_QUIET_MS = 4000;
+  document.addEventListener('touchstart', function (e) {
+    if (e.isTrusted) S.userAt = Date.now();
+  }, { capture: true, passive: true });
   // Сколько стоять на публикации без видео (фото-слайд-шоу, трансляция,
   // реклама) и сверх длины видео, прежде чем листать принудительно.
   // Зависание на одной публикации — замечание 16.10.2026
@@ -33,8 +39,12 @@
     var c = document.querySelector(
       '[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="modal-close-inner-button"]');
     if (c && c.offsetParent !== null) { c.click(); return; }
-    var m = document.querySelector('[data-e2e="middle-cta-container"],[data-e2e="middle-cta-confirm-btn"]');
-    if (!m || m.offsetParent === null) return;
+    var m = document.querySelector('[data-e2e="middle-cta-container"]');
+    // Уже спрятанное окно повторно не разбирать: полный обход страницы каждые
+    // полсекунды тормозил ленту
+    if (!m || m.offsetParent === null || m.__jarvisHidden) return;
+    m.__jarvisHidden = true;
+    log('app promo hidden');
     // Выше ленты, меню и крупных контейнеров не подниматься: на широком экране
     // машины видео в ленте может ещё не быть, и без этих ограничений пряталась
     // вся страница — белый экран (замечание 16.10.2026)
@@ -88,8 +98,14 @@
   }
 
   setInterval(function () {
-    closePopups();
     var now = Date.now();
+    if (now - S.userAt < USER_QUIET_MS) {
+      // Вы листаете сами: таймер страховки — заново, своё перелистывание — нет
+      S.keySince = now;
+      S.lastSrc = null;
+      return;
+    }
+    closePopups();
     var key = slideKey();
     if (key !== S.key) { S.key = key; S.keySince = now; }
     var v = video();
