@@ -1,0 +1,6 @@
+id=fermata-sistemnaya
+name=Fermata Auto — системное приложение
+version=v1.0
+versionCode=1
+author=команда разработки
+description=Кладёт установленную Fermata Auto (me.aap.fermata.auto) в /system/app, чтобы Android Auto видел её как встроенную. Нужна перезагрузка. Выключить модуль — и всё как было.
