@@ -31,6 +31,7 @@ public class TikTokWebClient extends FermataWebClient {
 	@Override
 	public void onPageFinished(WebView view, String url) {
 		super.onPageFinished(view, url);
+		Log.i("TikTok: page finished ", url, ", view ", view.getWidth(), "x", view.getHeight());
 		if (!isTikTok(Uri.parse(url))) return;
 		String js = script(view.getContext());
 		if (js != null) view.evaluateJavascript(js, null);
@@ -44,6 +45,7 @@ public class TikTokWebClient extends FermataWebClient {
 		if (!request.isForMainFrame()) return;
 		String d = WebViewFeature.isFeatureSupported(
 				WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION) ? String.valueOf(error.getDescription()) : "";
+		Log.i("TikTok: main frame error ", d, " for ", request.getUrl());
 		Toast.makeText(view.getContext(), "TikTok не загрузился " + d, Toast.LENGTH_LONG).show();
 	}
 

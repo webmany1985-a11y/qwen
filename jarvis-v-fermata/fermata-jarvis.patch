@@ -104,10 +104,10 @@ index 4911c14..d03de6c 100644
          </intent>
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
 new file mode 100644
-index 0000000..f885fab
+index 0000000..de00d0d
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,216 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -203,7 +203,11 @@ index 0000000..f885fab
 +	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text,
 +														@Nullable Listener listener) {
 +		Context ctx = a.getContext();
-+		if (!isInstalled(ctx)) return false;
++		if (!isInstalled(ctx)) {
++			Log.i("JARVIS: not installed, phrase not sent: ", text);
++			return false;
++		}
++		Log.i("JARVIS: ask «", text, "»");
 +
 +		a.getAppActivity().checkPermissions(PERMISSION).onCompletion((r, err) -> {
 +			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
@@ -245,6 +249,7 @@ index 0000000..f885fab
 +				Log.e(ex, "JARVIS: bind refused");
 +			}
 +			if (!bound) {
++				Log.i("JARVIS: bindService returned false");
 +				finish("JARVIS недоступен");
 +				return;
 +			}
@@ -255,6 +260,7 @@ index 0000000..f885fab
 +		@Override
 +		public void onServiceConnected(ComponentName name, IBinder service) {
 +			if (done) return;
++			Log.i("JARVIS: service connected, sending phrase");
 +			Message m = Message.obtain(null, MSG_KOMANDA);
 +			Bundle b = new Bundle();
 +			b.putString(KEY_TEKST, text);
@@ -284,6 +290,7 @@ index 0000000..f885fab
 +		private void finish(String reply) {
 +			if (done) return;
 +			done = true;
++			Log.i("JARVIS: reply «", reply, "»");
 +			handler.removeCallbacks(timeout);
 +			if (bound) {
 +				bound = false;
@@ -307,6 +314,8 @@ index 0000000..f885fab
 +				}
 +				Cancellable interrupt = a.interruptPlayback();
 +				tts.speak(reply).onCompletion((r, serr) -> {
++					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
++					else Log.i("JARVIS: reply spoken");
 +					interrupt.cancel();
 +					tts.close();
 +					if (listener != null) listener.onDone();
@@ -317,10 +326,10 @@ index 0000000..f885fab
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
 new file mode 100644
-index 0000000..b6639ca
+index 0000000..58778ca
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,158 @@
 +package me.aap.fermata.jarvis;
 +
 +import android.content.Context;
@@ -406,6 +415,7 @@ index 0000000..b6639ca
 +			wide = w;
 +			bitmap = decode(w ? R.drawable.jarvis_wallpaper : R.drawable.jarvis_wallpaper_port,
 +					Math.max(b.width(), b.height()));
++			Log.i("JARVIS: wallpaper ", w ? "wide" : "port", " for ", b.width(), "x", b.height());
 +		}
 +		Bitmap bm = bitmap;
 +		if (bm == null) return;
@@ -476,6 +486,148 @@ index 0000000..b6639ca
 +	@Override
 +	public int getOpacity() {
 +		return PixelFormat.OPAQUE;
++	}
++}
+diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/LogReport.java b/fermata/src/main/java/me/aap/fermata/jarvis/LogReport.java
+new file mode 100644
+index 0000000..ac43e7f
+--- /dev/null
++++ b/fermata/src/main/java/me/aap/fermata/jarvis/LogReport.java
+@@ -0,0 +1,136 @@
++package me.aap.fermata.jarvis;
++
++import static java.nio.charset.StandardCharsets.UTF_8;
++
++import android.content.Context;
++import android.os.Build;
++
++import androidx.annotation.NonNull;
++
++import java.io.BufferedReader;
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.io.OutputStreamWriter;
++import java.io.Writer;
++import java.text.SimpleDateFormat;
++import java.util.Date;
++import java.util.Locale;
++import java.util.concurrent.TimeUnit;
++
++import me.aap.fermata.BuildConfig;
++import me.aap.fermata.FermataApplication;
++import me.aap.utils.log.Log;
++
++/**
++ * Журнал для разбора неполадок — один текстовый файл, который пользователь
++ * пересылает разработчику (настройки → «Другое» → «Отправить журнал»).
++ *
++ * <ol>
++ * <li>Сведения о телефоне и сборке.</li>
++ * <li>Журнал приложения (Fermata.log и предыдущий Fermata.log.old): шаги
++ * голоса во вкладке JARVIS, ответы JARVIS, загрузка TikTok, выбор фона.</li>
++ * <li>Системный журнал. На телефоне с root — весь, через su: в нём видно
++ * Android Auto и распознавание речи Google (Magisk один раз спросит
++ * разрешение). Без root — только записи самого приложения.</li>
++ * </ol>
++ */
++public final class LogReport {
++	/** Сколько последних строк системного журнала взять. */
++	private static final int LOGCAT_LINES = 15000;
++	/** Сколько ждать ответа su (пока пользователь разрешит root), с. */
++	private static final int SU_TIMEOUT = 25;
++
++	private LogReport() {
++	}
++
++	/** Собрать файл; вызывать не в главном потоке. */
++	@NonNull
++	public static File build(@NonNull Context ctx) throws IOException {
++		File log = FermataApplication.get().getLogFile();
++		File dir = log.getParentFile();
++		String stamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.ROOT).format(new Date());
++		File out = new File(dir, "jarvis-zhurnal-" + stamp + ".txt");
++		File[] old = (dir == null) ? null : dir.listFiles((d, n) -> n.startsWith("jarvis-zhurnal-"));
++		if (old != null) for (File f : old) //noinspection ResultOfMethodCallIgnored
++			f.delete();
++
++		try (Writer w = new OutputStreamWriter(new FileOutputStream(out), UTF_8)) {
++			w.write("=== Журнал JARVIS Auto " + stamp + "\n");
++			w.write("Сборка: " + ctx.getPackageName() + " " + BuildConfig.VERSION_NAME + " (" +
++					BuildConfig.VERSION_CODE + ")\n");
++			w.write("Телефон: " + Build.MANUFACTURER + " " + Build.MODEL + ", Android " +
++					Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")\n\n");
++
++			w.write("=== Журнал приложения (предыдущий)\n");
++			copy(new File(log.getAbsolutePath() + ".old"), w);
++			w.write("\n=== Журнал приложения\n");
++			copy(log, w);
++
++			String all = logcat(new String[]{"su", "-c", "logcat -d -v threadtime -t " + LOGCAT_LINES},
++					SU_TIMEOUT);
++			if (all != null) {
++				w.write("\n=== Системный журнал (весь, root)\n");
++				w.write(all);
++			} else {
++				w.write("\n=== Системный журнал (только приложение: root не дан)\n");
++				String own = logcat(new String[]{"logcat", "-d", "-v", "threadtime", "-t",
++						String.valueOf(LOGCAT_LINES)}, 15);
++				w.write((own != null) ? own : "(не удалось прочитать)\n");
++			}
++		}
++		Log.i("Log report saved: ", out, ", ", out.length(), " bytes");
++		return out;
++	}
++
++	private static void copy(File f, Writer w) throws IOException {
++		if (!f.isFile()) {
++			w.write("(нет)\n");
++			return;
++		}
++		try (InputStream in = new FileInputStream(f)) {
++			BufferedReader r = new BufferedReader(new InputStreamReader(in, UTF_8));
++			char[] buf = new char[8192];
++			for (int n; (n = r.read(buf)) > 0; ) w.write(buf, 0, n);
++		}
++	}
++
++	/** Вывод команды или null, если она не отработала за timeout секунд или вернула ошибку. */
++	private static String logcat(String[] cmd, int timeout) {
++		Process p = null;
++		try {
++			p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
++			p.getOutputStream().close();
++			Process proc = p;
++			StringBuilder sb = new StringBuilder();
++			Thread reader = new Thread(() -> {
++				try (BufferedReader r = new BufferedReader(
++						new InputStreamReader(proc.getInputStream(), UTF_8))) {
++					for (String l; (l = r.readLine()) != null; ) sb.append(l).append('\n');
++				} catch (IOException ignore) {
++				}
++			});
++			reader.start();
++			if (!p.waitFor(timeout, TimeUnit.SECONDS)) {
++				Log.i("Log report: command timed out: ", cmd[0]);
++				return null;
++			}
++			reader.join(5000);
++			if ((p.exitValue() != 0) || (sb.length() < 100)) {
++				Log.i("Log report: command failed: ", cmd[0], ", exit ", p.exitValue());
++				return null;
++			}
++			synchronized (sb) {
++				return sb.toString();
++			}
++		} catch (Exception ex) {
++			Log.i("Log report: command not available: ", cmd[0], " ", ex);
++			return null;
++		} finally {
++			if (p != null) p.destroy();
++		}
 +	}
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
@@ -573,7 +725,7 @@ index 2998873..bf82e3f 100644
  	Pref<BooleanSupplier> FULLSCREEN_AA = AUTO ? Pref.b("FULLSCREEN_AA", false) : null;
  	Pref<BooleanSupplier> SHOW_PG_UP_DOWN_AA = AUTO ? Pref.b("SHOW_PG_UP_DOWN_AA", true) : null;
 diff --git a/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java b/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
-index 7364cb3..591bf20 100644
+index 7364cb3..0f3015d 100644
 --- a/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
 +++ b/fermata/src/main/java/me/aap/fermata/ui/fragment/SettingsFragment.java
 @@ -693,7 +693,7 @@ public class SettingsFragment extends MainActivityFragment
@@ -585,6 +737,37 @@ index 7364cb3..591bf20 100644
  		});
  		ps.addBooleanPref(o -> {
  			o.store = a.getPrefs();
+@@ -942,11 +942,29 @@ public class SettingsFragment extends MainActivityFragment
+ 		});
+ 	}
+ 
++	/** Собрать журнал для разбора ({@link me.aap.fermata.jarvis.LogReport}) и отправить. */
+ 	private void openLog(MainActivityDelegate a) {
++		var app = FermataApplication.get();
++		android.widget.Toast.makeText(a.getContext(), R.string.log_report_collecting,
++				android.widget.Toast.LENGTH_LONG).show();
++		app.execute(() -> {
++			return me.aap.fermata.jarvis.LogReport.build(app);
++		}).onCompletion((f, err) ->
++				app.getHandler().post(() -> {
++					if (err != null) {
++						Log.e(err, "Failed to build log report");
++						showAlert(a.getContext(), String.valueOf(err.getLocalizedMessage()));
++					} else {
++						shareLog(a, f);
++					}
++				}));
++	}
++
++	private void shareLog(MainActivityDelegate a, File f) {
+ 		try {
+ 			var i = new Intent(Intent.ACTION_SEND);
+ 			var app = FermataApplication.get();
+-			var f = app.getLogFile();
++			i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+ 			Uri u = (SDK_INT >= Build.VERSION_CODES.N) ?
+ 					FileProvider.getUriForFile(app, app.getPackageName() + ".FileProvider", f) :
+ 					Uri.fromFile(f);
 diff --git a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml b/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
 index 3f4c913..7d68890 100644
 --- a/fermata/src/main/res/drawable-anydpi-v26/launcher.xml
@@ -3745,11 +3928,16 @@ index 0000000..b743042
 +      android:pathData="M14,3h2.6c0.3,2 1.6,3.5 3.9,3.8v2.7c-1.5,0 -2.9,-0.4 -3.9,-1.1v6.6c0,3.1 -2.5,5.5 -5.6,5.5S5.5,18 5.5,14.9s2.5,-5.5 5.6,-5.5c0.3,0 0.6,0 0.9,0.1v2.8c-0.3,-0.1 -0.6,-0.2 -0.9,-0.2c-1.5,0 -2.8,1.2 -2.8,2.8s1.2,2.8 2.8,2.8s2.8,-1.2 2.8,-2.8V3z"/>
 +</vector>
 diff --git a/fermata/src/main/res/values-ru/strings.xml b/fermata/src/main/res/values-ru/strings.xml
-index 97bd633..5892f47 100644
+index 97bd633..2f76dd0 100644
 --- a/fermata/src/main/res/values-ru/strings.xml
 +++ b/fermata/src/main/res/values-ru/strings.xml
-@@ -358,11 +358,14 @@
-     <string name="open_log">Открыть лог файл</string>
+@@ -355,14 +355,18 @@
+     <string name="import_prefs_ok">Настройки успешно импортированы.\nПожалуйста, перезапустите приложение.</string>
+     <string name="import_prefs_failed">Не удалось импортировать настройки: %1$s</string>
+     <string name="prefs_not_found">Настройки не найдены</string>
+-    <string name="open_log">Открыть лог файл</string>
++    <string name="open_log">Отправить журнал для разбора</string>
++    <string name="log_report_collecting">Собираю журнал… Если Magisk спросит root — разрешите</string>
      <string name="unlock_phone_and_grant">Разблокируйте телефон и предоставьте запрошенные разрешения.</string>
      <string name="screen_capture_rejected">Запрос на трянсляцию экрана отклонен.</string>
 -    <string name="accessibility_dsc">Эта служба используется Fermata Mirror для взаимодействия с экраном телефона.</string>
@@ -3783,7 +3971,7 @@ index 346317f..ed8337f 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..f28d2ba 100644
+index 77a9b17..95f06e6 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
 @@ -1,15 +1,15 @@
@@ -3819,8 +4007,13 @@ index 77a9b17..f28d2ba 100644
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
-@@ -367,11 +370,13 @@
-     <string name="open_log">Open log file</string>
+@@ -364,14 +367,17 @@
+     <string name="import_prefs_ok">Preferences have been successfully imported.\nPlease, restart the application.</string>
+     <string name="import_prefs_failed">Failed to import preferences: %1$s</string>
+     <string name="prefs_not_found">No preferences found</string>
+-    <string name="open_log">Open log file</string>
++    <string name="open_log">Send diagnostic log</string>
++    <string name="log_report_collecting">Collecting the log…</string>
      <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
      <string name="screen_capture_rejected">Screen capture request rejected.</string>
 -    <string name="accessibility_dsc">The accessibility service is used by Fermata Mirror to simulate touch screen events.</string>
@@ -4422,10 +4615,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..fcfaa6c
+index 0000000..38ebd0b
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,442 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -4584,6 +4777,7 @@ index 0000000..fcfaa6c
 +			return;
 +		}
 +		busy = true;
++		Log.i("JARVIS tab: listen, car=", a.isCarActivityNotMirror());
 +		setPhase(HudMath.Phase.APPEAR);
 +		FutureSupplier<int[]> perm = a.isCarActivityNotMirror() ?
 +				completed(new int[]{PERMISSION_GRANTED}) :
@@ -4618,7 +4812,7 @@ index 0000000..fcfaa6c
 +		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
 +		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
 +			if (err != null) {
-+				Log.e(err, "JARVIS tab: TTS failed");
++				Log.e(err, "JARVIS tab: TTS «Слушаю» init failed, lang=", locale);
 +				then.run();
 +				return;
 +			}
@@ -4627,8 +4821,10 @@ index 0000000..fcfaa6c
 +				return;
 +			}
 +			greeting = tts;
++			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
 +			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
 +				if (greeting != tts) return; // запись уже отменена
++				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
 +				greeting = null;
 +				tts.close();
 +				then.run();
@@ -4644,6 +4840,8 @@ index 0000000..fcfaa6c
 +
 +	private void createRecognizer(MainActivityDelegate a) {
 +		heard = false;
++		Log.i("JARVIS tab: recognizer start, segment=", (phrase == null) ? 1 : 1 + CONTINUATIONS - continuations,
++				", retries=", retries, ", lang=", a.getPrefs().getVoiceControlLang(a));
 +		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
 +		sr.setRecognitionListener(this);
 +		recognizer = sr;
@@ -4677,6 +4875,7 @@ index 0000000..fcfaa6c
 +
 +	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 +	private void done() {
++		Log.i("JARVIS tab: done");
 +		Cancellable i = interrupt;
 +		interrupt = Cancellable.CANCELED;
 +		i.cancel();
@@ -4688,12 +4887,14 @@ index 0000000..fcfaa6c
 +
 +	@Override
 +	public void onReadyForSpeech(Bundle params) {
++		Log.i("JARVIS tab: ready for speech");
 +		setPhase(HudMath.Phase.LISTEN);
 +		if (phrase != null) main.postDelayed(endIfSilent, CONTINUE_WAIT_MS);
 +	}
 +
 +	@Override
 +	public void onBeginningOfSpeech() {
++		Log.i("JARVIS tab: speech began");
 +		heard = true;
 +		main.removeCallbacks(endIfSilent);
 +	}
@@ -4709,10 +4910,13 @@ index 0000000..fcfaa6c
 +
 +	@Override
 +	public void onEndOfSpeech() {
++		Log.i("JARVIS tab: speech ended");
 +	}
 +
 +	@Override
 +	public void onError(int error) {
++		Log.i("JARVIS tab: recognizer error ", errorName(error), ", heard=", heard,
++				", phrase=", phrase);
 +		if (recognizer == null) return;
 +		destroyRecognizer();
 +		if (phrase != null) {
@@ -4742,6 +4946,7 @@ index 0000000..fcfaa6c
 +		List<String> q = (results == null) ? null :
 +				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
 +		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
++		Log.i("JARVIS tab: recognized ", q);
 +		if (phrase == null) {
 +			if (empty) {
 +				toast(R.string.jarvis_not_heard);
@@ -4771,9 +4976,11 @@ index 0000000..fcfaa6c
 +		firstAlternatives = null;
 +		if ((p == null) || !busy) return;
 +		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
++		Log.i("JARVIS tab: phrase «", q.get(0), "»");
 +
 +		MainActivityDelegate a = getActivityDelegate();
 +		if (a.handleVoiceCommand(q)) {
++			Log.i("JARVIS tab: done by Fermata command");
 +			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 +			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 +			done();
@@ -4789,6 +4996,21 @@ index 0000000..fcfaa6c
 +
 +	@Override
 +	public void onEvent(int eventType, Bundle params) {
++	}
++
++	private static String errorName(int e) {
++		return switch (e) {
++			case SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT";
++			case SpeechRecognizer.ERROR_NETWORK -> "NETWORK";
++			case SpeechRecognizer.ERROR_AUDIO -> "AUDIO";
++			case SpeechRecognizer.ERROR_SERVER -> "SERVER";
++			case SpeechRecognizer.ERROR_CLIENT -> "CLIENT";
++			case SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT";
++			case SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH";
++			case SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RECOGNIZER_BUSY";
++			case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "INSUFFICIENT_PERMISSIONS";
++			default -> String.valueOf(e);
++		};
 +	}
 +
 +	@Override
@@ -10636,10 +10858,10 @@ index 0000000..69bbc76
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
 new file mode 100644
-index 0000000..0ae9d0e
+index 0000000..ef01d1b
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,79 @@
 +package me.aap.fermata.addon.web;
 +
 +import static me.aap.fermata.util.Utils.dynCtx;
@@ -10673,6 +10895,7 @@ index 0000000..0ae9d0e
 +	@Override
 +	public void onPageFinished(WebView view, String url) {
 +		super.onPageFinished(view, url);
++		Log.i("TikTok: page finished ", url, ", view ", view.getWidth(), "x", view.getHeight());
 +		if (!isTikTok(Uri.parse(url))) return;
 +		String js = script(view.getContext());
 +		if (js != null) view.evaluateJavascript(js, null);
@@ -10686,6 +10909,7 @@ index 0000000..0ae9d0e
 +		if (!request.isForMainFrame()) return;
 +		String d = WebViewFeature.isFeatureSupported(
 +				WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION) ? String.valueOf(error.getDescription()) : "";
++		Log.i("TikTok: main frame error ", d, " for ", request.getUrl());
 +		Toast.makeText(view.getContext(), "TikTok не загрузился " + d, Toast.LENGTH_LONG).show();
 +	}
 +

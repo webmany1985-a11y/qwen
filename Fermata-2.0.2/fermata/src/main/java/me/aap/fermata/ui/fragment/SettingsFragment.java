@@ -942,11 +942,29 @@ public class SettingsFragment extends MainActivityFragment
 		});
 	}
 
+	/** Собрать журнал для разбора ({@link me.aap.fermata.jarvis.LogReport}) и отправить. */
 	private void openLog(MainActivityDelegate a) {
+		var app = FermataApplication.get();
+		android.widget.Toast.makeText(a.getContext(), R.string.log_report_collecting,
+				android.widget.Toast.LENGTH_LONG).show();
+		app.execute(() -> {
+			return me.aap.fermata.jarvis.LogReport.build(app);
+		}).onCompletion((f, err) ->
+				app.getHandler().post(() -> {
+					if (err != null) {
+						Log.e(err, "Failed to build log report");
+						showAlert(a.getContext(), String.valueOf(err.getLocalizedMessage()));
+					} else {
+						shareLog(a, f);
+					}
+				}));
+	}
+
+	private void shareLog(MainActivityDelegate a, File f) {
 		try {
 			var i = new Intent(Intent.ACTION_SEND);
 			var app = FermataApplication.get();
-			var f = app.getLogFile();
+			i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 			Uri u = (SDK_INT >= Build.VERSION_CODES.N) ?
 					FileProvider.getUriForFile(app, app.getPackageName() + ".FileProvider", f) :
 					Uri.fromFile(f);

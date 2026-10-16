@@ -156,6 +156,7 @@ public class JarvisFragment extends MainActivityFragment
 			return;
 		}
 		busy = true;
+		Log.i("JARVIS tab: listen, car=", a.isCarActivityNotMirror());
 		setPhase(HudMath.Phase.APPEAR);
 		FutureSupplier<int[]> perm = a.isCarActivityNotMirror() ?
 				completed(new int[]{PERMISSION_GRANTED}) :
@@ -190,7 +191,7 @@ public class JarvisFragment extends MainActivityFragment
 		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
 		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
 			if (err != null) {
-				Log.e(err, "JARVIS tab: TTS failed");
+				Log.e(err, "JARVIS tab: TTS «Слушаю» init failed, lang=", locale);
 				then.run();
 				return;
 			}
@@ -199,8 +200,10 @@ public class JarvisFragment extends MainActivityFragment
 				return;
 			}
 			greeting = tts;
+			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
 			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
 				if (greeting != tts) return; // запись уже отменена
+				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
 				greeting = null;
 				tts.close();
 				then.run();
@@ -216,6 +219,8 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void createRecognizer(MainActivityDelegate a) {
 		heard = false;
+		Log.i("JARVIS tab: recognizer start, segment=", (phrase == null) ? 1 : 1 + CONTINUATIONS - continuations,
+				", retries=", retries, ", lang=", a.getPrefs().getVoiceControlLang(a));
 		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
 		sr.setRecognitionListener(this);
 		recognizer = sr;
@@ -249,6 +254,7 @@ public class JarvisFragment extends MainActivityFragment
 
 	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 	private void done() {
+		Log.i("JARVIS tab: done");
 		Cancellable i = interrupt;
 		interrupt = Cancellable.CANCELED;
 		i.cancel();
@@ -260,12 +266,14 @@ public class JarvisFragment extends MainActivityFragment
 
 	@Override
 	public void onReadyForSpeech(Bundle params) {
+		Log.i("JARVIS tab: ready for speech");
 		setPhase(HudMath.Phase.LISTEN);
 		if (phrase != null) main.postDelayed(endIfSilent, CONTINUE_WAIT_MS);
 	}
 
 	@Override
 	public void onBeginningOfSpeech() {
+		Log.i("JARVIS tab: speech began");
 		heard = true;
 		main.removeCallbacks(endIfSilent);
 	}
@@ -281,10 +289,13 @@ public class JarvisFragment extends MainActivityFragment
 
 	@Override
 	public void onEndOfSpeech() {
+		Log.i("JARVIS tab: speech ended");
 	}
 
 	@Override
 	public void onError(int error) {
+		Log.i("JARVIS tab: recognizer error ", errorName(error), ", heard=", heard,
+				", phrase=", phrase);
 		if (recognizer == null) return;
 		destroyRecognizer();
 		if (phrase != null) {
@@ -314,6 +325,7 @@ public class JarvisFragment extends MainActivityFragment
 		List<String> q = (results == null) ? null :
 				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
 		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
+		Log.i("JARVIS tab: recognized ", q);
 		if (phrase == null) {
 			if (empty) {
 				toast(R.string.jarvis_not_heard);
@@ -343,9 +355,11 @@ public class JarvisFragment extends MainActivityFragment
 		firstAlternatives = null;
 		if ((p == null) || !busy) return;
 		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
+		Log.i("JARVIS tab: phrase «", q.get(0), "»");
 
 		MainActivityDelegate a = getActivityDelegate();
 		if (a.handleVoiceCommand(q)) {
+			Log.i("JARVIS tab: done by Fermata command");
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
@@ -361,6 +375,21 @@ public class JarvisFragment extends MainActivityFragment
 
 	@Override
 	public void onEvent(int eventType, Bundle params) {
+	}
+
+	private static String errorName(int e) {
+		return switch (e) {
+			case SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT";
+			case SpeechRecognizer.ERROR_NETWORK -> "NETWORK";
+			case SpeechRecognizer.ERROR_AUDIO -> "AUDIO";
+			case SpeechRecognizer.ERROR_SERVER -> "SERVER";
+			case SpeechRecognizer.ERROR_CLIENT -> "CLIENT";
+			case SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "SPEECH_TIMEOUT";
+			case SpeechRecognizer.ERROR_NO_MATCH -> "NO_MATCH";
+			case SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RECOGNIZER_BUSY";
+			case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "INSUFFICIENT_PERMISSIONS";
+			default -> String.valueOf(e);
+		};
 	}
 
 	@Override

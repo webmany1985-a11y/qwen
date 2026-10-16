@@ -83,6 +83,7 @@ public final class JarvisWallpaper extends Drawable {
 			wide = w;
 			bitmap = decode(w ? R.drawable.jarvis_wallpaper : R.drawable.jarvis_wallpaper_port,
 					Math.max(b.width(), b.height()));
+			Log.i("JARVIS: wallpaper ", w ? "wide" : "port", " for ", b.width(), "x", b.height());
 		}
 		Bitmap bm = bitmap;
 		if (bm == null) return;

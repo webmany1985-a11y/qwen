@@ -93,7 +93,11 @@ public final class JarvisBridge {
 	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text,
 														@Nullable Listener listener) {
 		Context ctx = a.getContext();
-		if (!isInstalled(ctx)) return false;
+		if (!isInstalled(ctx)) {
+			Log.i("JARVIS: not installed, phrase not sent: ", text);
+			return false;
+		}
+		Log.i("JARVIS: ask «", text, "»");
 
 		a.getAppActivity().checkPermissions(PERMISSION).onCompletion((r, err) -> {
 			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
@@ -135,6 +139,7 @@ public final class JarvisBridge {
 				Log.e(ex, "JARVIS: bind refused");
 			}
 			if (!bound) {
+				Log.i("JARVIS: bindService returned false");
 				finish("JARVIS недоступен");
 				return;
 			}
@@ -145,6 +150,7 @@ public final class JarvisBridge {
 		@Override
 		public void onServiceConnected(ComponentName name, IBinder service) {
 			if (done) return;
+			Log.i("JARVIS: service connected, sending phrase");
 			Message m = Message.obtain(null, MSG_KOMANDA);
 			Bundle b = new Bundle();
 			b.putString(KEY_TEKST, text);
@@ -174,6 +180,7 @@ public final class JarvisBridge {
 		private void finish(String reply) {
 			if (done) return;
 			done = true;
+			Log.i("JARVIS: reply «", reply, "»");
 			handler.removeCallbacks(timeout);
 			if (bound) {
 				bound = false;
@@ -197,6 +204,8 @@ public final class JarvisBridge {
 				}
 				Cancellable interrupt = a.interruptPlayback();
 				tts.speak(reply).onCompletion((r, serr) -> {
+					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
+					else Log.i("JARVIS: reply spoken");
 					interrupt.cancel();
 					tts.close();
 					if (listener != null) listener.onDone();

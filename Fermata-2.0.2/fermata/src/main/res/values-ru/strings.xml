@@ -355,7 +355,8 @@
     <string name="import_prefs_ok">Настройки успешно импортированы.\nПожалуйста, перезапустите приложение.</string>
     <string name="import_prefs_failed">Не удалось импортировать настройки: %1$s</string>
     <string name="prefs_not_found">Настройки не найдены</string>
-    <string name="open_log">Открыть лог файл</string>
+    <string name="open_log">Отправить журнал для разбора</string>
+    <string name="log_report_collecting">Собираю журнал… Если Magisk спросит root — разрешите</string>
     <string name="unlock_phone_and_grant">Разблокируйте телефон и предоставьте запрошенные разрешения.</string>
     <string name="screen_capture_rejected">Запрос на трянсляцию экрана отклонен.</string>
     <string name="accessibility_dsc">Эта служба используется JARVIS Экран (Fermata Mirror) для взаимодействия с экраном телефона.</string>
