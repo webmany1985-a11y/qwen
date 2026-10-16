@@ -1,3 +1,36 @@
+diff --git a/depends/utils/src/main/java/me/aap/utils/voice/TextToSpeech.java b/depends/utils/src/main/java/me/aap/utils/voice/TextToSpeech.java
+index f81db3c..5d315ea 100644
+--- a/depends/utils/src/main/java/me/aap/utils/voice/TextToSpeech.java
++++ b/depends/utils/src/main/java/me/aap/utils/voice/TextToSpeech.java
+@@ -78,6 +78,28 @@ public class TextToSpeech implements Closeable {
+ 	}
+ 
+ 
++	public void setSpeechRate(float rate) {
++		if (tts != null) tts.setSpeechRate(rate);
++	}
++
++	public void setPitch(float pitch) {
++		if (tts != null) tts.setPitch(pitch);
++	}
++
++	/** Голос движка по имени; false — такого голоса у движка нет. */
++	public boolean setVoice(String name) {
++		if ((tts == null) || (name == null)) return false;
++		try {
++			var voices = tts.getVoices();
++			if (voices == null) return false;
++			for (var v : voices) {
++				if (name.equals(v.getName())) return tts.setVoice(v) == SUCCESS;
++			}
++		} catch (Exception ignore) {
++		}
++		return false;
++	}
++
+ 	public Set<Locale> getAvailableLanguages() {
+ 		return (tts == null) ? Collections.emptySet() : tts.getAvailableLanguages();
+ 	}
 diff --git a/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java b/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java
 index d015253..9c3c328 100644
 --- a/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java
@@ -164,10 +197,10 @@ index 4911c14..d03de6c 100644
          </intent>
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
 new file mode 100644
-index 0000000..03b8106
+index 0000000..8a4ddb4
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,233 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -388,6 +421,7 @@ index 0000000..03b8106
 +					if (listener != null) listener.onDone();
 +					return;
 +				}
++				JarvisVoice.apply(tts);
 +				Cancellable interrupt = a.interruptPlayback();
 +				tts.speak(reply).onCompletion((r, serr) -> {
 +					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
@@ -397,6 +431,147 @@ index 0000000..03b8106
 +					if (listener != null) listener.onDone();
 +				});
 +			});
++		}
++	}
++}
+diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
+new file mode 100644
+index 0000000..030c53f
+--- /dev/null
++++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
+@@ -0,0 +1,135 @@
++package me.aap.fermata.jarvis;
++
++import static java.nio.charset.StandardCharsets.UTF_8;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++import androidx.annotation.VisibleForTesting;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.util.concurrent.TimeUnit;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++import me.aap.fermata.FermataApplication;
++import me.aap.utils.log.Log;
++import me.aap.utils.voice.TextToSpeech;
++
++/**
++ * Голос JARVIS для речи во вкладке JARVIS: тот голос, скорость и высота,
++ * что выбраны в настройках самого JARVIS (замечание 16.10.2026: «голос
++ * отличается от того, который я установил у оригинального Джарвиса»).
++ *
++ * Настройки JARVIS лежат в его закрытом файле
++ * /data/data/com.jarvis.assistant/shared_prefs/jarvis.xml (ключи speech_rate,
++ * speech_pitch, voice_id — core/Prefs.kt JARVIS). Другому приложению Android
++ * этот файл не отдаёт, поэтому он читается через root (телефон с Magisk).
++ * Из файла берутся только эти три значения; в журнал сам файл не пишется.
++ * Без root — значения JARVIS по умолчанию: скорость 0.95, высота 0.9.
++ */
++public final class JarvisVoice {
++	private static final String PREFS = "/data/data/com.jarvis.assistant/shared_prefs/jarvis.xml";
++	/** Как часто перечитывать настройки JARVIS, мс: голос могли сменить. */
++	private static final long TTL_MS = 60_000L;
++	static final float DEFAULT_RATE = 0.95f;
++	static final float DEFAULT_PITCH = 0.9f;
++
++	private static volatile Settings cached = new Settings(DEFAULT_RATE, DEFAULT_PITCH, null);
++	private static volatile long loadedAt;
++	private static volatile boolean loading;
++
++	private JarvisVoice() {
++	}
++
++	/** Перечитать настройки JARVIS в фоне, если давно не читали. */
++	public static void refresh() {
++		if (loading || (System.currentTimeMillis() - loadedAt < TTL_MS)) return;
++		loading = true;
++		FermataApplication.get().execute(() -> {
++			try {
++				String xml = readPrefs();
++				if (xml != null) {
++					cached = parse(xml);
++					Log.i("JARVIS voice: rate=", cached.rate, " pitch=", cached.pitch, " voice=",
++							cached.voice);
++				}
++			} finally {
++				loadedAt = System.currentTimeMillis();
++				loading = false;
++			}
++		});
++	}
++
++	/** Настроить синтезатор как в JARVIS. Вызывать после установки языка. */
++	public static void apply(@NonNull TextToSpeech tts) {
++		Settings s = cached;
++		tts.setSpeechRate(s.rate);
++		tts.setPitch(s.pitch);
++		if ((s.voice != null) && !tts.setVoice(s.voice)) {
++			Log.i("JARVIS voice: voice ", s.voice, " not found in TTS engine");
++		}
++		refresh();
++	}
++
++	@Nullable
++	private static String readPrefs() {
++		Process p = null;
++		try {
++			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
++			p = new ProcessBuilder("su", "-c",
++					"abx2xml " + PREFS + " - 2>/dev/null || cat " + PREFS).start();
++			p.getOutputStream().close();
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			try (InputStream in = p.getInputStream()) {
++				byte[] buf = new byte[8192];
++				for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++			}
++			if (!p.waitFor(15, TimeUnit.SECONDS) || (p.exitValue() != 0)) {
++				Log.i("JARVIS voice: cannot read JARVIS settings (no root?)");
++				return null;
++			}
++			return out.toString(UTF_8.name());
++		} catch (Exception ex) {
++			Log.i("JARVIS voice: cannot read JARVIS settings: ", ex);
++			return null;
++		} finally {
++			if (p != null) p.destroy();
++		}
++	}
++
++	@VisibleForTesting
++	static Settings parse(String xml) {
++		float rate = floatPref(xml, "speech_rate", DEFAULT_RATE);
++		float pitch = floatPref(xml, "speech_pitch", DEFAULT_PITCH);
++		Matcher m = Pattern.compile("<string name=\"voice_id\">([^<]*)</string>").matcher(xml);
++		String voice = m.find() ? m.group(1).trim() : null;
++		if ((voice != null) && voice.isEmpty()) voice = null;
++		return new Settings(rate, pitch, voice);
++	}
++
++	private static float floatPref(String xml, String name, float def) {
++		Matcher m = Pattern.compile("<float name=\"" + name + "\" value=\"([0-9.]+)\"").matcher(xml);
++		if (!m.find()) return def;
++		try {
++			float v = Float.parseFloat(m.group(1));
++			return ((v >= 0.5f) && (v <= 2f)) ? v : def;
++		} catch (NumberFormatException ex) {
++			return def;
++		}
++	}
++
++	@VisibleForTesting
++	static final class Settings {
++		final float rate;
++		final float pitch;
++		@Nullable
++		final String voice;
++
++		Settings(float rate, float pitch, @Nullable String voice) {
++			this.rate = rate;
++			this.pitch = pitch;
++			this.voice = voice;
 +		}
 +	}
 +}
@@ -4156,6 +4331,195 @@ index 0000000..da37b6f
 +    </style>
 +
 +</resources>
+diff --git a/fermata/src/test/java/me/aap/fermata/media/sub/SubtitlesTest.java b/fermata/src/test/java/me/aap/fermata/media/sub/SubtitlesTest.java
+deleted file mode 100644
+index b0e10c9..0000000
+--- a/fermata/src/test/java/me/aap/fermata/media/sub/SubtitlesTest.java
++++ /dev/null
+@@ -1,183 +0,0 @@
+-package me.aap.fermata.media.sub;
+-
+-import androidx.annotation.NonNull;
+-
+-import org.junit.Assert;
+-import org.junit.Test;
+-
+-import java.io.ByteArrayInputStream;
+-import java.io.IOException;
+-import java.util.ArrayList;
+-import java.util.List;
+-import java.util.Random;
+-import java.util.concurrent.Executors;
+-import java.util.concurrent.ScheduledExecutorService;
+-import java.util.concurrent.Semaphore;
+-import java.util.concurrent.TimeUnit;
+-
+-import me.aap.utils.concurrent.HandlerExecutor;
+-import me.aap.utils.function.BiConsumer;
+-import me.aap.utils.function.Cancellable;
+-import me.aap.utils.function.IntConsumer;
+-
+-/**
+- * @author Andrey Pavlenko
+- */
+-public class SubtitlesTest extends Assert {
+-
+-	@Test
+-	public void testGetNext() {
+-		int n = 1000;
+-		var rnd = new Random();
+-		Subtitles s = new Subtitles(b -> {});
+-		assertNull(s.getNext(1));
+-
+-		s = new Subtitles(b -> {
+-			for (int i = 0; i < n; i++) {
+-				b.add("Text " + i, rnd.nextInt(100000), rnd.nextInt(100) + 1);
+-			}
+-		});
+-
+-		for (int i = 0, c = s.size(); i < c; i++) {
+-			assertEquals(i, s.get(i).getIndex());
+-		}
+-		for (var t : s) {
+-			assertSame(t, s.getNext(t.getTime()));
+-		}
+-		s.get(s.size() / 2);
+-		for (int i = s.size() - 1; i >= 0; i--) {
+-			Subtitles.Text t = s.get(i);
+-			assertSame(t, s.getNext(t.getTime()));
+-		}
+-	}
+-
+-	@Test
+-	public void testSrtSubtitles() throws IOException {
+-		// @formatter:off
+-		var text =
+-"""
+-WEBVTT
+-Kind: captions
+-Language: en
+-
+-1
+-00:00:00.900 --> 00:00:01.100
+-{\\an7}TOP_LEFT
+-
+-2
+-00:01:01,000 --> 00:01:03,000
+-{\\an5}MIDDLE_CENTER
+-
+-3
+-09:59:59,999 --> 10:59:59.999
+-{\\an2}BOTTOM_CENTER
+-
+-4
+-11:00:00.000 --> 11:00:00,001
+-BOTTOM_CENTER
+-
+-5
+-12:00:00,000 --> 12:00:00,001
+-BOTTOM_CENTER
+-Multi line
+-""";
+-		// @formatter:on
+-
+-		var sg = FileSubtitles.load(new ByteArrayInputStream(text.getBytes()));
+-		var s = sg.get(SubGrid.Position.TOP_LEFT).get(0);
+-		assertEquals(900, s.getTime());
+-		assertEquals(200, s.getDuration());
+-		assertEquals("TOP_LEFT", s.getText());
+-		s = sg.get(SubGrid.Position.MIDDLE_CENTER).get(0);
+-		assertEquals(61000, s.getTime());
+-		assertEquals(2000, s.getDuration());
+-		assertEquals("MIDDLE_CENTER", s.getText());
+-		s = sg.get(SubGrid.Position.BOTTOM_CENTER).get(0);
+-		assertEquals(9 * 60 * 60000 + 59 * 60000 + 59000 + 999, s.getTime());
+-		assertEquals(3600000, s.getDuration());
+-		assertEquals("BOTTOM_CENTER", s.getText());
+-		s = sg.get(SubGrid.Position.BOTTOM_CENTER).get(1);
+-		assertEquals(11 * 60 * 60000, s.getTime());
+-		assertEquals(1, s.getDuration());
+-		assertEquals("BOTTOM_CENTER", s.getText());
+-		s = sg.get(SubGrid.Position.BOTTOM_CENTER).get(2);
+-		assertEquals(12 * 60 * 60000, s.getTime());
+-		assertEquals(1, s.getDuration());
+-		assertEquals("BOTTOM_CENTER\nMulti line", s.getText());
+-	}
+-
+-	@Test
+-	public void testScheduler() throws Exception {
+-		StringBuilder sb = new StringBuilder();
+-		IntConsumer itos = i -> {
+-			if (i < 10) {
+-				sb.append("00").append(i);
+-			} else if (i < 100) {
+-				sb.append("0").append(i);
+-			} else {
+-				sb.append(i);
+-			}
+-		};
+-
+-		int n = 49;
+-		int dur = 10;
+-		List<String> expect = new ArrayList<>(2 * n);
+-		List<String> received = new ArrayList<>(2 * n);
+-
+-		for (int i = 1, d = dur; i <= n; i++, d += dur) {
+-			var s = String.valueOf(i);
+-			expect.add(s);
+-			sb.append(s).append('\n');
+-			sb.append("00:00:00,");
+-			itos.accept(d);
+-			d += dur;
+-			sb.append(" --> 00:00:00,");
+-			itos.accept(d);
+-			sb.append('\n').append(s).append("\n\n");
+-		}
+-
+-		var sg = FileSubtitles.load(new ByteArrayInputStream(sb.toString().getBytes()));
+-		var exec = new HandlerExecutor() {
+-			final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+-
+-			@Override
+-			public synchronized Cancellable schedule(@NonNull Runnable task, long delay) {
+-				var f = scheduler.schedule(task, delay, TimeUnit.MILLISECONDS);
+-				return new Cancellable() {
+-					@Override
+-					public boolean cancel() {
+-						return f.cancel(false);
+-					}
+-				};
+-			}
+-		};
+-		Semaphore sem = new Semaphore(0);
+-		BiConsumer<SubGrid.Position, Subtitles.Text> consumer = (p, t) -> {
+-			if (t == null) return;
+-			received.add(t.getText());
+-			if (expect.size() == received.size()) sem.release();
+-		};
+-		SubScheduler sched = new SubScheduler(exec, sg, consumer);
+-		sched.start(0, 0, 1);
+-		sem.acquire();
+-		assertArrayEquals(expect.toArray(), received.toArray());
+-
+-		sched.stop(false);
+-		received.clear();
+-		sched.start(0, 10, 1);
+-		sem.acquire();
+-		assertArrayEquals(expect.toArray(), received.toArray());
+-
+-		sched.stop(false);
+-		received.clear();
+-		sched.start(0, 10, 2);
+-		sem.acquire();
+-		assertArrayEquals(expect.toArray(), received.toArray());
+-
+-		sched.stop(false);
+-		received.clear();
+-		sched.start(0, 10, 0.5f);
+-		sem.acquire();
+-		assertArrayEquals(expect.toArray(), received.toArray());
+-	}
+-}
 diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
 new file mode 100644
 index 0000000..7e46197
@@ -4693,10 +5057,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..10cb510
+index 0000000..6fbb1c6
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,499 @@
+@@ -0,0 +1,502 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -4805,6 +5169,8 @@ index 0000000..10cb510
 +		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
 +		v.setOnClickListener(x -> onCircleClick());
 +		hud = v;
++		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
++		me.aap.fermata.jarvis.JarvisVoice.refresh();
 +		return v;
 +	}
 +
@@ -4906,6 +5272,7 @@ index 0000000..10cb510
 +				return;
 +			}
 +			greeting = tts;
++			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 +			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
 +			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
 +				if (greeting != tts) return; // запись уже отменена
@@ -15834,6 +16201,44 @@ index 0000000..265234a
 +		assertTrue("с голосом — сильно", loudMax > 0.12f);
 +		// Разные участки края в один момент сдвинуты по-разному
 +		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
++	}
++}
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
+new file mode 100644
+index 0000000..db60d0a
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
+@@ -0,0 +1,32 @@
++package me.aap.fermata.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNull;
++
++import org.junit.Test;
++
++/** Разбор настроек голоса JARVIS (shared_prefs/jarvis.xml). */
++public class JarvisVoiceTest {
++
++	@Test
++	public void readsRatePitchVoice() {
++		String xml = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n" +
++				"    <string name=\"api_key\">secret</string>\n" +
++				"    <float name=\"speech_rate\" value=\"1.15\" />\n" +
++				"    <float name=\"speech_pitch\" value=\"0.75\" />\n" +
++				"    <string name=\"voice_id\">ru-ru-x-ruc-local</string>\n</map>\n";
++		JarvisVoice.Settings s = JarvisVoice.parse(xml);
++		assertEquals(1.15f, s.rate, 1e-6f);
++		assertEquals(0.75f, s.pitch, 1e-6f);
++		assertEquals("ru-ru-x-ruc-local", s.voice);
++	}
++
++	@Test
++	public void defaultsWhenAbsentOrOutOfRange() {
++		JarvisVoice.Settings s = JarvisVoice.parse(
++				"<map><float name=\"speech_rate\" value=\"7.0\" /></map>");
++		assertEquals(JarvisVoice.DEFAULT_RATE, s.rate, 0f);
++		assertEquals(JarvisVoice.DEFAULT_PITCH, s.pitch, 0f);
++		assertNull(s.voice);
 +	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle

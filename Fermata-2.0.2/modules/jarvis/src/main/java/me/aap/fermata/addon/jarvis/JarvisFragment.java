@@ -106,6 +106,8 @@ public class JarvisFragment extends MainActivityFragment
 		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
 		v.setOnClickListener(x -> onCircleClick());
 		hud = v;
+		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
+		me.aap.fermata.jarvis.JarvisVoice.refresh();
 		return v;
 	}
 
@@ -207,6 +209,7 @@ public class JarvisFragment extends MainActivityFragment
 				return;
 			}
 			greeting = tts;
+			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
 			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
 				if (greeting != tts) return; // запись уже отменена

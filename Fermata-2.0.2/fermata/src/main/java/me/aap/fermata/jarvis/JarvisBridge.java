@@ -218,6 +218,7 @@ public final class JarvisBridge {
 					if (listener != null) listener.onDone();
 					return;
 				}
+				JarvisVoice.apply(tts);
 				Cancellable interrupt = a.interruptPlayback();
 				tts.speak(reply).onCompletion((r, serr) -> {
 					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");

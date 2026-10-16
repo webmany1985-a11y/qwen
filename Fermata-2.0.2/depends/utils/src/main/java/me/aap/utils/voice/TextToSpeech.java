@@ -78,6 +78,28 @@ public class TextToSpeech implements Closeable {
 	}
 
 
+	public void setSpeechRate(float rate) {
+		if (tts != null) tts.setSpeechRate(rate);
+	}
+
+	public void setPitch(float pitch) {
+		if (tts != null) tts.setPitch(pitch);
+	}
+
+	/** Голос движка по имени; false — такого голоса у движка нет. */
+	public boolean setVoice(String name) {
+		if ((tts == null) || (name == null)) return false;
+		try {
+			var voices = tts.getVoices();
+			if (voices == null) return false;
+			for (var v : voices) {
+				if (name.equals(v.getName())) return tts.setVoice(v) == SUCCESS;
+			}
+		} catch (Exception ignore) {
+		}
+		return false;
+	}
+
 	public Set<Locale> getAvailableLanguages() {
 		return (tts == null) ? Collections.emptySet() : tts.getAvailableLanguages();
 	}
