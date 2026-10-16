@@ -124,10 +124,63 @@ public final class HudMath {
 		}
 	}
 
+	/**
+	 * Облако точек сферы: единичные векторы (X, Y, Z), радиус слоя (доля
+	 * радиуса сферы), фаза мерцания. Поверхность — по спирали Фибоначчи
+	 * (точки ровно, без сгустков у полюсов), плюс два внутренних слоя для объёма.
+	 */
+	public static final int DOTS = 2600;
+	public static final float[] DX = new float[DOTS];
+	public static final float[] DY = new float[DOTS];
+	public static final float[] DZ = new float[DOTS];
+	public static final float[] DR = new float[DOTS];
+	public static final float[] DP = new float[DOTS];
+
+	static {
+		int surface = 1800, mid = 550;
+		double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+		for (int i = 0; i < DOTS; i++) {
+			int n, k;
+			float shell;
+			if (i < surface) {
+				n = surface;
+				k = i;
+				shell = 1f;
+			} else if (i < surface + mid) {
+				n = mid;
+				k = i - surface;
+				shell = 0.78f;
+			} else {
+				n = DOTS - surface - mid;
+				k = i - surface - mid;
+				shell = 0.5f;
+			}
+			double y = 1.0 - 2.0 * (k + 0.5) / n;
+			double r = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+			double th = golden * k + shell * 1.7;
+			DX[i] = (float) (Math.cos(th) * r);
+			DY[i] = (float) y;
+			DZ[i] = (float) (Math.sin(th) * r);
+			DR[i] = shell;
+			double h = Math.sin(i * 91.7) * 43758.5453;
+			DP[i] = (float) ((h - Math.floor(h)) * TWO_PI);
+		}
+	}
+
+	/** Мерцание точки 0..1: у каждой своя фаза, частота растёт с громкостью. */
+	public static float twinkle(float phase, float t, float level) {
+		return 0.5f + 0.5f * (float) Math.sin(phase + t * (2.2f + level * 4f));
+	}
+
+	/** Рябь по поверхности при голосе: смещение радиуса в долях, не больше 6%. */
+	public static float ripple(float phase, float y, float t, float level) {
+		return 0.06f * level * (float) Math.sin(t * 9f + y * 6f + phase * 0.3f);
+	}
+
 	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
 	public static final float SPHERE_TILT = 0.38f;
 
-	public static final Bit[] BITS = new Bit[300];
+	public static final Bit[] BITS = new Bit[140];
 
 	static {
 		for (int i = 0; i < BITS.length; i++) {

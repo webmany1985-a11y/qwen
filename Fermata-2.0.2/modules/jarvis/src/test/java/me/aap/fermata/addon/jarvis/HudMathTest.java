@@ -152,4 +152,18 @@ public class HudMathTest {
 			assertTrue(HudMath.bitAlpha(b, 1.3f, 0.5f, 0.5f) >= a);
 		}
 	}
+
+	@Test
+	public void dotCloudIsOnUnitSphereAndTwinkleInBounds() {
+		for (int i = 0; i < HudMath.DOTS; i++) {
+			float len = HudMath.DX[i] * HudMath.DX[i] + HudMath.DY[i] * HudMath.DY[i] +
+					HudMath.DZ[i] * HudMath.DZ[i];
+			assertEquals(1f, len, 1e-4f);
+			assertTrue(HudMath.DR[i] > 0f && HudMath.DR[i] <= 1f);
+			float tw = HudMath.twinkle(HudMath.DP[i], i * 0.01f, 0.5f);
+			assertTrue(tw >= 0f && tw <= 1f);
+			assertTrue(Math.abs(HudMath.ripple(HudMath.DP[i], HudMath.DY[i], 1f, 1f)) <= 0.06f + 1e-6f);
+		}
+		assertEquals(0f, HudMath.ripple(1f, 0.5f, 2f, 0f), 0f);
+	}
 }

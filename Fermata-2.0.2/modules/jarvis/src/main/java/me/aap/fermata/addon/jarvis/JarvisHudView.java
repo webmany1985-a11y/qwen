@@ -49,8 +49,10 @@ public class JarvisHudView extends View {
 	private final Typeface wordFace = Typeface.create(Typeface.SANS_SERIF, 500, false);
 	private final Path tickPath = new Path();
 	private final RectF box = new RectF();
-	private final Path frontPath = new Path();
-	private final Path backPath = new Path();
+	private static final int BUCKETS = 12;
+	private final float[][] bucketPts = new float[BUCKETS][HudMath.DOTS * 2];
+	private final int[] bucketSize = new int[BUCKETS];
+	private final Paint dots = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final float[] pt = new float[3];
 	private final float[] pt2 = new float[3];
 	private final String title;
@@ -74,6 +76,8 @@ public class JarvisHudView extends View {
 		plus.setXfermode(add);
 		stroke.setXfermode(add);
 		stroke.setStyle(Paint.Style.STROKE);
+		dots.setXfermode(add);
+		dots.setStyle(Paint.Style.STROKE);
 		text.setTextAlign(Paint.Align.CENTER);
 		// Свечение складывается (ADD) только с собственным фоном вида
 		setLayerType(LAYER_TYPE_HARDWARE, null);
@@ -192,7 +196,7 @@ public class JarvisHudView extends View {
 			float base = animator.rotations[i] * TWO_PI;
 			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
 			// Кольца — рамка, главная — сфера: приглушены
-			float alpha = HudMath.ringAlpha(ring, appear, level) * 0.5f;
+			float alpha = HudMath.ringAlpha(ring, appear, level) * 0.35f;
 			float width = ring.w * dp;
 			float glow = ((ring.w > 3f) ? 14f : 6f) * dp;
 			box.set(cx - r, cy - r, cx + r, cy + r);
@@ -284,79 +288,78 @@ public class JarvisHudView extends View {
 	}
 
 	/**
-	 * Золотая сфера: широты, вращающиеся меридианы, мерцающие фрагменты
-	 * «схем» на поверхности, светящийся контур и вихрь в центре. Дышит с
-	 * громкостью (радиус и яркость — от level), вращается быстрее при «думаю».
+	 * Золотая сфера из точек (образец — сфера JARVIS из фильма): облако из
+	 * {@link HudMath#DOTS} точек вращается, ближние ярче дальних, каждая
+	 * мерцает сама. С голосом облако растёт, точки крупнеют, по поверхности
+	 * бежит рябь. Поверх — короткие вспышки-фрагменты и вихрь в центре.
 	 */
 	private void drawSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
 													float level, float open) {
 		if (rs <= 0f) return;
-		float tilt = HudMath.SPHERE_TILT;
-		float ct = (float) Math.cos(tilt), st = (float) Math.sin(tilt);
+		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
+		float ct = (float) Math.cos(HudMath.SPHERE_TILT), st = (float) Math.sin(HudMath.SPHERE_TILT);
+		for (int i = 0; i < BUCKETS; i++) bucketSize[i] = 0;
 
-		// Широты: эллипсы из-за наклона оси
-		stroke.setStrokeWidth(dp);
-		stroke.setColor(withAlpha(ARC_SOFT, 0.45f * open));
-		for (int k = -2; k <= 2; k++) {
-			float lat = k * 0.5f;
-			float r = rs * (float) Math.cos(lat);
-			float y = cy - rs * (float) Math.sin(lat) * ct;
-			box.set(cx - r, y - r * st, cx + r, y + r * st);
-			c.drawOval(box, stroke);
+		for (int i = 0; i < HudMath.DOTS; i++) {
+			float x = HudMath.DX[i], y = HudMath.DY[i], z = HudMath.DZ[i];
+			float xr = x * cr + z * sr;
+			float zr = -x * sr + z * cr;
+			float yy = y * ct - zr * st;
+			float zz = y * st + zr * ct;
+			float k = rs * HudMath.DR[i] * (1f + HudMath.ripple(HudMath.DP[i], y, t, level));
+			// Корзина: глубина (3 уровня) × мерцание (4 уровня) — одна отрисовка на корзину
+			int depth = (zz > 0.35f) ? 2 : (zz > -0.2f) ? 1 : 0;
+			int tw = Math.min(3, (int) (HudMath.twinkle(HudMath.DP[i], t, level) * 4f));
+			int bkt = depth * 4 + tw;
+			int n = bucketSize[bkt];
+			bucketPts[bkt][n] = cx + xr * k;
+			bucketPts[bkt][n + 1] = cy - yy * k;
+			bucketSize[bkt] = n + 2;
 		}
 
-		// Меридианы: передняя половина ярче задней
-		frontPath.rewind();
-		backPath.rewind();
-		for (int m = 0; m < 8; m++) {
-			float lon = m * (float) Math.PI / 8f;
-			for (int j = 0; j < 24; j++) {
-				float la = -1.5708f + j * 3.1416f / 24f;
-				float lb = la + 3.1416f / 24f;
-				HudMath.project(la, lon, rot, pt);
-				HudMath.project(lb, lon, rot, pt2);
-				Path p = (pt[2] + pt2[2] >= 0f) ? frontPath : backPath;
-				p.moveTo(cx + pt[0] * rs, cy + pt[1] * rs);
-				p.lineTo(cx + pt2[0] * rs, cy + pt2[1] * rs);
+		dots.setStrokeCap(Paint.Cap.ROUND);
+		for (int depth = 0; depth < 3; depth++) {
+			float da = (depth == 2) ? 1f : (depth == 1) ? 0.55f : 0.22f;
+			float size = (depth == 2 ? 2.4f : depth == 1 ? 1.8f : 1.3f) * dp * (1f + level * 0.7f);
+			for (int tw = 0; tw < 4; tw++) {
+				int bkt = depth * 4 + tw;
+				if (bucketSize[bkt] == 0) continue;
+				float a = da * (0.25f + 0.25f * tw) * open * (0.75f + 0.25f * level);
+				// Ореол: крупная тусклая точка под яркой
+				dots.setStrokeWidth(size * 2.6f);
+				dots.setColor(withAlpha(ARC, a * 0.22f));
+				c.drawPoints(bucketPts[bkt], 0, bucketSize[bkt], dots);
+				dots.setStrokeWidth(size);
+				dots.setColor(withAlpha((tw == 3 && depth == 2) ? INK : ARC, a));
+				c.drawPoints(bucketPts[bkt], 0, bucketSize[bkt], dots);
 			}
 		}
-		stroke.setColor(withAlpha(ARC_SOFT, 0.18f * open));
-		c.drawPath(backPath, stroke);
-		stroke.setColor(withAlpha(ARC, 0.4f * open));
-		c.drawPath(frontPath, stroke);
 
-		// Фрагменты «схем» и искры
+		// Вспышки-фрагменты на поверхности
 		for (HudMath.Bit b : HudMath.BITS) {
 			HudMath.project(b.lat, b.lon, rot, pt);
 			HudMath.project(b.lat, b.lon + b.len, rot, pt2);
-			float a = HudMath.bitAlpha(b, t, pt[2], level) * open;
-			stroke.setStrokeWidth(b.w * dp * (1f + level * 0.6f));
+			float a = HudMath.bitAlpha(b, t, pt[2], level) * open * 0.8f;
+			stroke.setStrokeWidth(b.w * 0.8f * dp * (1f + level * 0.6f));
 			stroke.setColor(withAlpha((b.phase > 3f) ? INK : ARC, a));
 			c.drawLine(cx + pt[0] * rs, cy + pt[1] * rs, cx + pt2[0] * rs, cy + pt2[1] * rs, stroke);
-			if (pt[2] > 0.3f) {
-				plus.setColor(withAlpha(INK, a * 0.9f));
-				c.drawCircle(cx + pt[0] * rs, cy + pt[1] * rs, (0.8f + level) * dp, plus);
-			}
 		}
 
-		// Светящийся контур сферы
-		stroke.setStrokeWidth(6f * dp);
-		stroke.setColor(withAlpha(ARC, 0.12f * open * (0.7f + level)));
-		c.drawCircle(cx, cy, rs, stroke);
-		stroke.setStrokeWidth(1.5f * dp);
-		stroke.setColor(withAlpha(ARC, 0.65f * open));
+		// Мягкое свечение контура
+		stroke.setStrokeWidth(10f * dp);
+		stroke.setColor(withAlpha(ARC, 0.07f * open * (0.7f + level)));
 		c.drawCircle(cx, cy, rs, stroke);
 
 		// Вихрь в центре: дуга навстречу вращению сферы
-		float vr = rs * (0.62f + 0.06f * level);
+		float vr = rs * (0.55f + 0.06f * level);
 		float va = (-t * 1.3f * RAD_TO_DEG) % 360f;
-		box.set(cx - vr, cy - vr * 0.62f, cx + vr, cy + vr * 0.62f);
-		stroke.setStrokeWidth(9f * dp);
-		stroke.setColor(withAlpha(ARC, 0.18f * open));
-		c.drawArc(box, va, 250f, false, stroke);
-		stroke.setStrokeWidth(2.5f * dp);
-		stroke.setColor(withAlpha(INK, 0.75f * open));
-		c.drawArc(box, va, 250f, false, stroke);
+		box.set(cx - vr, cy - vr * 0.6f, cx + vr, cy + vr * 0.6f);
+		stroke.setStrokeWidth(8f * dp);
+		stroke.setColor(withAlpha(ARC, 0.14f * open));
+		c.drawArc(box, va, 240f, false, stroke);
+		stroke.setStrokeWidth(1.8f * dp);
+		stroke.setColor(withAlpha(INK, 0.6f * open));
+		c.drawArc(box, va, 240f, false, stroke);
 	}
 
 	/** Строка с центром в точке (x, y) — как drawCentered в JARVIS. */
