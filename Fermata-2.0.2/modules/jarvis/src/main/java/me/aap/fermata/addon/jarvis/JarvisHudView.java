@@ -11,7 +11,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
@@ -58,7 +57,9 @@ public class JarvisHudView extends View {
 	private final int[] bucketSize = new int[BUCKETS];
 	private final Paint dots = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-	private final Matrix imageMatrix = new Matrix();
+	/** Сетка деформации сферы-картинки: MESH × MESH ячеек. */
+	private static final int MESH = 32;
+	private final float[] mesh = new float[(MESH + 1) * (MESH + 1) * 2];
 	/**
 	 * Сфера с кадра, присланного пользователем (16.10.2026), вырезанная из фона:
 	 * res/drawable-nodpi/jarvis_sfera.webp. Нет файла — рисуется облако точек.
@@ -203,6 +204,8 @@ public class JarvisHudView extends View {
 
 		// Кольца
 		for (int i = 0; i < RINGS.length; i++) {
+			// Со сферой-картинкой два внешних кольца не рисуются (замечание 16.10.2026)
+			if ((sfera != null) && (i < 2)) continue;
 			HudMath.Ring ring = RINGS[i];
 			float appear = HudMath.ringAppear(open, i);
 			if (appear <= 0f) continue;
@@ -381,26 +384,44 @@ public class JarvisHudView extends View {
 	}
 
 	/**
-	 * Сфера с кадра: пульсирует с голосом (масштаб и яркость), медленно
-	 * вращается, при громком голосе — второй, чуть больший слой-свечение.
-	 * Поверх — редкие искры из облака точек, чтобы картинка жила.
+	 * Сфера с кадра. Картинка натянута на сетку {@link #MESH}×{@link #MESH}, и
+	 * каждый узел сетки смещается своей волной ({@link HudMath#warp}): края
+	 * сферы ходят по частям, независимо друг от друга, сильнее — с голосом.
+	 * Сфера медленно вращается; при громком голосе — второй, чуть больший
+	 * слой-свечение. Поверх — редкие искры, чтобы картинка жила.
 	 */
 	private void drawImageSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
 															 float level, float open) {
 		Bitmap b = sfera;
 		if (b == null) return;
-		float pulse = 1f + 0.07f * level + 0.015f * (float) Math.sin(t * 1.6f);
-		float sc = rs * 2.36f * pulse / b.getWidth();
-		imageMatrix.setTranslate(-b.getWidth() / 2f, -b.getHeight() / 2f);
-		imageMatrix.postRotate(rot * RAD_TO_DEG * 0.25f);
-		imageMatrix.postScale(sc, sc);
-		imageMatrix.postTranslate(cx, cy);
+		rs *= HudMath.IMAGE_SPHERE_SCALE;
+		float bw = b.getWidth(), bh = b.getHeight();
+		float pulse = 1f + 0.05f * level + 0.015f * (float) Math.sin(t * 1.6f);
+		float sc = rs * 2.36f * pulse / bw;
+		// Радиус сферы на картинке, px: картинка вырезана со стороной 2.36 радиуса
+		float imgR = bw / 2.36f;
+		float ang = rot * 0.25f;
+		float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
+		int k = 0;
+		for (int gy = 0; gy <= MESH; gy++) {
+			float dy = gy * bh / MESH - bh / 2f;
+			for (int gx = 0; gx <= MESH; gx++) {
+				float dx = gx * bw / MESH - bw / 2f;
+				float rn = (float) Math.sqrt(dx * dx + dy * dy) / imgR;
+				float f = 1f + HudMath.warp((float) Math.atan2(dy, dx), rn, t, level);
+				float x = dx * f, y = dy * f;
+				mesh[k++] = cx + (x * ca - y * sa) * sc;
+				mesh[k++] = cy + (x * sa + y * ca) * sc;
+			}
+		}
 		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
-		c.drawBitmap(b, imageMatrix, image);
+		c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
 		if (level > 0.05f) {
-			imageMatrix.postScale(1.05f, 1.05f, cx, cy);
+			c.save();
+			c.scale(1.05f, 1.05f, cx, cy);
 			image.setAlpha(Math.round(255f * clamp(open * 0.4f * level, 0f, 1f)));
-			c.drawBitmap(b, imageMatrix, image);
+			c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
+			c.restore();
 		}
 
 		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
@@ -414,9 +435,9 @@ public class JarvisHudView extends View {
 			float x = HudMath.DX[i], y = HudMath.DY[i], z = HudMath.DZ[i];
 			float xr = x * cr + z * sr, zr = -x * sr + z * cr;
 			if (y * st + zr * ct < 0f) continue;
-			float k = rs * 0.95f * pulse;
-			pts[n++] = cx + xr * k;
-			pts[n++] = cy - (y * ct - zr * st) * k;
+			float kr = rs * 0.95f * pulse;
+			pts[n++] = cx + xr * kr;
+			pts[n++] = cy - (y * ct - zr * st) * kr;
 		}
 		if (n == 0) return;
 		dots.setStrokeCap(Paint.Cap.ROUND);

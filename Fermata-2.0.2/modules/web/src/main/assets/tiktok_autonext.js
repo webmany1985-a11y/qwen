@@ -20,9 +20,13 @@
     if (c && c.offsetParent !== null) { c.click(); return; }
     var m = document.querySelector('[data-e2e="middle-cta-container"],[data-e2e="middle-cta-confirm-btn"]');
     if (!m || m.offsetParent === null) return;
+    // Выше ленты, меню и крупных контейнеров не подниматься: на широком экране
+    // машины видео в ленте может ещё не быть, и без этих ограничений пряталась
+    // вся страница — белый экран (замечание 16.10.2026)
     var e = m, layer = null;
-    while (e && e !== document.body) {
-      if (e.querySelector('video')) break;
+    while (e && e !== document.body && e.parentElement !== document.body) {
+      if (e.querySelector('video,[data-e2e="video-slide-active"],.swiper,nav,a[href]')) break;
+      if (e.getElementsByTagName('*').length > 150) break;
       var st = getComputedStyle(e);
       if (st.position === 'fixed' || st.position === 'absolute') layer = e;
       e = e.parentElement;

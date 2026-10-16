@@ -177,6 +177,32 @@ public final class HudMath {
 		return 0.06f * level * (float) Math.sin(t * 9f + y * 6f + phase * 0.3f);
 	}
 
+	/** Во сколько раз сфера-картинка больше нарисованной (замечание 16.10.2026: «увеличь»). */
+	public static final float IMAGE_SPHERE_SCALE = 1.3f;
+	/** Предел смещения точки сферы-картинки при пульсации, доля радиуса. */
+	public static final float WARP_MAX = 0.2f;
+
+	/**
+	 * Пульсация сферы-картинки по частям: на сколько (доля радиуса) сдвинуть
+	 * от центра точку с углом theta на расстоянии rn радиусов. Несколько волн
+	 * с разным числом «лепестков», бегущих с разной скоростью и в разные
+	 * стороны, — соседние участки края движутся независимо. В покое волны
+	 * едва заметны, с голосом растут. Центр неподвижен, к краю — сильнее.
+	 */
+	public static float warp(float theta, float rn, float t, float level) {
+		float l = clamp(level, 0f, 1f);
+		float w = 0.5f * (float) Math.sin(3f * theta + 1.7f * t) +
+				0.35f * (float) Math.sin(5f * theta - 2.3f * t + 1.3f) +
+				0.25f * (float) Math.sin(8f * theta + 3.1f * t + rn * 4f) +
+				0.2f * (float) Math.sin(2f * theta - 0.9f * t + 2.1f) +
+				0.3f * l * (float) Math.sin(13f * theta - 6.5f * t + rn * 7f);
+		// w в пределах ±1.6; вес — от центра к краю
+		float weight = clamp(rn, 0f, 1f);
+		weight *= weight;
+		float amp = 0.025f + 0.095f * l;
+		return clamp(w / 1.6f * amp * weight, -WARP_MAX, WARP_MAX);
+	}
+
 	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
 	public static final float SPHERE_TILT = 0.38f;
 

@@ -317,23 +317,26 @@ index 0000000..f885fab
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
 new file mode 100644
-index 0000000..74978c3
+index 0000000..b6639ca
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisWallpaper.java
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,157 @@
 +package me.aap.fermata.jarvis;
 +
 +import android.content.Context;
++import android.content.res.Resources;
 +import android.graphics.Bitmap;
 +import android.graphics.BitmapFactory;
 +import android.graphics.Canvas;
 +import android.graphics.ColorFilter;
++import android.graphics.LinearGradient;
 +import android.graphics.Matrix;
 +import android.graphics.Paint;
 +import android.graphics.PixelFormat;
 +import android.graphics.Rect;
++import android.graphics.RectF;
++import android.graphics.Shader;
 +import android.graphics.drawable.Drawable;
-+import android.util.DisplayMetrics;
 +
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
@@ -342,34 +345,52 @@ index 0000000..74978c3
 +import me.aap.utils.log.Log;
 +
 +/**
-+ * Фон темы JARVIS: фото jarvis_wallpaper (drawable-port-nodpi — телефон, drawable-nodpi — остальное),
-+ * растянутое с обрезкой краёв, без искажения пропорций — как centerCrop.
-+ * Вертикальное фото — для телефона, широкое — для экрана машины.
++ * Фон темы JARVIS: фото Opel. Какое фото — решает форма области, а не
++ * ресурсные квалификаторы: у экрана машины в Android Auto ориентация
++ * бывает не той, что ждёшь.
++ *
++ * <ul>
++ * <li>Высокая область (телефон) — вертикальное фото jarvis_wallpaper_port,
++ * растянутое с обрезкой краёв, машина прижата к низу.</li>
++ * <li>Широкая (машина) — широкое фото jarvis_wallpaper. Машина ставится
++ * целиком между верхней строкой и нижними панелями: если просто растянуть
++ * фото, Opel уходит под панели (замечание 16.10.2026). Где фото не
++ * закрывает экран, края плавно уходят в чёрное.</li>
++ * </ul>
 + */
 +public final class JarvisWallpaper extends Drawable {
++	/** Машина на широком фото, доли ширины и высоты: left, top, right, bottom. */
++	private static final float CAR_L = 0.17f, CAR_T = 0.25f, CAR_R = 0.855f, CAR_B = 0.9f;
++	/** Где на широком экране центр машины по высоте и какую долю высоты она занимает. */
++	private static final float CAR_CY = 0.42f, CAR_H = 0.55f;
++	/** Доля ширины/высоты фото, на которой край уходит в чёрное. */
++	private static final float FADE = 0.12f;
++
++	private final Resources res;
 +	private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
++	private final Paint fade = new Paint();
 +	private final Matrix matrix = new Matrix();
++	private final RectF img = new RectF();
 +	@Nullable
-+	private final Bitmap bitmap;
++	private Bitmap bitmap;
++	private boolean wide;
 +
 +	public JarvisWallpaper(Context ctx) {
-+		bitmap = decode(ctx);
++		res = ctx.getResources();
 +	}
 +
 +	@Nullable
-+	private static Bitmap decode(Context ctx) {
++	private Bitmap decode(int id, int max) {
 +		try {
-+			DisplayMetrics dm = ctx.getResources().getDisplayMetrics();
-+			int max = Math.max(dm.widthPixels, dm.heightPixels);
 +			BitmapFactory.Options o = new BitmapFactory.Options();
 +			o.inJustDecodeBounds = true;
-+			BitmapFactory.decodeResource(ctx.getResources(), R.drawable.jarvis_wallpaper, o);
++			BitmapFactory.decodeResource(res, id, o);
 +			int big = Math.max(o.outWidth, o.outHeight);
 +			int sample = 1;
 +			while (big / (sample * 2) >= max) sample *= 2;
 +			o = new BitmapFactory.Options();
 +			o.inSampleSize = sample;
-+			return BitmapFactory.decodeResource(ctx.getResources(), R.drawable.jarvis_wallpaper, o);
++			return BitmapFactory.decodeResource(res, id, o);
 +		} catch (Throwable ex) {
 +			Log.e(ex, "JARVIS: failed to load wallpaper");
 +			return null;
@@ -379,19 +400,67 @@ index 0000000..74978c3
 +	@Override
 +	protected void onBoundsChange(@NonNull Rect b) {
 +		super.onBoundsChange(b);
-+		if (bitmap == null || b.isEmpty()) return;
-+		float bw = bitmap.getWidth(), bh = bitmap.getHeight();
-+		float scale = Math.max(b.width() / bw, b.height() / bh);
++		if (b.isEmpty()) return;
++		boolean w = b.width() >= b.height();
++		if ((bitmap == null) || (w != wide)) {
++			wide = w;
++			bitmap = decode(w ? R.drawable.jarvis_wallpaper : R.drawable.jarvis_wallpaper_port,
++					Math.max(b.width(), b.height()));
++		}
++		Bitmap bm = bitmap;
++		if (bm == null) return;
++		float bw = bm.getWidth(), bh = bm.getHeight();
++		float cover = Math.max(b.width() / bw, b.height() / bh);
++
++		if (!wide) {
++			matrix.setScale(cover, cover);
++			// Машина на фото внизу: по высоте прижимаем к низу, по ширине — по центру
++			matrix.postTranslate(b.left + (b.width() - bw * cover) / 2f,
++					b.top + (b.height() - bh * cover));
++			img.set(b);
++			return;
++		}
++
++		float carW = (CAR_R - CAR_L) * bw, carH = (CAR_B - CAR_T) * bh;
++		float scale = Math.min(cover, Math.min(0.92f * b.width() / carW, CAR_H * b.height() / carH));
++		float iw = bw * scale, ih = bh * scale;
++		float carCx = (CAR_L + CAR_R) / 2f * iw, carCy = (CAR_T + CAR_B) / 2f * ih;
++		float tx = b.width() / 2f - carCx;
++		float ty = b.height() * CAR_CY - carCy;
++		// Где фото шире/выше экрана — не оставлять пустых полос
++		if (iw >= b.width()) tx = Math.max(b.width() - iw, Math.min(0f, tx));
++		if (ih >= b.height()) ty = Math.max(b.height() - ih, Math.min(0f, ty));
++		tx += b.left;
++		ty += b.top;
 +		matrix.setScale(scale, scale);
-+		// Машина на фото внизу: по высоте прижимаем к низу, по ширине — по центру
-+		matrix.postTranslate(b.left + (b.width() - bw * scale) / 2f,
-+				b.top + (b.height() - bh * scale));
++		matrix.postTranslate(tx, ty);
++		img.set(tx, ty, tx + iw, ty + ih);
 +	}
 +
 +	@Override
 +	public void draw(@NonNull Canvas c) {
 +		c.drawColor(0xFF000000);
-+		if (bitmap != null) c.drawBitmap(bitmap, matrix, paint);
++		Bitmap bm = bitmap;
++		if (bm == null) return;
++		c.drawBitmap(bm, matrix, paint);
++		if (!wide) return;
++		Rect b = getBounds();
++		float fx = img.width() * FADE, fy = img.height() * FADE;
++		// Края фото, оказавшиеся внутри экрана, — в чёрное
++		if (img.left > b.left) edge(c, img.left, img.top, img.left + fx, img.bottom, true, false);
++		if (img.right < b.right) edge(c, img.right - fx, img.top, img.right, img.bottom, true, true);
++		if (img.top > b.top) edge(c, img.left, img.top, img.right, img.top + fy, false, false);
++		if (img.bottom < b.bottom) edge(c, img.left, img.bottom - fy, img.right, img.bottom, false, true);
++	}
++
++	private void edge(Canvas c, float l, float t, float r, float btm, boolean horizontal,
++										boolean toEnd) {
++		int black = 0xFF000000, clear = 0x00000000;
++		int from = toEnd ? clear : black, to = toEnd ? black : clear;
++		fade.setShader(horizontal ? new LinearGradient(l, 0, r, 0, from, to, Shader.TileMode.CLAMP) :
++				new LinearGradient(0, t, 0, btm, from, to, Shader.TileMode.CLAMP));
++		c.drawRect(l, t, r, btm, fade);
++		fade.setShader(null);
 +	}
 +
 +	@Override
@@ -1953,7 +2022,7 @@ Sc|u~*Ye1lc!eO^y0002(Bg3}<
 literal 0
 HcmV?d00001
 
-diff --git a/fermata/src/main/res/drawable-port-nodpi/jarvis_wallpaper.webp b/fermata/src/main/res/drawable-port-nodpi/jarvis_wallpaper.webp
+diff --git a/fermata/src/main/res/drawable-nodpi/jarvis_wallpaper_port.webp b/fermata/src/main/res/drawable-nodpi/jarvis_wallpaper_port.webp
 new file mode 100644
 index 0000000000000000000000000000000000000000..af603c1c1480c57267f5f0c0b0e23f898acea2aa
 GIT binary patch
@@ -3893,10 +3962,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
-index 0000000..f998c26
+index 0000000..85c1513
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
-@@ -0,0 +1,386 @@
+@@ -0,0 +1,412 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.lang.Math.abs;
@@ -4074,6 +4143,32 @@ index 0000000..f998c26
 +	/** Рябь по поверхности при голосе: смещение радиуса в долях, не больше 6%. */
 +	public static float ripple(float phase, float y, float t, float level) {
 +		return 0.06f * level * (float) Math.sin(t * 9f + y * 6f + phase * 0.3f);
++	}
++
++	/** Во сколько раз сфера-картинка больше нарисованной (замечание 16.10.2026: «увеличь»). */
++	public static final float IMAGE_SPHERE_SCALE = 1.3f;
++	/** Предел смещения точки сферы-картинки при пульсации, доля радиуса. */
++	public static final float WARP_MAX = 0.2f;
++
++	/**
++	 * Пульсация сферы-картинки по частям: на сколько (доля радиуса) сдвинуть
++	 * от центра точку с углом theta на расстоянии rn радиусов. Несколько волн
++	 * с разным числом «лепестков», бегущих с разной скоростью и в разные
++	 * стороны, — соседние участки края движутся независимо. В покое волны
++	 * едва заметны, с голосом растут. Центр неподвижен, к краю — сильнее.
++	 */
++	public static float warp(float theta, float rn, float t, float level) {
++		float l = clamp(level, 0f, 1f);
++		float w = 0.5f * (float) Math.sin(3f * theta + 1.7f * t) +
++				0.35f * (float) Math.sin(5f * theta - 2.3f * t + 1.3f) +
++				0.25f * (float) Math.sin(8f * theta + 3.1f * t + rn * 4f) +
++				0.2f * (float) Math.sin(2f * theta - 0.9f * t + 2.1f) +
++				0.3f * l * (float) Math.sin(13f * theta - 6.5f * t + rn * 7f);
++		// w в пределах ±1.6; вес — от центра к краю
++		float weight = clamp(rn, 0f, 1f);
++		weight *= weight;
++		float amp = 0.025f + 0.095f * l;
++		return clamp(w / 1.6f * amp * weight, -WARP_MAX, WARP_MAX);
 +	}
 +
 +	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
@@ -4746,10 +4841,10 @@ index 0000000..fcfaa6c
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
 new file mode 100644
-index 0000000..8f996b7
+index 0000000..fd6bd6c
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
-@@ -0,0 +1,454 @@
+@@ -0,0 +1,475 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static me.aap.fermata.addon.jarvis.HudMath.NODES;
@@ -4763,7 +4858,6 @@ index 0000000..8f996b7
 +import android.graphics.Canvas;
 +import android.graphics.Color;
 +import android.graphics.LinearGradient;
-+import android.graphics.Matrix;
 +import android.graphics.Paint;
 +import android.graphics.Path;
 +import android.graphics.PorterDuff;
@@ -4810,7 +4904,9 @@ index 0000000..8f996b7
 +	private final int[] bucketSize = new int[BUCKETS];
 +	private final Paint dots = new Paint(Paint.ANTI_ALIAS_FLAG);
 +	private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-+	private final Matrix imageMatrix = new Matrix();
++	/** Сетка деформации сферы-картинки: MESH × MESH ячеек. */
++	private static final int MESH = 32;
++	private final float[] mesh = new float[(MESH + 1) * (MESH + 1) * 2];
 +	/**
 +	 * Сфера с кадра, присланного пользователем (16.10.2026), вырезанная из фона:
 +	 * res/drawable-nodpi/jarvis_sfera.webp. Нет файла — рисуется облако точек.
@@ -4955,6 +5051,8 @@ index 0000000..8f996b7
 +
 +		// Кольца
 +		for (int i = 0; i < RINGS.length; i++) {
++			// Со сферой-картинкой два внешних кольца не рисуются (замечание 16.10.2026)
++			if ((sfera != null) && (i < 2)) continue;
 +			HudMath.Ring ring = RINGS[i];
 +			float appear = HudMath.ringAppear(open, i);
 +			if (appear <= 0f) continue;
@@ -5133,26 +5231,44 @@ index 0000000..8f996b7
 +	}
 +
 +	/**
-+	 * Сфера с кадра: пульсирует с голосом (масштаб и яркость), медленно
-+	 * вращается, при громком голосе — второй, чуть больший слой-свечение.
-+	 * Поверх — редкие искры из облака точек, чтобы картинка жила.
++	 * Сфера с кадра. Картинка натянута на сетку {@link #MESH}×{@link #MESH}, и
++	 * каждый узел сетки смещается своей волной ({@link HudMath#warp}): края
++	 * сферы ходят по частям, независимо друг от друга, сильнее — с голосом.
++	 * Сфера медленно вращается; при громком голосе — второй, чуть больший
++	 * слой-свечение. Поверх — редкие искры, чтобы картинка жила.
 +	 */
 +	private void drawImageSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
 +															 float level, float open) {
 +		Bitmap b = sfera;
 +		if (b == null) return;
-+		float pulse = 1f + 0.07f * level + 0.015f * (float) Math.sin(t * 1.6f);
-+		float sc = rs * 2.36f * pulse / b.getWidth();
-+		imageMatrix.setTranslate(-b.getWidth() / 2f, -b.getHeight() / 2f);
-+		imageMatrix.postRotate(rot * RAD_TO_DEG * 0.25f);
-+		imageMatrix.postScale(sc, sc);
-+		imageMatrix.postTranslate(cx, cy);
++		rs *= HudMath.IMAGE_SPHERE_SCALE;
++		float bw = b.getWidth(), bh = b.getHeight();
++		float pulse = 1f + 0.05f * level + 0.015f * (float) Math.sin(t * 1.6f);
++		float sc = rs * 2.36f * pulse / bw;
++		// Радиус сферы на картинке, px: картинка вырезана со стороной 2.36 радиуса
++		float imgR = bw / 2.36f;
++		float ang = rot * 0.25f;
++		float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
++		int k = 0;
++		for (int gy = 0; gy <= MESH; gy++) {
++			float dy = gy * bh / MESH - bh / 2f;
++			for (int gx = 0; gx <= MESH; gx++) {
++				float dx = gx * bw / MESH - bw / 2f;
++				float rn = (float) Math.sqrt(dx * dx + dy * dy) / imgR;
++				float f = 1f + HudMath.warp((float) Math.atan2(dy, dx), rn, t, level);
++				float x = dx * f, y = dy * f;
++				mesh[k++] = cx + (x * ca - y * sa) * sc;
++				mesh[k++] = cy + (x * sa + y * ca) * sc;
++			}
++		}
 +		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
-+		c.drawBitmap(b, imageMatrix, image);
++		c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
 +		if (level > 0.05f) {
-+			imageMatrix.postScale(1.05f, 1.05f, cx, cy);
++			c.save();
++			c.scale(1.05f, 1.05f, cx, cy);
 +			image.setAlpha(Math.round(255f * clamp(open * 0.4f * level, 0f, 1f)));
-+			c.drawBitmap(b, imageMatrix, image);
++			c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
++			c.restore();
 +		}
 +
 +		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
@@ -5166,9 +5282,9 @@ index 0000000..8f996b7
 +			float x = HudMath.DX[i], y = HudMath.DY[i], z = HudMath.DZ[i];
 +			float xr = x * cr + z * sr, zr = -x * sr + z * cr;
 +			if (y * st + zr * ct < 0f) continue;
-+			float k = rs * 0.95f * pulse;
-+			pts[n++] = cx + xr * k;
-+			pts[n++] = cy - (y * ct - zr * st) * k;
++			float kr = rs * 0.95f * pulse;
++			pts[n++] = cx + xr * kr;
++			pts[n++] = cy - (y * ct - zr * st) * kr;
 +		}
 +		if (n == 0) return;
 +		dots.setStrokeCap(Paint.Cap.ROUND);
@@ -10039,10 +10155,10 @@ index 0000000..51904bd
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
 new file mode 100644
-index 0000000..aa4d402
+index 0000000..838c156
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,190 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -10211,6 +10327,27 @@ index 0000000..aa4d402
 +		}
 +		assertEquals(0f, HudMath.ripple(1f, 0.5f, 2f, 0f), 0f);
 +	}
++
++	@Test
++	public void imageWarpBoundedCalmAtRestAndCentreFixed() {
++		float idleMax = 0f, loudMax = 0f;
++		for (int i = 0; i < 2000; i++) {
++			float theta = i * 0.0314f;
++			float t = i * 0.013f;
++			for (float rn = 0f; rn <= 1.4f; rn += 0.2f) {
++				float idle = HudMath.warp(theta, rn, t, 0f);
++				float loud = HudMath.warp(theta, rn, t, 1f);
++				assertTrue(Math.abs(loud) <= HudMath.WARP_MAX);
++				idleMax = Math.max(idleMax, Math.abs(idle));
++				loudMax = Math.max(loudMax, Math.abs(loud));
++			}
++			assertEquals(0f, HudMath.warp(theta, 0f, t, 1f), 0f);
++		}
++		assertTrue("в покое — едва заметно", idleMax < 0.03f);
++		assertTrue("с голосом — заметно", loudMax > 0.06f);
++		// Разные участки края в один момент сдвинуты по-разному
++		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
++	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle
 index 7b574fe..adb25e2 100644
@@ -10231,10 +10368,10 @@ index 7b574fe..adb25e2 100644
                      icon : 'web',
 diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
 new file mode 100644
-index 0000000..bcb29fe
+index 0000000..e000051
 --- /dev/null
 +++ b/modules/web/src/main/assets/tiktok_autonext.js
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,97 @@
 +// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
 +// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 +// листают, листает только касание — поэтому свайп собирается из TouchEvent.
@@ -10257,9 +10394,13 @@ index 0000000..bcb29fe
 +    if (c && c.offsetParent !== null) { c.click(); return; }
 +    var m = document.querySelector('[data-e2e="middle-cta-container"],[data-e2e="middle-cta-confirm-btn"]');
 +    if (!m || m.offsetParent === null) return;
++    // Выше ленты, меню и крупных контейнеров не подниматься: на широком экране
++    // машины видео в ленте может ещё не быть, и без этих ограничений пряталась
++    // вся страница — белый экран (замечание 16.10.2026)
 +    var e = m, layer = null;
-+    while (e && e !== document.body) {
-+      if (e.querySelector('video')) break;
++    while (e && e !== document.body && e.parentElement !== document.body) {
++      if (e.querySelector('video,[data-e2e="video-slide-active"],.swiper,nav,a[href]')) break;
++      if (e.getElementsByTagName('*').length > 150) break;
 +      var st = getComputedStyle(e);
 +      if (st.position === 'fixed' || st.position === 'absolute') layer = e;
 +      e = e.parentElement;
@@ -10495,10 +10636,10 @@ index 0000000..69bbc76
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
 new file mode 100644
-index 0000000..bc73825
+index 0000000..0ae9d0e
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,77 @@
 +package me.aap.fermata.addon.web;
 +
 +import static me.aap.fermata.util.Utils.dynCtx;
@@ -10507,9 +10648,12 @@ index 0000000..bc73825
 +import android.net.Uri;
 +import android.webkit.WebResourceRequest;
 +import android.webkit.WebView;
++import android.widget.Toast;
 +
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
++import androidx.webkit.WebResourceErrorCompat;
++import androidx.webkit.WebViewFeature;
 +
 +import java.io.ByteArrayOutputStream;
 +import java.io.InputStream;
@@ -10532,6 +10676,17 @@ index 0000000..bc73825
 +		if (!isTikTok(Uri.parse(url))) return;
 +		String js = script(view.getContext());
 +		if (js != null) view.evaluateJavascript(js, null);
++	}
++
++	/** Страница не загрузилась — сказать об этом, а не оставлять белый экран. */
++	@Override
++	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
++															@NonNull WebResourceErrorCompat error) {
++		super.onReceivedError(view, request, error);
++		if (!request.isForMainFrame()) return;
++		String d = WebViewFeature.isFeatureSupported(
++				WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION) ? String.valueOf(error.getDescription()) : "";
++		Toast.makeText(view.getContext(), "TikTok не загрузился " + d, Toast.LENGTH_LONG).show();
 +	}
 +
 +	@Override

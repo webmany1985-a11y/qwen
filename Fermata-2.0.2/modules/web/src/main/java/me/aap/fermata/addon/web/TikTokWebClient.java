@@ -6,9 +6,12 @@ import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.webkit.WebResourceErrorCompat;
+import androidx.webkit.WebViewFeature;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -31,6 +34,17 @@ public class TikTokWebClient extends FermataWebClient {
 		if (!isTikTok(Uri.parse(url))) return;
 		String js = script(view.getContext());
 		if (js != null) view.evaluateJavascript(js, null);
+	}
+
+	/** Страница не загрузилась — сказать об этом, а не оставлять белый экран. */
+	@Override
+	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
+															@NonNull WebResourceErrorCompat error) {
+		super.onReceivedError(view, request, error);
+		if (!request.isForMainFrame()) return;
+		String d = WebViewFeature.isFeatureSupported(
+				WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION) ? String.valueOf(error.getDescription()) : "";
+		Toast.makeText(view.getContext(), "TikTok не загрузился " + d, Toast.LENGTH_LONG).show();
 	}
 
 	@Override

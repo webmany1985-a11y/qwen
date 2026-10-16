@@ -166,4 +166,25 @@ public class HudMathTest {
 		}
 		assertEquals(0f, HudMath.ripple(1f, 0.5f, 2f, 0f), 0f);
 	}
+
+	@Test
+	public void imageWarpBoundedCalmAtRestAndCentreFixed() {
+		float idleMax = 0f, loudMax = 0f;
+		for (int i = 0; i < 2000; i++) {
+			float theta = i * 0.0314f;
+			float t = i * 0.013f;
+			for (float rn = 0f; rn <= 1.4f; rn += 0.2f) {
+				float idle = HudMath.warp(theta, rn, t, 0f);
+				float loud = HudMath.warp(theta, rn, t, 1f);
+				assertTrue(Math.abs(loud) <= HudMath.WARP_MAX);
+				idleMax = Math.max(idleMax, Math.abs(idle));
+				loudMax = Math.max(loudMax, Math.abs(loud));
+			}
+			assertEquals(0f, HudMath.warp(theta, 0f, t, 1f), 0f);
+		}
+		assertTrue("в покое — едва заметно", idleMax < 0.03f);
+		assertTrue("с голосом — заметно", loudMax > 0.06f);
+		// Разные участки края в один момент сдвинуты по-разному
+		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
+	}
 }
