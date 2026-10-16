@@ -1,0 +1,26 @@
+android {
+    namespace = "me.aap.fermata.addon.chat"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'chat',
+                    icon   : 'chat',
+                    class  : 'me.aap.fermata.addon.chat.ChatAddon',
+                    enabled: false
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':fermata')
+    implementation libs.androidMaterial
+    implementation libs.androidxMedia
+}

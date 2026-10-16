@@ -1,0 +1,18 @@
+.externalNativeBuild/
+.gradle/
+.idea/
+.settings/
+.project
+.classpath
+build/
+dist/
+.cxx/
+*.iml
+local.properties
+google-services.json
+TODO
+res/*.jks
+
+# Custom builds
+fermata/src/custom/
+build-custom.gradle
