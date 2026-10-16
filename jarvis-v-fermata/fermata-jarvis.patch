@@ -1,4 +1,5 @@
-diff -ruN a/fermata/src/main/AndroidManifest.xml b/fermata/src/main/AndroidManifest.xml
+diff --git a/fermata/src/main/AndroidManifest.xml b/fermata/src/main/AndroidManifest.xml
+index 4911c14..d03de6c 100644
 --- a/fermata/src/main/AndroidManifest.xml
 +++ b/fermata/src/main/AndroidManifest.xml
 @@ -10,6 +10,8 @@
@@ -18,10 +19,12 @@ diff -ruN a/fermata/src/main/AndroidManifest.xml b/fermata/src/main/AndroidManif
          <intent>
              <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
          </intent>
-diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
---- a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
+diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
+new file mode 100644
+index 0000000..f885fab
+--- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,170 @@
+@@ -0,0 +1,207 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -41,6 +44,7 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +import android.widget.Toast;
 +
 +import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
 +
 +import java.util.Locale;
 +
@@ -75,6 +79,24 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +	private JarvisBridge() {
 +	}
 +
++	/**
++	 * Ход запроса — для вкладки JARVIS, которая рисует круг по фазам.
++	 * Все вызовы — в главном потоке.
++	 */
++	public interface Listener {
++		/** Фраза отправлена, ждём ответ. */
++		default void onThinking() {
++		}
++
++		/** Ответ получен, Fermata начинает его произносить. */
++		default void onSpeaking() {
++		}
++
++		/** Ответ произнесён (или произнести не удалось) — запрос окончен. */
++		default void onDone() {
++		}
++	}
++
 +	/** Установлен ли JARVIS с входом для команд. */
 +	public static boolean isInstalled(Context ctx) {
 +		Intent i = new Intent(ACTION).setPackage(PKG);
@@ -87,6 +109,16 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +	 * @return false, если JARVIS не установлен — тогда фраза остаётся непонятой, как раньше
 +	 */
 +	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text) {
++		return ask(a, text, null);
++	}
++
++	/**
++	 * То же, с отчётом о ходе запроса. С {@code listener} ответ только произносится,
++	 * без всплывающего сообщения: во вкладке JARVIS под кругом ничего не показываем.
++	 * При false {@code listener} не вызывается.
++	 */
++	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text,
++														@Nullable Listener listener) {
 +		Context ctx = a.getContext();
 +		if (!isInstalled(ctx)) return false;
 +
@@ -94,9 +126,10 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
 +				if (err != null) Log.e(err, "JARVIS: failed to request permission");
 +				Toast.makeText(ctx, "Нет разрешения «команды для JARVIS»", Toast.LENGTH_LONG).show();
++				if (listener != null) listener.onDone();
 +				return;
 +			}
-+			new Call(a, text).start();
++			new Call(a, text, listener).start();
 +		});
 +		return true;
 +	}
@@ -106,16 +139,19 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +		private final MainActivityDelegate a;
 +		private final Context ctx;
 +		private final String text;
++		@Nullable
++		private final Listener listener;
 +		private final Handler handler = new Handler(Looper.getMainLooper());
 +		private final Messenger replyTo = new Messenger(new Handler(Looper.getMainLooper(), this::onReply));
 +		private final Runnable timeout = () -> finish("JARVIS не ответил");
 +		private boolean bound;
 +		private boolean done;
 +
-+		Call(MainActivityDelegate a, String text) {
++		Call(MainActivityDelegate a, String text, @Nullable Listener listener) {
 +			this.a = a;
 +			this.ctx = a.getContext().getApplicationContext();
 +			this.text = text;
++			this.listener = listener;
 +		}
 +
 +		void start() {
@@ -130,6 +166,7 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +				return;
 +			}
 +			handler.postDelayed(timeout, TIMEOUT_MS);
++			if (listener != null) listener.onThinking();
 +		}
 +
 +		@Override
@@ -172,7 +209,8 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +				} catch (IllegalArgumentException ignore) {
 +				}
 +			}
-+			Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
++			if (listener == null) Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
++			else listener.onSpeaking();
 +			speak(reply);
 +		}
 +
@@ -181,21 +219,24 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/ferm
 +			TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
 +				if (err != null) {
 +					Log.e(err, "JARVIS: TTS failed");
++					if (listener != null) listener.onDone();
 +					return;
 +				}
 +				Cancellable interrupt = a.interruptPlayback();
 +				tts.speak(reply).onCompletion((r, serr) -> {
 +					interrupt.cancel();
 +					tts.close();
++					if (listener != null) listener.onDone();
 +				});
 +			});
 +		}
 +	}
 +}
-diff -ruN a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
+diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
+index 03dfc56..be9c361 100644
 --- a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 +++ b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
-@@ -95,6 +95,7 @@
+@@ -95,6 +95,7 @@ import me.aap.fermata.addon.FermataActivityAddon;
  import me.aap.fermata.addon.FermataAddon;
  import me.aap.fermata.addon.FermataFragmentAddon;
  import me.aap.fermata.addon.MediaLibAddon;
@@ -203,13 +244,1162 @@ diff -ruN a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegat
  import me.aap.fermata.media.engine.MediaEngineManager;
  import me.aap.fermata.media.lib.AtvInterface;
  import me.aap.fermata.media.lib.DefaultMediaLib;
-@@ -832,7 +833,8 @@
+@@ -830,13 +831,19 @@ public class MainActivityDelegate extends ActivityDelegate
+ 			} else if (getAppActivity().isInputActive()) {
+ 				getAppActivity().setTextInput(q.get(0));
  			} else {
- 				VoiceCommandHandler h = voiceCommandHandler;
- 				if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
+-				VoiceCommandHandler h = voiceCommandHandler;
+-				if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
 -				h.handle(q);
 +				// Не поняли сами — отдаём фразу голосовому ассистенту JARVIS
-+				if (!h.handle(q) && !q.isEmpty()) JarvisBridge.ask(this, q.get(0));
++				if (!handleVoiceCommand(q) && !q.isEmpty()) JarvisBridge.ask(this, q.get(0));
  			}
  		});
  	}
+ 
++	/** Выполнить голосовую команду Fermata; false — команда не распознана. */
++	public boolean handleVoiceCommand(List<String> q) {
++		VoiceCommandHandler h = voiceCommandHandler;
++		if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
++		return h.handle(q);
++	}
++
+ 	public FutureSupplier<List<String>> startSpeechRecognizer() {
+ 		return startSpeechRecognizer(null, false);
+ 	}
+diff --git a/fermata/src/main/res/values/ids.xml b/fermata/src/main/res/values/ids.xml
+index 346317f..60744bb 100644
+--- a/fermata/src/main/res/values/ids.xml
++++ b/fermata/src/main/res/values/ids.xml
+@@ -36,6 +36,7 @@
+     <item name="felex_fragment" type="id" />
+     <item name="cast_addon" type="id" />
+     <item name="chat_addon" type="id" />
++    <item name="jarvis_addon" type="id" />
+     <item name="subgen_addon" type="id" />
+     <item name="whisper_addon" type="id" />
+     <item name="translate_addon" type="id" />
+diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
+index 77a9b17..3dba5e9 100644
+--- a/fermata/src/main/res/values/strings.xml
++++ b/fermata/src/main/res/values/strings.xml
+@@ -29,6 +29,7 @@
+     <string name="addon_name_felex" translatable="false">Felex</string>
+     <string name="addon_name_cast" translatable="false">Google Cast</string>
+     <string name="addon_name_chat" translatable="false">ChatGPT</string>
++    <string name="addon_name_jarvis" translatable="false">JARVIS</string>
+     <string name="addon_name_translate" translatable="false">Language translator</string>
+     <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
+     <string name="addon_name_whisper" translatable="false">Whisper</string>
+diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
+new file mode 100644
+index 0000000..7e46197
+--- /dev/null
++++ b/modules/jarvis/build.gradle
+@@ -0,0 +1,28 @@
++android {
++    namespace = "me.aap.fermata.addon.jarvis"
++    defaultConfig {
++        versionCode 1
++        versionName "1.0"
++    }
++}
++
++
++ext {
++    addons = [
++            [
++                    name   : 'jarvis',
++                    icon   : 'record_voice',
++                    class  : 'me.aap.fermata.addon.jarvis.JarvisAddon',
++                    order  : 1,
++                    hasSettings: false,
++                    enabled: true
++            ]
++    ]
++}
++
++dependencies {
++    implementation project(':utils')
++    implementation project(':fermata')
++    implementation libs.androidMaterial
++    implementation libs.androidxMedia
++}
+diff --git a/modules/jarvis/src/debug/AndroidManifest.xml b/modules/jarvis/src/debug/AndroidManifest.xml
+new file mode 100644
+index 0000000..4b92c4a
+--- /dev/null
++++ b/modules/jarvis/src/debug/AndroidManifest.xml
+@@ -0,0 +1,13 @@
++<manifest xmlns:dist="http://schemas.android.com/apk/distribution"
++    xmlns:tools="http://schemas.android.com/tools">
++
++    <dist:module
++        dist:instant="false"
++        dist:title="@string/addon_name_jarvis"
++        tools:node="replace">
++        <dist:delivery>
++            <dist:install-time />
++        </dist:delivery>
++        <dist:fusing dist:include="true" />
++    </dist:module>
++</manifest>
+diff --git a/modules/jarvis/src/main/AndroidManifest.xml b/modules/jarvis/src/main/AndroidManifest.xml
+new file mode 100644
+index 0000000..b3f8131
+--- /dev/null
++++ b/modules/jarvis/src/main/AndroidManifest.xml
+@@ -0,0 +1,14 @@
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    xmlns:dist="http://schemas.android.com/apk/distribution"
++    split="jarvis"
++    android:isFeatureSplit="true">
++
++    <dist:module
++        dist:instant="false"
++        dist:title="@string/addon_name_jarvis">
++        <dist:delivery>
++            <dist:install-time />
++        </dist:delivery>
++        <dist:fusing dist:include="true" />
++    </dist:module>
++</manifest>
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
+new file mode 100644
+index 0000000..5c2b500
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
+@@ -0,0 +1,264 @@
++package me.aap.fermata.addon.jarvis;
++
++import static java.lang.Math.abs;
++import static java.lang.Math.floor;
++import static java.lang.Math.max;
++import static java.lang.Math.min;
++
++/**
++ * Математика круга JARVIS без Android: параметры колец, сглаживание громкости,
++ * раскрытие по времени. Рисует по ней {@link JarvisHudView}.
++ *
++ * Перенос один в один из JARVIS (android-team, prilozheniya/jarvis,
++ * ui/hud/HudMath.kt): круг во вкладке Fermata выглядит так же, как на телефоне.
++ * Не перенесено только то, что во вкладке не нужно: закрытие окна и касание
++ * вне круга — вкладка не закрывается.
++ */
++public final class HudMath {
++
++	/** Что сейчас делает ассистент. Как AssistantUiState.Phase в JARVIS. */
++	public enum Phase {
++		/** Ждём команды. */
++		IDLE,
++		/** Круг раскрывается. */
++		APPEAR,
++		/** Записывается команда пользователя. */
++		LISTEN,
++		/** Ждём ответ JARVIS. */
++		THINK,
++		/** Ответ произносится. */
++		SPEAK
++	}
++
++	/** За сколько секунд кольца раскрываются из центра. */
++	public static final float OPEN_SECONDS = 1.6f;
++
++	/** Предельный шаг времени между кадрами: после паузы анимация не прыгает. */
++	public static final float MAX_DT = 0.05f;
++
++	static final float TWO_PI = (float) (2.0 * Math.PI);
++
++	/** Кольцо: радиус (доля от меньшей стороны), толщина, скорость (об/с), дуги, засечки. */
++	public static final class Ring {
++		public final float r;
++		public final float w;
++		public final float v;
++		/** Дуги: пары «начало, длина» в долях круга. */
++		public final float[] segs;
++		public final int ticks;
++		public final float tickLen;
++		/** Длина штриха пунктира в долях; 0 — сплошная дуга. */
++		public final float dash;
++		public final float alpha;
++
++		Ring(float r, float w, float v, float[] segs, int ticks, float tickLen, float dash,
++				 float alpha) {
++			this.r = r;
++			this.w = w;
++			this.v = v;
++			this.segs = segs;
++			this.ticks = ticks;
++			this.tickLen = tickLen;
++			this.dash = dash;
++			this.alpha = alpha;
++		}
++	}
++
++	/** Узел сетки: угол, расстояние от центра (доля), размер точки. */
++	public static final class Node {
++		public final float a;
++		public final float d;
++		public final float s;
++
++		Node(float a, float d, float s) {
++			this.a = a;
++			this.d = d;
++			this.s = s;
++		}
++	}
++
++	public static final Ring[] RINGS = {
++			new Ring(0.47f, 1.2f, 0.010f, new float[]{0f, 1f}, 120, 0.012f, 0f, 0.35f),
++			new Ring(0.43f, 5f, -0.035f,
++					new float[]{0.02f, 0.18f, 0.27f, 0.06f, 0.38f, 0.22f, 0.66f, 0.04f, 0.74f, 0.2f},
++					0, 0f, 0f, 0.95f),
++			new Ring(0.395f, 1f, 0.06f, new float[]{0f, 0.42f, 0.5f, 0.42f}, 0, 0f, 0.01f, 0.6f),
++			new Ring(0.355f, 9f, 0.022f,
++					new float[]{0.05f, 0.12f, 0.22f, 0.12f, 0.39f, 0.12f, 0.56f, 0.12f, 0.73f, 0.12f,
++							0.9f, 0.06f},
++					0, 0f, 0f, 0.9f),
++			new Ring(0.31f, 1.4f, -0.09f, new float[]{0f, 0.7f}, 60, 0.02f, 0f, 0.55f),
++			new Ring(0.265f, 3f, 0.14f, new float[]{0.1f, 0.3f, 0.6f, 0.3f}, 0, 0f, 0f, 0.85f),
++			new Ring(0.22f, 1f, -0.05f, new float[]{0f, 1f}, 0, 0f, 0f, 0.4f),
++	};
++
++	public static final Node[] NODES = new Node[26];
++
++	static {
++		for (int i = 0; i < NODES.length; i++) {
++			NODES[i] = new Node(
++					(i / 26f) * TWO_PI + (float) Math.sin(i * 7.1f) * 0.3f,
++					0.5f + ((i * 37) % 11) / 30f,
++					0.02f + ((i * 13) % 7) / 600f);
++		}
++	}
++
++	private HudMath() {
++	}
++
++	static float clamp(float v, float lo, float hi) {
++		return (v < lo) ? lo : (v > hi) ? hi : v;
++	}
++
++	/** Начальные обороты колец: разные, но одни и те же при каждом запуске. */
++	public static float initialRotation(int i) {
++		return (i * 0.37f + 0.11f) % 1f;
++	}
++
++	/** Шаг времени кадра в секундах: не меньше нуля и не больше {@link #MAX_DT}. */
++	public static float clampDt(float rawSeconds) {
++		return clamp(rawSeconds, 0f, MAX_DT);
++	}
++
++	/** Секунды от startNanos до nowNanos; отрицательным не бывает. */
++	public static float sinceSeconds(long nowNanos, long startNanos) {
++		return max(0L, nowNanos - startNanos) / 1_000_000_000f;
++	}
++
++	/** Раскрытие 0..1 по времени с показа. */
++	public static float open(float sinceSeconds) {
++		return clamp(sinceSeconds / OPEN_SECONDS, 0f, 1f);
++	}
++
++	/** Сглаживание громкости: вверх быстрее (18/с), вниз медленнее (6/с). */
++	public static float smoothLevel(float level, float target, float dt) {
++		float k = min(1f, max(0f, dt) * ((target > level) ? 18f : 6f));
++		return level + (target - level) * k;
++	}
++
++	/** К чему стремится громкость в фазе: настоящий звук или условное «дыхание». */
++	public static float targetLevel(Phase phase, float realLevel, float t) {
++		switch (phase) {
++			case LISTEN:
++				return clamp(realLevel, 0f, 1f) * 0.9f;
++			case SPEAK:
++				return clamp(realLevel, 0f, 1f);
++			case THINK:
++				return 0.18f + 0.08f * (float) Math.sin(t * 6f);
++			default:
++				return 0.1f;
++		}
++	}
++
++	/**
++	 * Условная громкость, пока Fermata произносит ответ: синтез речи громкость
++	 * не отдаёт, поэтому — ровная пульсация в ритме речи.
++	 */
++	public static float speakLevel(float t) {
++		return 0.35f + 0.3f * abs((float) Math.sin(t * 7f)) * (0.6f + 0.4f * abs((float) Math.sin(t * 2.3f)));
++	}
++
++	/** Во сколько раз быстрее вращение: при появлении и «думаю» — быстрее. */
++	public static float wantSpin(Phase phase, float sinceSeconds) {
++		if (phase == Phase.THINK) return 3.2f;
++		if ((phase == Phase.APPEAR) || (sinceSeconds < OPEN_SECONDS)) return 1.6f;
++		return 1f;
++	}
++
++	public static float smoothSpin(float spin, float want, float dt) {
++		return spin + (want - spin) * min(1f, max(0f, dt) * 3f);
++	}
++
++	/** Раскрытие кольца номер i: кольца выходят из центра по очереди. */
++	public static float ringAppear(float open, int i) {
++		return clamp(open * 1.6f - i * 0.09f, 0f, 1f);
++	}
++
++	/** Радиус кольца в пикселях, не меньше нуля. */
++	public static float ringRadius(float size, Ring ring, int i, float level, float appear) {
++		float pulse = 1f + level * (0.05f + (i % 2) * 0.04f);
++		return max(0f, size * ring.r * pulse * (0.6f + 0.4f * appear));
++	}
++
++	public static float ringAlpha(Ring ring, float appear, float level) {
++		return clamp(ring.alpha * appear * (0.75f + level * 0.25f), 0f, 1f);
++	}
++
++	/** Следующий оборот кольца, приведённый в [0, 1). */
++	public static float nextRotation(float rot, Ring ring, float dt, float spin, float level) {
++		float next = rot + ring.v * max(0f, dt) * spin * (1f + level * 0.6f);
++		return next - (float) floor(next);
++	}
++
++	/** Радиус свечения ядра; не меньше 0,1 пикселя, градиент не терпит нуля. */
++	public static float coreRadius(float size, float level, float open) {
++		return max(0.1f, size * (0.16f + level * 0.12f) * open);
++	}
++
++	/** Горизонтальная вспышка при появлении: пик на 1,2 с после показа. */
++	public static float introFlare(float sinceSeconds) {
++		return max(0f, 1f - abs(sinceSeconds - 1.2f) * 2f);
++	}
++
++	/** Сила вспышки: при появлении — по времени, дальше — от громкости. */
++	public static float flare(Phase phase, float sinceSeconds, float level) {
++		float byLevel = (phase == Phase.APPEAR) ? 0f : level * 0.5f;
++		return clamp(max(introFlare(sinceSeconds), byLevel), 0f, 1f);
++	}
++
++	public static float nodeDistance(float size, Node node, float open) {
++		return max(0f, size * node.d * (0.8f + 0.2f * open));
++	}
++
++	/** Высота столбика эквалайзера номер k. */
++	public static float equalizerHeight(float size, float level, float t, int k) {
++		return size * (0.006f + level * 0.05f * (0.4f + 0.6f * abs((float) Math.sin(t * 9f + k * 1.7f))));
++	}
++
++	public static boolean showsEqualizer(Phase phase) {
++		return (phase == Phase.LISTEN) || (phase == Phase.SPEAK);
++	}
++
++	public static boolean showsScan(Phase phase) {
++		return phase == Phase.THINK;
++	}
++
++	/**
++	 * Громкость микрофона 0..1 из RecognitionListener.onRmsChanged. Значения
++	 * распознавателя — примерно от −2 дБ (тишина) до 10 дБ (громкая речь).
++	 */
++	public static float levelFromRmsDb(float rmsDb) {
++		return clamp((rmsDb + 2f) / 12f, 0f, 1f);
++	}
++
++	/**
++	 * Изменяемое состояние анимации между кадрами: обороты колец, сглаженная
++	 * громкость и ускорение вращения. Без Android — проверяется на JVM.
++	 */
++	public static final class Animator {
++		public final float[] rotations = new float[RINGS.length];
++		private float level;
++		private float spin = 1f;
++
++		public Animator() {
++			for (int i = 0; i < rotations.length; i++) rotations[i] = initialRotation(i);
++		}
++
++		public float getLevel() {
++			return level;
++		}
++
++		public float getSpin() {
++			return spin;
++		}
++
++		/** Один кадр. t — секунды с показа, dt — шаг, уже зажатый в 0..MAX_DT. */
++		public void advance(Phase phase, float realLevel, float t, float dt) {
++			level = smoothLevel(level, targetLevel(phase, realLevel, t), dt);
++			spin = smoothSpin(spin, wantSpin(phase, t), dt);
++			for (int i = 0; i < rotations.length; i++) {
++				rotations[i] = nextRotation(rotations[i], RINGS[i], dt, spin, level);
++			}
++		}
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
+new file mode 100644
+index 0000000..6ed15ad
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
+@@ -0,0 +1,36 @@
++package me.aap.fermata.addon.jarvis;
++
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++
++import me.aap.fermata.addon.AddonInfo;
++import me.aap.fermata.addon.FermataAddon;
++import me.aap.fermata.addon.FermataFragmentAddon;
++import me.aap.utils.ui.fragment.ActivityFragment;
++
++/**
++ * Вкладка «JARVIS»: круг ассистента и голосовой ввод. Фразу сначала
++ * выполняет сама Fermata, непонятую — JARVIS (см. {@link JarvisFragment}).
++ */
++@Keep
++@SuppressWarnings("unused")
++public class JarvisAddon implements FermataFragmentAddon {
++	private static final AddonInfo info = FermataAddon.findAddonInfo(JarvisAddon.class.getName());
++
++	@Override
++	public int getAddonId() {
++		return me.aap.fermata.R.id.jarvis_addon;
++	}
++
++	@NonNull
++	@Override
++	public AddonInfo getInfo() {
++		return info;
++	}
++
++	@NonNull
++	@Override
++	public ActivityFragment createFragment() {
++		return new JarvisFragment();
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
+new file mode 100644
+index 0000000..848147a
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
+@@ -0,0 +1,275 @@
++package me.aap.fermata.addon.jarvis;
++
++import static android.content.pm.PackageManager.PERMISSION_GRANTED;
++import static me.aap.fermata.util.Utils.dynCtx;
++import static me.aap.utils.async.Completed.completed;
++
++import android.Manifest;
++import android.content.Context;
++import android.content.Intent;
++import android.os.Bundle;
++import android.speech.RecognitionListener;
++import android.speech.RecognizerIntent;
++import android.speech.SpeechRecognizer;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.Toast;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.util.List;
++
++import me.aap.fermata.jarvis.JarvisBridge;
++import me.aap.fermata.ui.activity.MainActivityDelegate;
++import me.aap.fermata.ui.fragment.MainActivityFragment;
++import me.aap.utils.async.FutureSupplier;
++import me.aap.utils.function.Cancellable;
++import me.aap.utils.log.Log;
++import me.aap.utils.ui.fragment.ActivityFragment;
++import me.aap.utils.ui.view.FloatingButton;
++
++/**
++ * Вкладка JARVIS: круг во весь экран. Касание круга, плавающей кнопки или
++ * кнопки «голосовое управление» (например, на руле) — сказать фразу.
++ *
++ * Порядок как при голосовом поиске Fermata: сначала фразу пробует выполнить
++ * сама Fermata («пауза», «играй…»), непонятую получает JARVIS. Ответ JARVIS
++ * только произносится — под кругом ничего не показывается.
++ *
++ * Музыка стоит на паузе, пока слушаем, ждём и произносим ответ, и
++ * возобновляется после.
++ */
++public class JarvisFragment extends MainActivityFragment
++		implements RecognitionListener, JarvisBridge.Listener {
++	@Nullable
++	private JarvisHudView hud;
++	@Nullable
++	private SpeechRecognizer recognizer;
++	private Cancellable interrupt = Cancellable.CANCELED;
++	/** Идёт разговор: слушаем, ждём JARVIS или произносим ответ. */
++	private boolean busy;
++
++	@Override
++	public int getFragmentId() {
++		return me.aap.fermata.R.id.jarvis_addon;
++	}
++
++	@Override
++	public CharSequence getTitle() {
++		return "JARVIS";
++	}
++
++	@Nullable
++	@Override
++	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
++													 @Nullable Bundle savedInstanceState) {
++		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
++		v.setOnClickListener(x -> onCircleClick());
++		hud = v;
++		return v;
++	}
++
++	@Override
++	public void onDestroyView() {
++		stopListening();
++		hud = null;
++		super.onDestroyView();
++	}
++
++	@Override
++	public void onPause() {
++		super.onPause();
++		stopListening();
++	}
++
++	@Override
++	public void onHiddenChanged(boolean hidden) {
++		super.onHiddenChanged(hidden);
++		if (hidden) stopListening();
++	}
++
++	@Override
++	public FloatingButton.Mediator getFloatingButtonMediator() {
++		return FbMediator.instance;
++	}
++
++	/** Кнопка «голосовое управление» Fermata, пока открыта эта вкладка. */
++	@Override
++	public boolean startVoiceAssistant() {
++		listen();
++		return true;
++	}
++
++	private void onCircleClick() {
++		if (!busy) listen();
++		else if ((recognizer != null) && (phase() == HudMath.Phase.LISTEN)) recognizer.stopListening();
++	}
++
++	private void listen() {
++		if (busy || (hud == null)) return;
++		MainActivityDelegate a = getActivityDelegate();
++		Context ctx = requireContext();
++		if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
++			toast(R.string.jarvis_no_recognizer);
++			return;
++		}
++		busy = true;
++		setPhase(HudMath.Phase.APPEAR);
++		FutureSupplier<int[]> perm = a.isCarActivityNotMirror() ?
++				completed(new int[]{PERMISSION_GRANTED}) :
++				a.getAppActivity().checkPermissions(Manifest.permission.RECORD_AUDIO);
++		perm.onCompletion((r, err) -> {
++			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
++				if (err != null) Log.e(err, "JARVIS tab: RECORD_AUDIO permission failed");
++				toast(me.aap.fermata.R.string.err_no_audio_record_perm);
++				done();
++				return;
++			}
++			if (!busy || (hud == null)) return;
++			startRecognizer(a);
++		});
++	}
++
++	private void startRecognizer(MainActivityDelegate a) {
++		interrupt = a.interruptPlayback();
++		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
++		sr.setRecognitionListener(this);
++		recognizer = sr;
++		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
++		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, a.getPrefs().getVoiceControlLang(a));
++		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
++		sr.startListening(i);
++	}
++
++	/** Прервать запись, если она идёт. Запрос, уже ушедший JARVIS, доходит до конца. */
++	private void stopListening() {
++		if (recognizer == null) {
++			if (busy && (phase() == HudMath.Phase.APPEAR)) done();
++			return;
++		}
++		destroyRecognizer();
++		done();
++	}
++
++	private void destroyRecognizer() {
++		SpeechRecognizer sr = recognizer;
++		recognizer = null;
++		if (sr != null) sr.destroy();
++	}
++
++	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
++	private void done() {
++		Cancellable i = interrupt;
++		interrupt = Cancellable.CANCELED;
++		i.cancel();
++		busy = false;
++		setPhase(HudMath.Phase.IDLE);
++	}
++
++	@Override
++	public void onReadyForSpeech(Bundle params) {
++		setPhase(HudMath.Phase.LISTEN);
++	}
++
++	@Override
++	public void onBeginningOfSpeech() {
++	}
++
++	@Override
++	public void onRmsChanged(float rmsdB) {
++		if (hud != null) hud.setMicLevel(HudMath.levelFromRmsDb(rmsdB));
++	}
++
++	@Override
++	public void onBufferReceived(byte[] buffer) {
++	}
++
++	@Override
++	public void onEndOfSpeech() {
++	}
++
++	@Override
++	public void onError(int error) {
++		if (recognizer == null) return;
++		destroyRecognizer();
++		if ((error == SpeechRecognizer.ERROR_NO_MATCH) ||
++				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) {
++			toast(R.string.jarvis_not_heard);
++		} else {
++			Log.e("JARVIS tab: speech recognition error ", error);
++		}
++		done();
++	}
++
++	@Override
++	public void onResults(Bundle results) {
++		if (recognizer == null) return;
++		destroyRecognizer();
++		List<String> q = (results == null) ? null :
++				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
++		if ((q == null) || q.isEmpty() || q.get(0).trim().isEmpty()) {
++			toast(R.string.jarvis_not_heard);
++			done();
++			return;
++		}
++
++		MainActivityDelegate a = getActivityDelegate();
++		if (a.handleVoiceCommand(q)) {
++			// Команду выполнила Fermata. done() вернёт музыку, только если команда
++			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
++			done();
++		} else if (!JarvisBridge.ask(a, q.get(0), this)) {
++			toast(R.string.jarvis_not_installed);
++			done();
++		}
++	}
++
++	@Override
++	public void onPartialResults(Bundle partialResults) {
++	}
++
++	@Override
++	public void onEvent(int eventType, Bundle params) {
++	}
++
++	@Override
++	public void onThinking() {
++		if (busy) setPhase(HudMath.Phase.THINK);
++	}
++
++	@Override
++	public void onSpeaking() {
++		if (busy) setPhase(HudMath.Phase.SPEAK);
++	}
++
++	@Override
++	public void onDone() {
++		if (busy) done();
++	}
++
++	private HudMath.Phase phase() {
++		return (hud == null) ? HudMath.Phase.IDLE : hud.getPhase();
++	}
++
++	private void setPhase(HudMath.Phase p) {
++		if (hud != null) hud.setPhase(p);
++	}
++
++	private void toast(int msg) {
++		Context ctx = getContext();
++		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
++	}
++
++	private static final class FbMediator implements FloatingButton.Mediator {
++		static final FbMediator instance = new FbMediator();
++
++		@Override
++		public void enable(FloatingButton b, ActivityFragment f) {
++			b.setImageResource(me.aap.fermata.R.drawable.record_voice);
++			b.setOnClickListener(v -> ((JarvisFragment) f).startVoiceAssistant());
++			b.setOnLongClickListener(v -> ((JarvisFragment) f).startVoiceAssistant());
++		}
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
+new file mode 100644
+index 0000000..bb85c4a
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
+@@ -0,0 +1,290 @@
++package me.aap.fermata.addon.jarvis;
++
++import static me.aap.fermata.addon.jarvis.HudMath.NODES;
++import static me.aap.fermata.addon.jarvis.HudMath.RINGS;
++import static me.aap.fermata.addon.jarvis.HudMath.TWO_PI;
++import static me.aap.fermata.addon.jarvis.HudMath.clamp;
++
++import android.content.Context;
++import android.graphics.Canvas;
++import android.graphics.Color;
++import android.graphics.LinearGradient;
++import android.graphics.Paint;
++import android.graphics.Path;
++import android.graphics.PorterDuff;
++import android.graphics.PorterDuffXfermode;
++import android.graphics.RadialGradient;
++import android.graphics.RectF;
++import android.graphics.Shader;
++import android.graphics.SweepGradient;
++import android.graphics.Typeface;
++import android.view.View;
++
++import androidx.annotation.NonNull;
++
++/**
++ * Круг JARVIS в стиле Старка: семь колец, свечение ядра, вспышка при
++ * появлении, сетка с узлами, надпись и эквалайзер. Тот же рисунок, что в
++ * JARVIS (ui/hud/JarvisHud.kt), перенесённый с Compose на обычный Canvas:
++ * Fermata построена на View, тащить в неё Compose ради одного круга незачем.
++ *
++ * Кадры идут, только пока вид показан на экране.
++ */
++public class JarvisHudView extends View {
++	private static final int ARC = 0xFF3FD6FF;
++	private static final int ARC_SOFT = 0xFF1C7FA3;
++	private static final int INK = 0xFFCFEFFF;
++	/** В JARVIS фон полупрозрачный поверх экрана; во вкладке — свой, непрозрачный. */
++	private static final int BACKDROP = 0xFF03080D;
++	private static final float RAD_TO_DEG = (float) (180.0 / Math.PI);
++
++	private final HudMath.Animator animator = new HudMath.Animator();
++	private final float dp;
++	private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
++	private final Paint plus = new Paint(Paint.ANTI_ALIAS_FLAG);
++	private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
++	private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
++	private final Typeface titleFace = Typeface.create(Typeface.SANS_SERIF, 600, false);
++	private final Typeface wordFace = Typeface.create(Typeface.SANS_SERIF, 500, false);
++	private final Path tickPath = new Path();
++	private final RectF box = new RectF();
++	private final String title;
++	private final String listening;
++	private final String thinking;
++
++	private HudMath.Phase phase = HudMath.Phase.IDLE;
++	private float micLevel;
++	private long start = -1L;
++	private long prev = -1L;
++	private float since;
++
++	public JarvisHudView(Context ctx) {
++		super(ctx);
++		dp = ctx.getResources().getDisplayMetrics().density;
++		title = ctx.getString(R.string.jarvis_hud_title);
++		listening = ctx.getString(R.string.jarvis_hud_listening);
++		thinking = ctx.getString(R.string.jarvis_hud_thinking);
++		setContentDescription(ctx.getString(R.string.jarvis_hud_description));
++		PorterDuffXfermode add = new PorterDuffXfermode(PorterDuff.Mode.ADD);
++		plus.setXfermode(add);
++		stroke.setXfermode(add);
++		stroke.setStyle(Paint.Style.STROKE);
++		text.setTextAlign(Paint.Align.CENTER);
++		// Свечение складывается (ADD) только с собственным фоном вида
++		setLayerType(LAYER_TYPE_HARDWARE, null);
++		setClickable(true);
++		setFocusable(true);
++	}
++
++	public HudMath.Phase getPhase() {
++		return phase;
++	}
++
++	public void setPhase(@NonNull HudMath.Phase phase) {
++		this.phase = phase;
++		if ((phase == HudMath.Phase.IDLE) || (phase == HudMath.Phase.THINK)) micLevel = 0f;
++		invalidate();
++	}
++
++	/** Громкость микрофона 0..1; сглаживает сам вид. */
++	public void setMicLevel(float level) {
++		micLevel = clamp(level, 0f, 1f);
++	}
++
++	/** Раскрыть круг заново — при каждом показе вкладки. */
++	public void restart() {
++		start = -1L;
++		prev = -1L;
++		invalidate();
++	}
++
++	@Override
++	public void onVisibilityAggregated(boolean isVisible) {
++		super.onVisibilityAggregated(isVisible);
++		if (isVisible) restart();
++	}
++
++	@Override
++	protected void onDraw(@NonNull Canvas c) {
++		long now = System.nanoTime();
++		if (start < 0L) {
++			start = now;
++			prev = now;
++		}
++		float t = HudMath.sinceSeconds(now, start);
++		float dt = HudMath.clampDt(HudMath.sinceSeconds(now, prev));
++		float real = (phase == HudMath.Phase.SPEAK) ? HudMath.speakLevel(t) : micLevel;
++		animator.advance(phase, real, t, dt);
++		prev = now;
++		since = t;
++
++		drawHud(c);
++
++		if (isShown()) postInvalidateOnAnimation();
++	}
++
++	private void drawHud(Canvas c) {
++		float w = getWidth();
++		float h = getHeight();
++		float cx = w / 2f;
++		float cy = h / 2f;
++		float s = Math.min(w, h);
++		float t = since;
++		float open = HudMath.open(t);
++		float level = animator.getLevel();
++
++		c.drawColor(BACKDROP);
++
++		// Свечение ядра
++		float coreR = HudMath.coreRadius(s, level, open) * 2.6f;
++		plus.setShader(new RadialGradient(cx, cy, coreR,
++				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 220, 250, 255),
++						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
++				new float[]{0f, 0.18f, 1f}, Shader.TileMode.CLAMP));
++		c.drawCircle(cx, cy, coreR, plus);
++		plus.setShader(null);
++
++		// Горизонтальная вспышка
++		float flare = HudMath.flare(phase, t, level);
++		if (flare > 0.01f) {
++			float half = s * 0.006f * (1f + flare * 2f);
++			plus.setShader(new LinearGradient(cx - s * 0.5f, 0f, cx + s * 0.5f, 0f,
++					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 230, 252, 255),
++							withAlpha(ARC, 0f)},
++					new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
++			c.drawRect(cx - s * 0.5f, cy - half, cx + s * 0.5f, cy + half, plus);
++			plus.setShader(null);
++		}
++
++		// Сетка с узлами
++		float drift = t * 0.02f;
++		stroke.setStrokeWidth(0.6f * dp);
++		for (int i = 0; i < NODES.length; i++) {
++			HudMath.Node n = NODES[i];
++			double a = n.a + drift;
++			float d = HudMath.nodeDistance(s, n, open);
++			float px = cx + (float) Math.cos(a) * d;
++			float py = cy + (float) Math.sin(a) * d;
++			HudMath.Node m = NODES[(i + 3) % NODES.length];
++			double ma = m.a + drift;
++			float md = HudMath.nodeDistance(s, m, open);
++			stroke.setColor(withAlpha(ARC_SOFT, 0.18f * open));
++			c.drawLine(px, py, cx + (float) Math.cos(ma) * md, cy + (float) Math.sin(ma) * md, stroke);
++			plus.setColor(withAlpha(ARC, 0.5f * open));
++			c.drawCircle(px, py, Math.max(0f, s * n.s * 0.15f), plus);
++		}
++
++		// Кольца
++		for (int i = 0; i < RINGS.length; i++) {
++			HudMath.Ring ring = RINGS[i];
++			float appear = HudMath.ringAppear(open, i);
++			if (appear <= 0f) continue;
++			float r = HudMath.ringRadius(s, ring, i, level, appear);
++			float base = animator.rotations[i] * TWO_PI;
++			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
++			float alpha = HudMath.ringAlpha(ring, appear, level);
++			float width = ring.w * dp;
++			float glow = ((ring.w > 3f) ? 14f : 6f) * dp;
++			box.set(cx - r, cy - r, cx + r, cy + r);
++
++			for (int k = 0; k + 1 < ring.segs.length; k += 2) {
++				float a0 = base + ring.segs[k] * TWO_PI;
++				float sweep = ring.segs[k + 1] * TWO_PI * appear;
++				if (ring.dash > 0f) {
++					// Пунктир: штрих и такой же промежуток
++					float end = a0 + sweep;
++					float step = ring.dash * 2f * TWO_PI;
++					float dashLen = ring.dash * TWO_PI;
++					stroke.setColor(withAlpha(color, alpha));
++					stroke.setStrokeWidth(width);
++					for (float a = a0; a < end; a += step) {
++						c.drawArc(box, a * RAD_TO_DEG, (Math.min(end, a + dashLen) - a) * RAD_TO_DEG,
++								false, stroke);
++					}
++				} else {
++					// Свечение: широкий слабый мазок под основной линией
++					stroke.setColor(withAlpha(color, alpha * 0.22f));
++					stroke.setStrokeWidth(width + glow);
++					c.drawArc(box, a0 * RAD_TO_DEG, sweep * RAD_TO_DEG, false, stroke);
++					stroke.setColor(withAlpha(color, alpha));
++					stroke.setStrokeWidth(width);
++					c.drawArc(box, a0 * RAD_TO_DEG, sweep * RAD_TO_DEG, false, stroke);
++				}
++			}
++
++			if (ring.ticks > 0) {
++				tickPath.rewind();
++				for (int k = 0; k < ring.ticks; k++) {
++					double a = base + (k / (float) ring.ticks) * TWO_PI;
++					float len = s * ring.tickLen * ((k % 5 == 0) ? 2f : 1f);
++					float cos = (float) Math.cos(a);
++					float sin = (float) Math.sin(a);
++					tickPath.moveTo(cx + cos * r, cy + sin * r);
++					tickPath.lineTo(cx + cos * (r - len), cy + sin * (r - len));
++				}
++				stroke.setColor(withAlpha(color, alpha * 0.8f));
++				stroke.setStrokeWidth(dp);
++				c.drawPath(tickPath, stroke);
++			}
++		}
++
++		// Сканирующий луч в фазе «думаю»
++		if (HudMath.showsScan(phase)) {
++			c.save();
++			c.rotate((t * 4f * RAD_TO_DEG) % 360f, cx, cy);
++			plus.setShader(new SweepGradient(cx, cy,
++					new int[]{withAlpha(ARC, 0.35f), withAlpha(ARC, 0f), withAlpha(ARC, 0f)},
++					new float[]{0f, 0.12f, 1f}));
++			c.drawCircle(cx, cy, s * 0.3f, plus);
++			plus.setShader(null);
++			c.restore();
++		}
++
++		// Надпись в центре. Размер привязан к кругу, а не к масштабу шрифта системы
++		text.setTypeface(titleFace);
++		text.setTextSize(s * 0.05f);
++		text.setColor(withAlpha(INK, open));
++		text.setShadowLayer(12f * dp, 0f, 0f, ARC);
++		drawCentered(c, title, cx, cy - s * 0.015f);
++		text.clearShadowLayer();
++
++		String word = (phase == HudMath.Phase.LISTEN) ? listening :
++				(phase == HudMath.Phase.THINK) ? thinking : "";
++		if (!word.isEmpty()) {
++			text.setTypeface(wordFace);
++			text.setTextSize(s * 0.032f);
++			text.setColor(withAlpha(ARC, open * 0.85f));
++			drawCentered(c, word, cx, cy + s * 0.05f);
++		}
++
++		// Эквалайзер под надписью
++		if (HudMath.showsEqualizer(phase)) {
++			int bars = 13;
++			float bw = s * 0.007f;
++			float gap = s * 0.006f;
++			float x0 = cx - (bars * (bw + gap)) / 2f;
++			fill.setColor(withAlpha(ARC, 0.9f));
++			for (int k = 0; k < bars; k++) {
++				float bh = HudMath.equalizerHeight(s, level, t, k);
++				float x = x0 + k * (bw + gap);
++				float y = cy + s * 0.095f - bh / 2f;
++				c.drawRect(x, y, x + bw, y + bh, fill);
++			}
++		}
++	}
++
++	/** Строка с центром в точке (x, y) — как drawCentered в JARVIS. */
++	private void drawCentered(Canvas c, String s, float x, float y) {
++		Paint.FontMetrics fm = text.getFontMetrics();
++		c.drawText(s, x, y - (fm.ascent + fm.descent) / 2f, text);
++	}
++
++	private static int withAlpha(int color, float alpha) {
++		int a = Math.round(Color.alpha(color) * clamp(alpha, 0f, 1f));
++		return (color & 0x00FFFFFF) | (a << 24);
++	}
++
++	private static int argb(float alpha, int r, int g, int b) {
++		return Color.argb(Math.round(clamp(alpha, 0f, 1f) * 255f), r, g, b);
++	}
++}
+diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
+new file mode 100644
+index 0000000..bef1a81
+--- /dev/null
++++ b/modules/jarvis/src/main/res/values/strings.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
++    <string name="jarvis_hud_listening">Слушаю…</string>
++    <string name="jarvis_hud_thinking">Думаю…</string>
++    <string name="jarvis_hud_description">Круг ассистента JARVIS. Коснитесь, чтобы сказать команду</string>
++    <string name="jarvis_not_installed">JARVIS не установлен</string>
++    <string name="jarvis_not_heard">Не расслышал</string>
++    <string name="jarvis_no_recognizer">Распознавание речи на телефоне недоступно</string>
++</resources>
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
+new file mode 100644
+index 0000000..a9ee663
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
+@@ -0,0 +1,128 @@
++package me.aap.fermata.addon.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertTrue;
++
++import org.junit.Test;
++
++import me.aap.fermata.addon.jarvis.HudMath.Phase;
++
++/**
++ * Математика круга. Проверки перенесены из JARVIS (HudMathTest.kt), чтобы
++ * перенос на Java ничего не поменял; добавлены громкость микрофона и
++ * пульсация при ответе — их в JARVIS нет.
++ */
++public class HudMathTest {
++
++	@Test
++	public void timeNeverNegative() {
++		assertEquals(0f, HudMath.sinceSeconds(100L, 5_000_000_000L), 0f);
++		assertEquals(0f, HudMath.open(-3f), 0f);
++		assertEquals(0f, HudMath.clampDt(-1f), 0f);
++		assertEquals(HudMath.MAX_DT, HudMath.clampDt(10f), 0f);
++	}
++
++	@Test
++	public void radiiNeverNegative() {
++		for (float since : new float[]{-5f, 0f, 0.3f, 1f, 10f}) {
++			float open = HudMath.open(since);
++			for (int i = 0; i < HudMath.RINGS.length; i++) {
++				float appear = HudMath.ringAppear(open, i);
++				assertTrue(HudMath.ringRadius(500f, HudMath.RINGS[i], i, 0f, appear) >= 0f);
++				assertTrue(HudMath.ringRadius(500f, HudMath.RINGS[i], i, 1f, appear) >= 0f);
++			}
++			assertTrue(HudMath.coreRadius(500f, 0f, open) > 0f);
++			for (HudMath.Node n : HudMath.NODES) assertTrue(HudMath.nodeDistance(500f, n, open) >= 0f);
++		}
++	}
++
++	@Test
++	public void ringsOpenInTurnAndFully() {
++		assertEquals(0f, HudMath.open(0f), 0f);
++		assertEquals(1f, HudMath.open(HudMath.OPEN_SECONDS), 0f);
++		assertEquals(1f, HudMath.open(99f), 0f);
++		assertEquals(0f, HudMath.ringAppear(0f, 0), 0f);
++		assertTrue(HudMath.ringAppear(0.3f, 0) > HudMath.ringAppear(0.3f, 6));
++		for (int i = 0; i < HudMath.RINGS.length; i++) assertEquals(1f, HudMath.ringAppear(1f, i), 0f);
++	}
++
++	@Test
++	public void levelRisesFasterThanFalls() {
++		float up = HudMath.smoothLevel(0f, 1f, 0.016f);
++		float down = 1f - HudMath.smoothLevel(1f, 0f, 0.016f);
++		assertTrue(up > down);
++		assertEquals(0.5f, HudMath.smoothLevel(0.5f, 0.5f, 0.016f), 0f);
++		assertEquals(1f, HudMath.smoothLevel(0f, 1f, 100f), 0f);
++		assertEquals(0.2f, HudMath.smoothLevel(0.2f, 1f, -1f), 0f);
++	}
++
++	@Test
++	public void targetLevelByPhase() {
++		assertEquals(0.9f, HudMath.targetLevel(Phase.LISTEN, 1f, 0f), 1e-6f);
++		assertEquals(1f, HudMath.targetLevel(Phase.SPEAK, 5f, 0f), 0f);
++		assertEquals(0.1f, HudMath.targetLevel(Phase.APPEAR, 1f, 0f), 0f);
++		float think = HudMath.targetLevel(Phase.THINK, 0f, 1f);
++		assertTrue(think >= 0.1f && think <= 0.26f);
++	}
++
++	@Test
++	public void spinFasterWhenAppearingAndThinking() {
++		assertEquals(3.2f, HudMath.wantSpin(Phase.THINK, 5f), 0f);
++		assertEquals(1.6f, HudMath.wantSpin(Phase.APPEAR, 5f), 0f);
++		assertEquals(1.6f, HudMath.wantSpin(Phase.LISTEN, 0.5f), 0f);
++		assertEquals(1f, HudMath.wantSpin(Phase.LISTEN, 5f), 0f);
++	}
++
++	@Test
++	public void animatorStaysInBounds() {
++		HudMath.Animator a = new HudMath.Animator();
++		Phase[] phases = Phase.values();
++		float t = 0f;
++		for (int n = 0; n < 2000; n++) {
++			float dt = (n == 0) ? -1f : 0.016f;
++			t += 0.016f;
++			a.advance(phases[n % phases.length], (n % 7) / 6f, t, HudMath.clampDt(dt));
++			assertTrue(a.getLevel() >= 0f && a.getLevel() <= 1f);
++			for (float r : a.rotations) assertTrue(r >= 0f && r < 1f);
++		}
++	}
++
++	@Test
++	public void introFlarePeaksAt1_2s() {
++		assertEquals(0f, HudMath.introFlare(0f), 0f);
++		assertEquals(1f, HudMath.introFlare(1.2f), 1e-6f);
++		assertEquals(0f, HudMath.introFlare(3f), 0f);
++		assertEquals(0.25f, HudMath.flare(Phase.LISTEN, 5f, 0.5f), 1e-6f);
++	}
++
++	@Test
++	public void sameGeometryAsJarvis() {
++		assertEquals(7, HudMath.RINGS.length);
++		assertEquals(26, HudMath.NODES.length);
++		for (HudMath.Ring r : HudMath.RINGS) assertEquals(0, r.segs.length % 2);
++		assertEquals(120, HudMath.RINGS[0].ticks);
++		assertEquals(60, HudMath.RINGS[4].ticks);
++	}
++
++	@Test
++	public void micLevelFromRms() {
++		assertEquals(0f, HudMath.levelFromRmsDb(-10f), 0f);
++		assertEquals(0f, HudMath.levelFromRmsDb(-2f), 0f);
++		assertEquals(0.5f, HudMath.levelFromRmsDb(4f), 1e-6f);
++		assertEquals(1f, HudMath.levelFromRmsDb(10f), 0f);
++		assertEquals(1f, HudMath.levelFromRmsDb(30f), 0f);
++	}
++
++	@Test
++	public void speakLevelPulsesInBounds() {
++		float min = 1f;
++		float max = 0f;
++		for (int i = 0; i < 1000; i++) {
++			float l = HudMath.speakLevel(i * 0.01f);
++			assertTrue(l >= 0f && l <= 1f);
++			min = Math.min(min, l);
++			max = Math.max(max, l);
++		}
++		assertTrue("пульсация должна быть заметной", max - min > 0.2f);
++	}
++}

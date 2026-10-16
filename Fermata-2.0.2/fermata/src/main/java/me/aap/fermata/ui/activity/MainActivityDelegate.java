@@ -831,12 +831,17 @@ public class MainActivityDelegate extends ActivityDelegate
 			} else if (getAppActivity().isInputActive()) {
 				getAppActivity().setTextInput(q.get(0));
 			} else {
-				VoiceCommandHandler h = voiceCommandHandler;
-				if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
 				// Не поняли сами — отдаём фразу голосовому ассистенту JARVIS
-				if (!h.handle(q) && !q.isEmpty()) JarvisBridge.ask(this, q.get(0));
+				if (!handleVoiceCommand(q) && !q.isEmpty()) JarvisBridge.ask(this, q.get(0));
 			}
 		});
+	}
+
+	/** Выполнить голосовую команду Fermata; false — команда не распознана. */
+	public boolean handleVoiceCommand(List<String> q) {
+		VoiceCommandHandler h = voiceCommandHandler;
+		if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
+		return h.handle(q);
 	}
 
 	public FutureSupplier<List<String>> startSpeechRecognizer() {

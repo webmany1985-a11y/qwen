@@ -1,0 +1,28 @@
+android {
+    namespace = "me.aap.fermata.addon.jarvis"
+    defaultConfig {
+        versionCode 1
+        versionName "1.0"
+    }
+}
+
+
+ext {
+    addons = [
+            [
+                    name   : 'jarvis',
+                    icon   : 'record_voice',
+                    class  : 'me.aap.fermata.addon.jarvis.JarvisAddon',
+                    order  : 1,
+                    hasSettings: false,
+                    enabled: true
+            ]
+    ]
+}
+
+dependencies {
+    implementation project(':utils')
+    implementation project(':fermata')
+    implementation libs.androidMaterial
+    implementation libs.androidxMedia
+}

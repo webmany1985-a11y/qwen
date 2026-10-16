@@ -1,0 +1,128 @@
+package me.aap.fermata.addon.jarvis;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
+
+import me.aap.fermata.addon.jarvis.HudMath.Phase;
+
+/**
+ * Математика круга. Проверки перенесены из JARVIS (HudMathTest.kt), чтобы
+ * перенос на Java ничего не поменял; добавлены громкость микрофона и
+ * пульсация при ответе — их в JARVIS нет.
+ */
+public class HudMathTest {
+
+	@Test
+	public void timeNeverNegative() {
+		assertEquals(0f, HudMath.sinceSeconds(100L, 5_000_000_000L), 0f);
+		assertEquals(0f, HudMath.open(-3f), 0f);
+		assertEquals(0f, HudMath.clampDt(-1f), 0f);
+		assertEquals(HudMath.MAX_DT, HudMath.clampDt(10f), 0f);
+	}
+
+	@Test
+	public void radiiNeverNegative() {
+		for (float since : new float[]{-5f, 0f, 0.3f, 1f, 10f}) {
+			float open = HudMath.open(since);
+			for (int i = 0; i < HudMath.RINGS.length; i++) {
+				float appear = HudMath.ringAppear(open, i);
+				assertTrue(HudMath.ringRadius(500f, HudMath.RINGS[i], i, 0f, appear) >= 0f);
+				assertTrue(HudMath.ringRadius(500f, HudMath.RINGS[i], i, 1f, appear) >= 0f);
+			}
+			assertTrue(HudMath.coreRadius(500f, 0f, open) > 0f);
+			for (HudMath.Node n : HudMath.NODES) assertTrue(HudMath.nodeDistance(500f, n, open) >= 0f);
+		}
+	}
+
+	@Test
+	public void ringsOpenInTurnAndFully() {
+		assertEquals(0f, HudMath.open(0f), 0f);
+		assertEquals(1f, HudMath.open(HudMath.OPEN_SECONDS), 0f);
+		assertEquals(1f, HudMath.open(99f), 0f);
+		assertEquals(0f, HudMath.ringAppear(0f, 0), 0f);
+		assertTrue(HudMath.ringAppear(0.3f, 0) > HudMath.ringAppear(0.3f, 6));
+		for (int i = 0; i < HudMath.RINGS.length; i++) assertEquals(1f, HudMath.ringAppear(1f, i), 0f);
+	}
+
+	@Test
+	public void levelRisesFasterThanFalls() {
+		float up = HudMath.smoothLevel(0f, 1f, 0.016f);
+		float down = 1f - HudMath.smoothLevel(1f, 0f, 0.016f);
+		assertTrue(up > down);
+		assertEquals(0.5f, HudMath.smoothLevel(0.5f, 0.5f, 0.016f), 0f);
+		assertEquals(1f, HudMath.smoothLevel(0f, 1f, 100f), 0f);
+		assertEquals(0.2f, HudMath.smoothLevel(0.2f, 1f, -1f), 0f);
+	}
+
+	@Test
+	public void targetLevelByPhase() {
+		assertEquals(0.9f, HudMath.targetLevel(Phase.LISTEN, 1f, 0f), 1e-6f);
+		assertEquals(1f, HudMath.targetLevel(Phase.SPEAK, 5f, 0f), 0f);
+		assertEquals(0.1f, HudMath.targetLevel(Phase.APPEAR, 1f, 0f), 0f);
+		float think = HudMath.targetLevel(Phase.THINK, 0f, 1f);
+		assertTrue(think >= 0.1f && think <= 0.26f);
+	}
+
+	@Test
+	public void spinFasterWhenAppearingAndThinking() {
+		assertEquals(3.2f, HudMath.wantSpin(Phase.THINK, 5f), 0f);
+		assertEquals(1.6f, HudMath.wantSpin(Phase.APPEAR, 5f), 0f);
+		assertEquals(1.6f, HudMath.wantSpin(Phase.LISTEN, 0.5f), 0f);
+		assertEquals(1f, HudMath.wantSpin(Phase.LISTEN, 5f), 0f);
+	}
+
+	@Test
+	public void animatorStaysInBounds() {
+		HudMath.Animator a = new HudMath.Animator();
+		Phase[] phases = Phase.values();
+		float t = 0f;
+		for (int n = 0; n < 2000; n++) {
+			float dt = (n == 0) ? -1f : 0.016f;
+			t += 0.016f;
+			a.advance(phases[n % phases.length], (n % 7) / 6f, t, HudMath.clampDt(dt));
+			assertTrue(a.getLevel() >= 0f && a.getLevel() <= 1f);
+			for (float r : a.rotations) assertTrue(r >= 0f && r < 1f);
+		}
+	}
+
+	@Test
+	public void introFlarePeaksAt1_2s() {
+		assertEquals(0f, HudMath.introFlare(0f), 0f);
+		assertEquals(1f, HudMath.introFlare(1.2f), 1e-6f);
+		assertEquals(0f, HudMath.introFlare(3f), 0f);
+		assertEquals(0.25f, HudMath.flare(Phase.LISTEN, 5f, 0.5f), 1e-6f);
+	}
+
+	@Test
+	public void sameGeometryAsJarvis() {
+		assertEquals(7, HudMath.RINGS.length);
+		assertEquals(26, HudMath.NODES.length);
+		for (HudMath.Ring r : HudMath.RINGS) assertEquals(0, r.segs.length % 2);
+		assertEquals(120, HudMath.RINGS[0].ticks);
+		assertEquals(60, HudMath.RINGS[4].ticks);
+	}
+
+	@Test
+	public void micLevelFromRms() {
+		assertEquals(0f, HudMath.levelFromRmsDb(-10f), 0f);
+		assertEquals(0f, HudMath.levelFromRmsDb(-2f), 0f);
+		assertEquals(0.5f, HudMath.levelFromRmsDb(4f), 1e-6f);
+		assertEquals(1f, HudMath.levelFromRmsDb(10f), 0f);
+		assertEquals(1f, HudMath.levelFromRmsDb(30f), 0f);
+	}
+
+	@Test
+	public void speakLevelPulsesInBounds() {
+		float min = 1f;
+		float max = 0f;
+		for (int i = 0; i < 1000; i++) {
+			float l = HudMath.speakLevel(i * 0.01f);
+			assertTrue(l >= 0f && l <= 1f);
+			min = Math.min(min, l);
+			max = Math.max(max, l);
+		}
+		assertTrue("пульсация должна быть заметной", max - min > 0.2f);
+	}
+}

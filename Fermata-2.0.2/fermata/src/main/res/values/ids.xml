@@ -36,6 +36,7 @@
     <item name="felex_fragment" type="id" />
     <item name="cast_addon" type="id" />
     <item name="chat_addon" type="id" />
+    <item name="jarvis_addon" type="id" />
     <item name="subgen_addon" type="id" />
     <item name="whisper_addon" type="id" />
     <item name="translate_addon" type="id" />

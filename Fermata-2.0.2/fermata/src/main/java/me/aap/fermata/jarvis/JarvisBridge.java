@@ -17,6 +17,7 @@ import android.os.RemoteException;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.Locale;
 
@@ -51,6 +52,24 @@ public final class JarvisBridge {
 	private JarvisBridge() {
 	}
 
+	/**
+	 * Ход запроса — для вкладки JARVIS, которая рисует круг по фазам.
+	 * Все вызовы — в главном потоке.
+	 */
+	public interface Listener {
+		/** Фраза отправлена, ждём ответ. */
+		default void onThinking() {
+		}
+
+		/** Ответ получен, Fermata начинает его произносить. */
+		default void onSpeaking() {
+		}
+
+		/** Ответ произнесён (или произнести не удалось) — запрос окончен. */
+		default void onDone() {
+		}
+	}
+
 	/** Установлен ли JARVIS с входом для команд. */
 	public static boolean isInstalled(Context ctx) {
 		Intent i = new Intent(ACTION).setPackage(PKG);
@@ -63,6 +82,16 @@ public final class JarvisBridge {
 	 * @return false, если JARVIS не установлен — тогда фраза остаётся непонятой, как раньше
 	 */
 	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text) {
+		return ask(a, text, null);
+	}
+
+	/**
+	 * То же, с отчётом о ходе запроса. С {@code listener} ответ только произносится,
+	 * без всплывающего сообщения: во вкладке JARVIS под кругом ничего не показываем.
+	 * При false {@code listener} не вызывается.
+	 */
+	public static boolean ask(@NonNull MainActivityDelegate a, @NonNull String text,
+														@Nullable Listener listener) {
 		Context ctx = a.getContext();
 		if (!isInstalled(ctx)) return false;
 
@@ -70,9 +99,10 @@ public final class JarvisBridge {
 			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
 				if (err != null) Log.e(err, "JARVIS: failed to request permission");
 				Toast.makeText(ctx, "Нет разрешения «команды для JARVIS»", Toast.LENGTH_LONG).show();
+				if (listener != null) listener.onDone();
 				return;
 			}
-			new Call(a, text).start();
+			new Call(a, text, listener).start();
 		});
 		return true;
 	}
@@ -82,16 +112,19 @@ public final class JarvisBridge {
 		private final MainActivityDelegate a;
 		private final Context ctx;
 		private final String text;
+		@Nullable
+		private final Listener listener;
 		private final Handler handler = new Handler(Looper.getMainLooper());
 		private final Messenger replyTo = new Messenger(new Handler(Looper.getMainLooper(), this::onReply));
 		private final Runnable timeout = () -> finish("JARVIS не ответил");
 		private boolean bound;
 		private boolean done;
 
-		Call(MainActivityDelegate a, String text) {
+		Call(MainActivityDelegate a, String text, @Nullable Listener listener) {
 			this.a = a;
 			this.ctx = a.getContext().getApplicationContext();
 			this.text = text;
+			this.listener = listener;
 		}
 
 		void start() {
@@ -106,6 +139,7 @@ public final class JarvisBridge {
 				return;
 			}
 			handler.postDelayed(timeout, TIMEOUT_MS);
+			if (listener != null) listener.onThinking();
 		}
 
 		@Override
@@ -148,7 +182,8 @@ public final class JarvisBridge {
 				} catch (IllegalArgumentException ignore) {
 				}
 			}
-			Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
+			if (listener == null) Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
+			else listener.onSpeaking();
 			speak(reply);
 		}
 
@@ -157,12 +192,14 @@ public final class JarvisBridge {
 			TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
 				if (err != null) {
 					Log.e(err, "JARVIS: TTS failed");
+					if (listener != null) listener.onDone();
 					return;
 				}
 				Cancellable interrupt = a.interruptPlayback();
 				tts.speak(reply).onCompletion((r, serr) -> {
 					interrupt.cancel();
 					tts.close();
+					if (listener != null) listener.onDone();
 				});
 			});
 		}
