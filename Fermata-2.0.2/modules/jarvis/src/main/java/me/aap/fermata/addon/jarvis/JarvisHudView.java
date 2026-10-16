@@ -6,9 +6,12 @@ import static me.aap.fermata.addon.jarvis.HudMath.TWO_PI;
 import static me.aap.fermata.addon.jarvis.HudMath.clamp;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
@@ -21,6 +24,7 @@ import android.graphics.Typeface;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 /**
  * Круг JARVIS в стиле Старка: семь колец, свечение ядра, вспышка при
@@ -53,6 +57,14 @@ public class JarvisHudView extends View {
 	private final float[][] bucketPts = new float[BUCKETS][HudMath.DOTS * 2];
 	private final int[] bucketSize = new int[BUCKETS];
 	private final Paint dots = new Paint(Paint.ANTI_ALIAS_FLAG);
+	private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+	private final Matrix imageMatrix = new Matrix();
+	/**
+	 * Сфера с кадра, присланного пользователем (16.10.2026), вырезанная из фона:
+	 * res/drawable-nodpi/jarvis_sfera.webp. Нет файла — рисуется облако точек.
+	 */
+	@Nullable
+	private final Bitmap sfera;
 	private final float[] pt = new float[3];
 	private final float[] pt2 = new float[3];
 	private final String title;
@@ -72,11 +84,13 @@ public class JarvisHudView extends View {
 		listening = ctx.getString(R.string.jarvis_hud_listening);
 		thinking = ctx.getString(R.string.jarvis_hud_thinking);
 		setContentDescription(ctx.getString(R.string.jarvis_hud_description));
+		sfera = loadSfera(ctx);
 		PorterDuffXfermode add = new PorterDuffXfermode(PorterDuff.Mode.ADD);
 		plus.setXfermode(add);
 		stroke.setXfermode(add);
 		stroke.setStyle(Paint.Style.STROKE);
 		dots.setXfermode(add);
+		image.setXfermode(add);
 		dots.setStyle(Paint.Style.STROKE);
 		text.setTextAlign(Paint.Align.CENTER);
 		// Свечение складывается (ADD) только с собственным фоном вида
@@ -196,7 +210,7 @@ public class JarvisHudView extends View {
 			float base = animator.rotations[i] * TWO_PI;
 			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
 			// Кольца — рамка, главная — сфера: приглушены
-			float alpha = HudMath.ringAlpha(ring, appear, level) * 0.35f;
+			float alpha = HudMath.ringAlpha(ring, appear, level) * ((sfera != null) ? 0.2f : 0.35f);
 			float width = ring.w * dp;
 			float glow = ((ring.w > 3f) ? 14f : 6f) * dp;
 			box.set(cx - r, cy - r, cx + r, cy + r);
@@ -296,6 +310,10 @@ public class JarvisHudView extends View {
 	private void drawSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
 													float level, float open) {
 		if (rs <= 0f) return;
+		if (sfera != null) {
+			drawImageSphere(c, cx, cy, rs, rot, t, level, open);
+			return;
+		}
 		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
 		float ct = (float) Math.cos(HudMath.SPHERE_TILT), st = (float) Math.sin(HudMath.SPHERE_TILT);
 		for (int i = 0; i < BUCKETS; i++) bucketSize[i] = 0;
@@ -360,6 +378,63 @@ public class JarvisHudView extends View {
 		stroke.setStrokeWidth(1.8f * dp);
 		stroke.setColor(withAlpha(INK, 0.6f * open));
 		c.drawArc(box, va, 240f, false, stroke);
+	}
+
+	/**
+	 * Сфера с кадра: пульсирует с голосом (масштаб и яркость), медленно
+	 * вращается, при громком голосе — второй, чуть больший слой-свечение.
+	 * Поверх — редкие искры из облака точек, чтобы картинка жила.
+	 */
+	private void drawImageSphere(Canvas c, float cx, float cy, float rs, float rot, float t,
+															 float level, float open) {
+		Bitmap b = sfera;
+		if (b == null) return;
+		float pulse = 1f + 0.07f * level + 0.015f * (float) Math.sin(t * 1.6f);
+		float sc = rs * 2.36f * pulse / b.getWidth();
+		imageMatrix.setTranslate(-b.getWidth() / 2f, -b.getHeight() / 2f);
+		imageMatrix.postRotate(rot * RAD_TO_DEG * 0.25f);
+		imageMatrix.postScale(sc, sc);
+		imageMatrix.postTranslate(cx, cy);
+		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
+		c.drawBitmap(b, imageMatrix, image);
+		if (level > 0.05f) {
+			imageMatrix.postScale(1.05f, 1.05f, cx, cy);
+			image.setAlpha(Math.round(255f * clamp(open * 0.4f * level, 0f, 1f)));
+			c.drawBitmap(b, imageMatrix, image);
+		}
+
+		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
+		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
+		float ct = (float) Math.cos(HudMath.SPHERE_TILT), st = (float) Math.sin(HudMath.SPHERE_TILT);
+		int n = 0;
+		float[] pts = bucketPts[0];
+		for (int i = 0; i < HudMath.DOTS; i += 5) {
+			if (HudMath.DR[i] < 1f) continue;
+			if (HudMath.twinkle(HudMath.DP[i], t, level) < 0.88f) continue;
+			float x = HudMath.DX[i], y = HudMath.DY[i], z = HudMath.DZ[i];
+			float xr = x * cr + z * sr, zr = -x * sr + z * cr;
+			if (y * st + zr * ct < 0f) continue;
+			float k = rs * 0.95f * pulse;
+			pts[n++] = cx + xr * k;
+			pts[n++] = cy - (y * ct - zr * st) * k;
+		}
+		if (n == 0) return;
+		dots.setStrokeCap(Paint.Cap.ROUND);
+		dots.setStrokeWidth(4.5f * dp * (1f + level));
+		dots.setColor(withAlpha(ARC, 0.25f * open));
+		c.drawPoints(pts, 0, n, dots);
+		dots.setStrokeWidth(1.8f * dp * (1f + level * 0.6f));
+		dots.setColor(withAlpha(INK, 0.9f * open));
+		c.drawPoints(pts, 0, n, dots);
+	}
+
+	@Nullable
+	private static Bitmap loadSfera(Context ctx) {
+		try {
+			return BitmapFactory.decodeResource(ctx.getResources(), R.drawable.jarvis_sfera);
+		} catch (Throwable ex) {
+			return null;
+		}
 	}
 
 	/** Строка с центром в точке (x, y) — как drawCentered в JARVIS. */
