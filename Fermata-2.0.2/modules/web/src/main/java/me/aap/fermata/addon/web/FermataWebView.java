@@ -55,7 +55,8 @@ import me.aap.utils.ui.view.ToolBarView;
 public class FermataWebView extends WebView
 		implements TextChangedListener, TextView.OnEditorActionListener, PreferenceStore.Listener,
 		MainActivityListener {
-	private final boolean isCar;
+	@Nullable
+	private Boolean isCar;
 	private WebBrowserAddon addon;
 	private FermataWebClient webClient;
 	private FermataChromeClient chrome;
@@ -66,12 +67,10 @@ public class FermataWebView extends WebView
 
 	public FermataWebView(Context context, AttributeSet attrs) {
 		super(context, attrs);
-		isCar = BuildConfig.AUTO && MainActivityDelegate.get(context).isCarActivityNotMirror();
 	}
 
 	public FermataWebView(Context context, AttributeSet attrs, int defStyleAttr) {
 		super(context, attrs, defStyleAttr);
-		isCar = BuildConfig.AUTO && MainActivityDelegate.get(context).isCarActivityNotMirror();
 	}
 
 	@SuppressLint("SetJavaScriptEnabled")
@@ -195,8 +194,22 @@ public class FermataWebView extends WebView
 		return new FermataJsInterface(this);
 	}
 
+	/**
+	 * Машина ли это. Узнаётся при первом обращении, а не в конструкторе: после
+	 * того как система убила процесс, вкладки-браузеры восстанавливаются раньше,
+	 * чем готов MainActivityDelegate, и get() в конструкторе ронял приложение
+	 * при старте (журнал 16.10.2026, 19:13:44, «FutureSupplier is not done»).
+	 */
 	protected boolean isCar() {
-		return BuildConfig.AUTO && isCar;
+		if (!BuildConfig.AUTO) return false;
+		if (isCar == null) {
+			try {
+				isCar = MainActivityDelegate.get(getContext()).isCarActivityNotMirror();
+			} catch (RuntimeException ex) {
+				return false;
+			}
+		}
+		return isCar;
 	}
 
 	public WebBrowserAddon getAddon() {

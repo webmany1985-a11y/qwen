@@ -99,6 +99,22 @@ public final class JarvisBridge {
 		}
 		Log.i("JARVIS: ask «", text, "»");
 
+		// Разрешение уже выдано — спрашивать не нужно. В машине спросить и нельзя:
+		// checkPermissions() экрана Android Auto бросает UnsupportedOperationException,
+		// и фраза не доходила до JARVIS (журнал 16.10.2026, 16:40:05)
+		if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, PERMISSION) ==
+				PERMISSION_GRANTED) {
+			new Call(a, text, listener).start();
+			return true;
+		}
+		if (a.isCarActivityNotMirror()) {
+			Log.i("JARVIS: permission not granted, cannot ask in car");
+			Toast.makeText(ctx, "Разрешите «команды для JARVIS» на телефоне: вкладка JARVIS, " +
+					"касание круга", Toast.LENGTH_LONG).show();
+			if (listener != null) listener.onDone();
+			return true;
+		}
+
 		a.getAppActivity().checkPermissions(PERMISSION).onCompletion((r, err) -> {
 			if ((err != null) || (r == null) || (r.length == 0) || (r[0] != PERMISSION_GRANTED)) {
 				if (err != null) Log.e(err, "JARVIS: failed to request permission");

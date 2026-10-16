@@ -47,7 +47,7 @@ import me.aap.utils.voice.TextToSpeech;
  * запись сразу: если речь так и не началась, слушаем ещё один раз.
  *
  * Распознавание Google заканчивает фразу на первой же короткой паузе и
- * просьбу ждать дольше (SILENCE_MS) часто не выполняет. Поэтому после
+ * просьбу ждать дольше часто не выполняет. Поэтому после
  * распознанного куска слушаем дальше: если в течение CONTINUE_WAIT_MS
  * речь продолжилась, куски склеиваются в одну команду.
  *
@@ -70,6 +70,9 @@ public class JarvisFragment extends MainActivityFragment
 	private int retries;
 	/** В этой записи речь началась. */
 	private boolean heard;
+	/** Последний промежуточный итог распознавания в этой записи. */
+	@Nullable
+	private String partial;
 	private final Handler main = new Handler(Looper.getMainLooper());
 	/** Уже распознанные куски фразы; null — первый кусок ещё не получен. */
 	@Nullable
@@ -223,6 +226,7 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void createRecognizer(MainActivityDelegate a) {
 		heard = false;
+		partial = null;
 		Log.i("JARVIS tab: recognizer start, segment=", (phrase == null) ? 1 : 1 + CONTINUATIONS - continuations,
 				", retries=", retries, ", lang=", a.getPrefs().getVoiceControlLang(a));
 		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
@@ -231,10 +235,11 @@ public class JarvisFragment extends MainActivityFragment
 		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
 		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, a.getPrefs().getVoiceControlLang(a));
 		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-		// Пауза в речи, после которой фраза считается законченной
-		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MS);
-		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-				SILENCE_MS);
+		// Промежуточные итоги: распознавание Google нередко слышит фразу, а в конце
+		// отвечает NO_MATCH (журнал 16.10.2026, 19:11) — тогда берём промежуточный.
+		// Паузы в речи (EXTRA_SPEECH_INPUT_*_SILENCE_*) больше не задаём: Google их
+		// не выполняет, длинную фразу дослушивает CONTINUATIONS
+		i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
 		sr.startListening(i);
 	}
 
@@ -302,6 +307,13 @@ public class JarvisFragment extends MainActivityFragment
 				", phrase=", phrase);
 		if (recognizer == null) return;
 		destroyRecognizer();
+		String p = partial;
+		if (((error == SpeechRecognizer.ERROR_NO_MATCH) ||
+				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) && (p != null)) {
+			Log.i("JARVIS tab: using partial result «", p, "»");
+			onRecognized(Collections.singletonList(p));
+			return;
+		}
 		if (phrase != null) {
 			// Продолжения не было (или запись сорвалась) — выполнить то, что есть
 			finishPhrase();
@@ -309,7 +321,8 @@ public class JarvisFragment extends MainActivityFragment
 		}
 		boolean silence = (error == SpeechRecognizer.ERROR_NO_MATCH) ||
 				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT);
-		if (silence && !heard && (retries > 0) && busy && (hud != null)) {
+		if (silence && (retries > 0) && busy && (hud != null)) {
+			// Тишина или неразборчиво — ещё одна попытка, без повторного «Слушаю»
 			retries--;
 			createRecognizer(getActivityDelegate());
 			return;
@@ -326,12 +339,20 @@ public class JarvisFragment extends MainActivityFragment
 	public void onResults(Bundle results) {
 		if (recognizer == null) return;
 		destroyRecognizer();
-		List<String> q = stripGreeting((results == null) ? null :
-				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION));
+		List<String> r = (results == null) ? null :
+				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+		// Пустой итог при непустом промежуточном — берём промежуточный
+		if (((r == null) || r.isEmpty() || (r.get(0) == null) || r.get(0).trim().isEmpty()) &&
+				(partial != null)) r = Collections.singletonList(partial);
+		onRecognized(r);
+	}
+
+	private void onRecognized(@Nullable List<String> recognized) {
+		List<String> q = stripGreeting(recognized);
 		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
 		Log.i("JARVIS tab: recognized ", q);
 		if (phrase == null) {
-			if (empty && !heard && (retries > 0) && busy && (hud != null)) {
+			if (empty && (retries > 0) && busy && (hud != null)) {
 				// Услышали только эхо «Слушаю» — слушаем ещё раз
 				retries--;
 				createRecognizer(getActivityDelegate());
@@ -381,6 +402,11 @@ public class JarvisFragment extends MainActivityFragment
 
 	@Override
 	public void onPartialResults(Bundle partialResults) {
+		List<String> r = (partialResults == null) ? null :
+				partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+		if ((r == null) || r.isEmpty() || (r.get(0) == null) || r.get(0).trim().isEmpty()) return;
+		partial = r.get(0).trim();
+		Log.i("JARVIS tab: partial «", partial, "»");
 	}
 
 	@Override
@@ -447,7 +473,6 @@ public class JarvisFragment extends MainActivityFragment
 	}
 
 	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
-	private static final int SILENCE_MS = 3000;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 	private static final int RETRIES = 1;
 	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */

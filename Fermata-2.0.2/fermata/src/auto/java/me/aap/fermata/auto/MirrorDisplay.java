@@ -240,8 +240,8 @@ public class MirrorDisplay {
 				var v = Settings.System.getInt(cr, ACCELEROMETER_ROTATION, -1);
 				if (v != -1) accel = v;
 			}
-			Settings.System.putInt(cr, ACCELEROMETER_ROTATION, 0);
-			Settings.System.putInt(cr, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
+			putSystem(ctx, ACCELEROMETER_ROTATION, 0);
+			putSystem(ctx, USER_ROTATION, land ? ROTATION_90 : ROTATION_0);
 		} catch (Exception err) {
 			Log.e(err);
 		}
@@ -252,7 +252,7 @@ public class MirrorDisplay {
 		if (a != null) a.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
 		if (accel == -1) return;
 		try {
-			Settings.System.putInt(ctx.getContentResolver(), ACCELEROMETER_ROTATION, accel);
+			putSystem(ctx, ACCELEROMETER_ROTATION, accel);
 		} catch (Exception err) {
 			Log.e(err);
 		}
@@ -505,11 +505,31 @@ public class MirrorDisplay {
 	}
 
 	private static void setBrightness(Context ctx, int br) {
-		try {
-			Settings.System.putInt(ctx.getContentResolver(), SCREEN_BRIGHTNESS, br);
-		} catch (SecurityException ex) {
-			Log.e(ex, "Failed to change SCREEN_BRIGHTNESS");
+		putSystem(ctx, SCREEN_BRIGHTNESS, br);
+	}
+
+	/**
+	 * Записать системную настройку. Без разрешения «Изменение системных
+	 * настроек» (WRITE_SETTINGS) Android бросает SecurityException (журнал
+	 * 16.10.2026, 18:27:53) — тогда пишем через root: телефон пользователя с Magisk.
+	 */
+	private static void putSystem(Context ctx, String key, int value) {
+		if (Settings.System.canWrite(ctx)) {
+			try {
+				Settings.System.putInt(ctx.getContentResolver(), key, value);
+				return;
+			} catch (SecurityException ex) {
+				Log.e(ex, "Failed to change ", key);
+			}
 		}
+		FermataApplication.get().execute(() -> {
+			Process p = new ProcessBuilder("su", "-c",
+					"settings put system " + key + " " + value).redirectErrorStream(true).start();
+			p.getOutputStream().close();
+			boolean ok = p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS) && (p.exitValue() == 0);
+			p.destroy();
+			Log.i("Settings ", key, "=", value, " via su: ", ok ? "ok" : "failed");
+		});
 	}
 
 	private static final class Session extends MediaProjection.Callback {
