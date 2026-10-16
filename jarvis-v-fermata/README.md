@@ -14,7 +14,7 @@ Fermata отдаёт JARVIS голосовую фразу, которую не �
 | Где | Что |
 |---|---|
 | `android-team`, ветка `claude/jarvis-app-integration-0ewhi6` | JARVIS: вход для команд `service/ExternalCommandService.kt`, разрешение `com.jarvis.assistant.permission.KOMANDA` |
-| здесь, `fermata-jarvis.patch` | Fermata 2.0.2: новый класс `jarvis/JarvisBridge.java`, вызов в `MainActivityDelegate.voiceSearch`, разрешение и видимость пакета JARVIS в манифесте |
+| здесь, `Fermata-2.0.2/` (изменения — в `fermata-jarvis.patch`) | Fermata 2.0.2: новый класс `jarvis/JarvisBridge.java`, вызов в `MainActivityDelegate.voiceSearch`, разрешение и видимость пакета JARVIS в манифесте |
 
 Обмен — через `Messenger`: запрос `1` с текстом в `tekst`, ответ `2` с текстом
 в `otvet`. Числа и ключи заданы в обоих приложениях и должны совпадать.
@@ -28,26 +28,25 @@ Fermata отдаёт JARVIS голосовую фразу, которую не �
 
 ## Как собрать и поставить
 
-1. Распаковать `Fermata-2.0.2.tar.gz` и наложить патч из корня Fermata:
-   ```bash
-   tar xzf Fermata-2.0.2.tar.gz
-   cd Fermata-2.0.2
-   patch -p1 < ../jarvis-v-fermata/fermata-jarvis.patch
-   ```
-2. Собрать Fermata по её README (вариант `auto` или `mobile`).
-3. Собрать JARVIS из ветки `claude/jarvis-app-integration-0ewhi6` репозитория
+Fermata 2.0.2 уже лежит в репозитории распакованной (`Fermata-2.0.2/`),
+патч `fermata-jarvis.patch` на неё наложен — распаковывать и накладывать
+ничего не нужно. Сам патч оставлен здесь как запись изменений относительно
+исходной Fermata 2.0.2.
+
+1. Собрать Fermata из `Fermata-2.0.2/` по её README (вариант `auto` или `mobile`).
+2. Собрать JARVIS из ветки `claude/jarvis-app-integration-0ewhi6` репозитория
    `android-team` (номер сборки — по `nomer-sborki.txt`).
-4. **Сначала поставить JARVIS, потом Fermata.** Разрешение объявляет JARVIS;
+3. **Сначала поставить JARVIS, потом Fermata.** Разрешение объявляет JARVIS;
    если Fermata стоит раньше, система не даст его выдать — тогда Fermata
    нужно переустановить.
-5. В Fermata нажать кнопку голоса и сказать фразу, которую Fermata не знает,
+4. В Fermata нажать кнопку голоса и сказать фразу, которую Fermata не знает,
    например «сколько заряда». При первом обращении Fermata спросит
    разрешение «команды для JARVIS» — разрешить.
 
 ## Не проверено
 
 - Сборка обоих приложений: в среде, где писался код, нет Android SDK.
-  Патч проверен только на то, что чисто ложится на Fermata 2.0.2.
+  Патч проверен только на то, что чисто ложится на Fermata 2.0.2 (наложен без отказов).
 - Работа на телефоне: разрешение, привязка, ответ голосом.
 - В машине: голос Fermata в Android Auto идёт тем же путём (`voiceSearch`),
   но системный диалог разрешения там не покажется — разрешение нужно выдать
