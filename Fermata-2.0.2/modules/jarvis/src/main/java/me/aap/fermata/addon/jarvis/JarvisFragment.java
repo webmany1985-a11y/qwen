@@ -21,6 +21,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 
@@ -45,6 +46,11 @@ import me.aap.utils.voice.TextToSpeech;
  * Перед записью JARVIS говорит «Слушаю». Тишина в начале не обрывает
  * запись сразу: если речь так и не началась, слушаем ещё один раз.
  *
+ * Распознавание Google заканчивает фразу на первой же короткой паузе и
+ * просьбу ждать дольше (SILENCE_MS) часто не выполняет. Поэтому после
+ * распознанного куска слушаем дальше: если в течение CONTINUE_WAIT_MS
+ * речь продолжилась, куски склеиваются в одну команду.
+ *
  * Музыка стоит на паузе, пока слушаем, ждём и произносим ответ, и
  * возобновляется после.
  */
@@ -65,6 +71,20 @@ public class JarvisFragment extends MainActivityFragment
 	/** В этой записи речь началась. */
 	private boolean heard;
 	private final Handler main = new Handler(Looper.getMainLooper());
+	/** Уже распознанные куски фразы; null — первый кусок ещё не получен. */
+	@Nullable
+	private StringBuilder phrase;
+	/** Варианты распознавания первого куска — если продолжения не будет. */
+	@Nullable
+	private List<String> firstAlternatives;
+	/** Сколько раз ещё можно дослушать продолжение фразы. */
+	private int continuations;
+	private final Runnable endIfSilent = () -> {
+		if ((phrase != null) && !heard && (recognizer != null)) {
+			destroyRecognizer();
+			finishPhrase();
+		}
+	};
 
 	@Override
 	public int getFragmentId() {
@@ -119,6 +139,11 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void onCircleClick() {
 		if (!busy) listen();
+		else if ((phrase != null) && (recognizer != null) && !heard) {
+			// Дослушиваем продолжение, а вы уже договорили — выполнить сразу
+			destroyRecognizer();
+			finishPhrase();
+		}
 		else if ((recognizer != null) && (phase() == HudMath.Phase.LISTEN)) recognizer.stopListening();
 	}
 
@@ -150,6 +175,9 @@ public class JarvisFragment extends MainActivityFragment
 	private void startRecognizer(MainActivityDelegate a) {
 		interrupt = a.interruptPlayback();
 		retries = RETRIES;
+		continuations = CONTINUATIONS;
+		phrase = null;
+		firstAlternatives = null;
 		sayListening(a, () -> {
 			if (busy && (hud != null) && (recognizer == null)) createRecognizer(a);
 		});
@@ -213,6 +241,7 @@ public class JarvisFragment extends MainActivityFragment
 	}
 
 	private void destroyRecognizer() {
+		main.removeCallbacks(endIfSilent);
 		SpeechRecognizer sr = recognizer;
 		recognizer = null;
 		if (sr != null) sr.destroy();
@@ -224,17 +253,21 @@ public class JarvisFragment extends MainActivityFragment
 		interrupt = Cancellable.CANCELED;
 		i.cancel();
 		busy = false;
+		phrase = null;
+		firstAlternatives = null;
 		setPhase(HudMath.Phase.IDLE);
 	}
 
 	@Override
 	public void onReadyForSpeech(Bundle params) {
 		setPhase(HudMath.Phase.LISTEN);
+		if (phrase != null) main.postDelayed(endIfSilent, CONTINUE_WAIT_MS);
 	}
 
 	@Override
 	public void onBeginningOfSpeech() {
 		heard = true;
+		main.removeCallbacks(endIfSilent);
 	}
 
 	@Override
@@ -254,6 +287,11 @@ public class JarvisFragment extends MainActivityFragment
 	public void onError(int error) {
 		if (recognizer == null) return;
 		destroyRecognizer();
+		if (phrase != null) {
+			// Продолжения не было (или запись сорвалась) — выполнить то, что есть
+			finishPhrase();
+			return;
+		}
 		boolean silence = (error == SpeechRecognizer.ERROR_NO_MATCH) ||
 				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT);
 		if (silence && !heard && (retries > 0) && busy && (hud != null)) {
@@ -275,11 +313,36 @@ public class JarvisFragment extends MainActivityFragment
 		destroyRecognizer();
 		List<String> q = (results == null) ? null :
 				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-		if ((q == null) || q.isEmpty() || q.get(0).trim().isEmpty()) {
-			toast(R.string.jarvis_not_heard);
-			done();
-			return;
+		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
+		if (phrase == null) {
+			if (empty) {
+				toast(R.string.jarvis_not_heard);
+				done();
+				return;
+			}
+			phrase = new StringBuilder(q.get(0).trim());
+			firstAlternatives = q;
+		} else if (!empty) {
+			phrase.append(' ').append(q.get(0).trim());
+			firstAlternatives = null;
 		}
+
+		if ((continuations > 0) && busy && (hud != null)) {
+			continuations--;
+			createRecognizer(getActivityDelegate());
+		} else {
+			finishPhrase();
+		}
+	}
+
+	/** Фраза закончена: выполнить командой Fermata или передать JARVIS. */
+	private void finishPhrase() {
+		StringBuilder p = phrase;
+		List<String> alt = firstAlternatives;
+		phrase = null;
+		firstAlternatives = null;
+		if ((p == null) || !busy) return;
+		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
 
 		MainActivityDelegate a = getActivityDelegate();
 		if (a.handleVoiceCommand(q)) {
@@ -329,9 +392,13 @@ public class JarvisFragment extends MainActivityFragment
 	}
 
 	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
-	private static final int SILENCE_MS = 2500;
+	private static final int SILENCE_MS = 3000;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 	private static final int RETRIES = 1;
+	/** Сколько раз дослушать продолжение фразы после паузы. */
+	private static final int CONTINUATIONS = 3;
+	/** Сколько ждать продолжения фразы после паузы, мс. */
+	private static final long CONTINUE_WAIT_MS = 1500;
 
 	private static final class FbMediator implements FloatingButton.Mediator {
 		static final FbMediator instance = new FbMediator();
