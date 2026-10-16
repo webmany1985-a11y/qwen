@@ -4,7 +4,22 @@
 // Проверено на tiktok.com 16.10.2026 (мобильная версия, Chromium).
 (function () {
   if (window.__jarvisTt) return;
-  var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0 };
+  var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0, key: null, keySince: 0 };
+  // Сколько стоять на публикации без видео (фото-слайд-шоу, трансляция,
+  // реклама) и сверх длины видео, прежде чем листать принудительно.
+  // Зависание на одной публикации — замечание 16.10.2026
+  var NO_VIDEO_MS = 20000, OVER_MS = 8000, UNKNOWN_MS = 90000;
+  function log(m) { try { console.log('[JARVIS-TT] ' + m); } catch (e) {} }
+
+  // Что сейчас на экране: видео — по адресу, иначе — по первой картинке слайда
+  function slideKey() {
+    var s = document.querySelector('[data-e2e="video-slide-active"]');
+    var v = video();
+    if (v && (v.currentSrc || v.src)) return 'v:' + (v.currentSrc || v.src);
+    var img = s && s.querySelector('img');
+    if (img && img.src) return 'i:' + img.src;
+    return 'u:' + location.href;
+  }
 
   function video() {
     return document.querySelector('[data-e2e="video-slide-active"] video') ||
@@ -74,7 +89,22 @@
 
   setInterval(function () {
     closePopups();
+    var now = Date.now();
+    var key = slideKey();
+    if (key !== S.key) { S.key = key; S.keySince = now; }
     var v = video();
+    // Страховка от зависания: публикация без видео или видео, которое так и
+    // не дошло до «конца», листается по времени
+    var d0 = v ? v.duration : NaN;
+    // Видео без известной длины (ещё грузится) — ждать дольше, чтобы не
+    // перелистнуть недосмотренное
+    var limit = !v ? NO_VIDEO_MS : (isFinite(d0) && d0 > 0) ? d0 * 1000 + OVER_MS : UNKNOWN_MS;
+    if (now - S.keySince > limit) {
+      log('stuck ' + Math.round((now - S.keySince) / 1000) + 's on ' + key.slice(0, 2) + ', next');
+      S.keySince = now;
+      next();
+      return;
+    }
     if (!v) return;
     var src = v.currentSrc || v.src;
     if (src !== S.lastSrc) { S.lastSrc = src; S.lastT = 0; }
@@ -85,11 +115,11 @@
     var wrapped = S.lastT > 2 && t < S.lastT - 2 && !v.seeking;
     S.lastT = t;
     if (!(atEnd || wrapped)) return;
-    var now = Date.now();
     // Повтор, если свайп не сработал (то же видео стоит в конце дольше 4 с)
     if (S.fired === src && now - S.firedAt < 4000) return;
     S.fired = src;
     S.firedAt = now;
+    log((atEnd ? 'ended' : 'wrapped') + ', next');
     next();
   }, 500);
 
