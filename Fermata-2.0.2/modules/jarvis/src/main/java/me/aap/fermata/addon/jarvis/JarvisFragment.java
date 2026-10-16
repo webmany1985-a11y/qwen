@@ -8,6 +8,8 @@ import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
@@ -20,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.List;
+import java.util.Locale;
 
 import me.aap.fermata.jarvis.JarvisBridge;
 import me.aap.fermata.ui.activity.MainActivityDelegate;
@@ -29,6 +32,7 @@ import me.aap.utils.function.Cancellable;
 import me.aap.utils.log.Log;
 import me.aap.utils.ui.fragment.ActivityFragment;
 import me.aap.utils.ui.view.FloatingButton;
+import me.aap.utils.voice.TextToSpeech;
 
 /**
  * Вкладка JARVIS: круг во весь экран. Касание круга, плавающей кнопки или
@@ -37,6 +41,9 @@ import me.aap.utils.ui.view.FloatingButton;
  * Порядок как при голосовом поиске Fermata: сначала фразу пробует выполнить
  * сама Fermata («пауза», «играй…»), непонятую получает JARVIS. Ответ JARVIS
  * только произносится — под кругом ничего не показывается.
+ *
+ * Перед записью JARVIS говорит «Слушаю». Тишина в начале не обрывает
+ * запись сразу: если речь так и не началась, слушаем ещё один раз.
  *
  * Музыка стоит на паузе, пока слушаем, ждём и произносим ответ, и
  * возобновляется после.
@@ -50,6 +57,14 @@ public class JarvisFragment extends MainActivityFragment
 	private Cancellable interrupt = Cancellable.CANCELED;
 	/** Идёт разговор: слушаем, ждём JARVIS или произносим ответ. */
 	private boolean busy;
+	/** Произносится «Слушаю». */
+	@Nullable
+	private TextToSpeech greeting;
+	/** Сколько раз ещё можно начать запись заново, если речь не началась. */
+	private int retries;
+	/** В этой записи речь началась. */
+	private boolean heard;
+	private final Handler main = new Handler(Looper.getMainLooper());
 
 	@Override
 	public int getFragmentId() {
@@ -134,17 +149,61 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void startRecognizer(MainActivityDelegate a) {
 		interrupt = a.interruptPlayback();
+		retries = RETRIES;
+		sayListening(a, () -> {
+			if (busy && (hud != null) && (recognizer == null)) createRecognizer(a);
+		});
+	}
+
+	/** Произнести «Слушаю» и затем, в главном потоке, выполнить then. */
+	private void sayListening(MainActivityDelegate a, Runnable then) {
+		Context ctx = requireContext();
+		String text = dynCtx(ctx).getString(R.string.jarvis_say_listening);
+		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
+		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
+			if (err != null) {
+				Log.e(err, "JARVIS tab: TTS failed");
+				then.run();
+				return;
+			}
+			if (!busy) {
+				tts.close();
+				return;
+			}
+			greeting = tts;
+			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
+				if (greeting != tts) return; // запись уже отменена
+				greeting = null;
+				tts.close();
+				then.run();
+			}));
+		}));
+	}
+
+	private void closeGreeting() {
+		TextToSpeech tts = greeting;
+		greeting = null;
+		if (tts != null) tts.close();
+	}
+
+	private void createRecognizer(MainActivityDelegate a) {
+		heard = false;
 		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
 		sr.setRecognitionListener(this);
 		recognizer = sr;
 		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
 		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, a.getPrefs().getVoiceControlLang(a));
 		i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+		// Пауза в речи, после которой фраза считается законченной
+		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MS);
+		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+				SILENCE_MS);
 		sr.startListening(i);
 	}
 
 	/** Прервать запись, если она идёт. Запрос, уже ушедший JARVIS, доходит до конца. */
 	private void stopListening() {
+		closeGreeting();
 		if (recognizer == null) {
 			if (busy && (phase() == HudMath.Phase.APPEAR)) done();
 			return;
@@ -175,6 +234,7 @@ public class JarvisFragment extends MainActivityFragment
 
 	@Override
 	public void onBeginningOfSpeech() {
+		heard = true;
 	}
 
 	@Override
@@ -194,8 +254,14 @@ public class JarvisFragment extends MainActivityFragment
 	public void onError(int error) {
 		if (recognizer == null) return;
 		destroyRecognizer();
-		if ((error == SpeechRecognizer.ERROR_NO_MATCH) ||
-				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) {
+		boolean silence = (error == SpeechRecognizer.ERROR_NO_MATCH) ||
+				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT);
+		if (silence && !heard && (retries > 0) && busy && (hud != null)) {
+			retries--;
+			createRecognizer(getActivityDelegate());
+			return;
+		}
+		if (silence) {
 			toast(R.string.jarvis_not_heard);
 		} else {
 			Log.e("JARVIS tab: speech recognition error ", error);
@@ -261,6 +327,11 @@ public class JarvisFragment extends MainActivityFragment
 		Context ctx = getContext();
 		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
 	}
+
+	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
+	private static final int SILENCE_MS = 2500;
+	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
+	private static final int RETRIES = 1;
 
 	private static final class FbMediator implements FloatingButton.Mediator {
 		static final FbMediator instance = new FbMediator();
