@@ -15,6 +15,12 @@ ext {
                     order: 2
             ],
             [
+                    name : 'tiktok',
+                    icon : 'tiktok',
+                    class: 'me.aap.fermata.addon.web.TikTokAddon',
+                    order: 3
+            ],
+            [
                     name : 'web_browser',
                     icon : 'web',
                     class: 'me.aap.fermata.addon.web.WebBrowserAddon',

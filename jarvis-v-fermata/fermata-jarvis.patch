@@ -431,6 +431,22 @@ index 4ec9226..769ac7f 100644
 +    <item android:drawable="@drawable/jarvis_bg" />
 +    <item android:drawable="@drawable/jarvis_fg" />
  </layer-list>
+diff --git a/fermata/src/main/res/drawable/tiktok.xml b/fermata/src/main/res/drawable/tiktok.xml
+new file mode 100644
+index 0000000..b743042
+--- /dev/null
++++ b/fermata/src/main/res/drawable/tiktok.xml
+@@ -0,0 +1,10 @@
++<!-- Значок вкладки TikTok: нота (не логотип TikTok) -->
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++  <path
++      android:fillColor="#FF000000"
++      android:pathData="M14,3h2.6c0.3,2 1.6,3.5 3.9,3.8v2.7c-1.5,0 -2.9,-0.4 -3.9,-1.1v6.6c0,3.1 -2.5,5.5 -5.6,5.5S5.5,18 5.5,14.9s2.5,-5.5 5.6,-5.5c0.3,0 0.6,0 0.9,0.1v2.8c-0.3,-0.1 -0.6,-0.2 -0.9,-0.2c-1.5,0 -2.8,1.2 -2.8,2.8s1.2,2.8 2.8,2.8s2.8,-1.2 2.8,-2.8V3z"/>
++</vector>
 diff --git a/fermata/src/main/res/values-ru/strings.xml b/fermata/src/main/res/values-ru/strings.xml
 index 97bd633..5892f47 100644
 --- a/fermata/src/main/res/values-ru/strings.xml
@@ -453,10 +469,15 @@ index 97bd633..5892f47 100644
          с простым и интуитивным интерфейсом.</p>
          <p><b>Автор:</b> Андрей Павленко</p>
 diff --git a/fermata/src/main/res/values/ids.xml b/fermata/src/main/res/values/ids.xml
-index 346317f..60744bb 100644
+index 346317f..ed8337f 100644
 --- a/fermata/src/main/res/values/ids.xml
 +++ b/fermata/src/main/res/values/ids.xml
-@@ -36,6 +36,7 @@
+@@ -32,10 +32,12 @@
+     <item name="subtitles_fragment" type="id" />
+     <item name="tv_fragment" type="id" />
+     <item name="youtube_fragment" type="id" />
++    <item name="tiktok_fragment" type="id" />
+     <item name="web_browser_fragment" type="id" />
      <item name="felex_fragment" type="id" />
      <item name="cast_addon" type="id" />
      <item name="chat_addon" type="id" />
@@ -465,7 +486,7 @@ index 346317f..60744bb 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..7849934 100644
+index 77a9b17..94f1ea3 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
 @@ -1,15 +1,15 @@
@@ -488,7 +509,11 @@ index 77a9b17..7849934 100644
      <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
      <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
      <string name="engine_mp_name" translatable="false">MediaPlayer</string>
-@@ -29,6 +29,7 @@
+@@ -26,9 +26,11 @@
+     <string name="addon_name_tv">TV</string>
+     <string name="addon_name_web_browser">Web browser</string>
+     <string name="addon_name_youtube" translatable="false">Youtube</string>
++    <string name="addon_name_tiktok" translatable="false">TikTok</string>
      <string name="addon_name_felex" translatable="false">Felex</string>
      <string name="addon_name_cast" translatable="false">Google Cast</string>
      <string name="addon_name_chat" translatable="false">ChatGPT</string>
@@ -496,7 +521,7 @@ index 77a9b17..7849934 100644
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
-@@ -367,11 +368,13 @@
+@@ -367,11 +369,13 @@
      <string name="open_log">Open log file</string>
      <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
      <string name="screen_capture_rejected">Screen capture request rejected.</string>
@@ -1622,5 +1647,331 @@ index 0000000..a9ee663
 +			max = Math.max(max, l);
 +		}
 +		assertTrue("пульсация должна быть заметной", max - min > 0.2f);
++	}
++}
+diff --git a/modules/web/build.gradle b/modules/web/build.gradle
+index 7b574fe..adb25e2 100644
+--- a/modules/web/build.gradle
++++ b/modules/web/build.gradle
+@@ -14,6 +14,12 @@ ext {
+                     class: 'me.aap.fermata.addon.web.yt.YoutubeAddon',
+                     order: 2
+             ],
++            [
++                    name : 'tiktok',
++                    icon : 'tiktok',
++                    class: 'me.aap.fermata.addon.web.TikTokAddon',
++                    order: 3
++            ],
+             [
+                     name : 'web_browser',
+                     icon : 'web',
+diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
+new file mode 100644
+index 0000000..1171786
+--- /dev/null
++++ b/modules/web/src/main/assets/tiktok_autonext.js
+@@ -0,0 +1,69 @@
++// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
++// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
++// листают, листает только касание — поэтому свайп собирается из TouchEvent.
++// Проверено на tiktok.com 16.10.2026 (мобильная версия, Chromium).
++(function () {
++  if (window.__jarvisTt) return;
++  var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0 };
++
++  function video() {
++    return document.querySelector('[data-e2e="video-slide-active"] video') ||
++      document.querySelector('video');
++  }
++
++  // Окно «Воспользуйтесь всеми функциями приложения» — «Не сейчас»
++  function closePopups() {
++    var c = document.querySelector(
++      '[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="modal-close-inner-button"]');
++    if (c && c.offsetParent !== null) c.click();
++  }
++
++  function swipe() {
++    var el = document.querySelector('[data-e2e="video-slide-active"]') ||
++      document.querySelector('.swiper') || document.body;
++    var r = el.getBoundingClientRect();
++    var x = r.left + r.width / 2, y0 = r.top + r.height * 0.75, y1 = r.top + r.height * 0.2;
++    var id = Date.now() % 100000;
++    function ev(type, y) {
++      var t = new Touch({ identifier: id, target: el, clientX: x, clientY: y, pageX: x, pageY: y });
++      var list = (type === 'touchend') ? [] : [t];
++      return new TouchEvent(type, { touches: list, targetTouches: list, changedTouches: [t],
++        bubbles: true, cancelable: true });
++    }
++    el.dispatchEvent(ev('touchstart', y0));
++    var i = 0;
++    (function step() {
++      i++;
++      el.dispatchEvent(ev('touchmove', y0 + (y1 - y0) * i / 8));
++      if (i < 8) setTimeout(step, 16); else el.dispatchEvent(ev('touchend', y1));
++    })();
++  }
++
++  function next() {
++    closePopups();
++    swipe();
++  }
++
++  setInterval(function () {
++    closePopups();
++    var v = video();
++    if (!v) return;
++    var src = v.currentSrc || v.src;
++    if (src !== S.lastSrc) { S.lastSrc = src; S.lastT = 0; }
++    // Видео в ленте зациклены: без этого «конец» не наступает
++    if (v.loop) v.loop = false;
++    var d = v.duration, t = v.currentTime;
++    var atEnd = v.ended || (d > 1 && isFinite(d) && t >= d - 0.3);
++    var wrapped = S.lastT > 2 && t < S.lastT - 2 && !v.seeking;
++    S.lastT = t;
++    if (!(atEnd || wrapped)) return;
++    var now = Date.now();
++    // Повтор, если свайп не сработал (то же видео стоит в конце дольше 4 с)
++    if (S.fired === src && now - S.firedAt < 4000) return;
++    S.fired = src;
++    S.firedAt = now;
++    next();
++  }, 500);
++
++  window.__jarvisTt = { next: next };
++})();
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java
+new file mode 100644
+index 0000000..ddb5ee0
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java
+@@ -0,0 +1,102 @@
++package me.aap.fermata.addon.web;
++
++import android.content.Context;
++
++import androidx.annotation.IdRes;
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++
++import java.util.List;
++
++import me.aap.fermata.addon.AddonInfo;
++import me.aap.fermata.addon.FermataAddon;
++import me.aap.utils.function.BooleanSupplier;
++import me.aap.utils.function.IntSupplier;
++import me.aap.utils.function.Supplier;
++import me.aap.utils.misc.ChangeableCondition;
++import me.aap.utils.pref.PreferenceSet;
++import me.aap.utils.pref.PreferenceStore;
++import me.aap.utils.ui.fragment.ActivityFragment;
++
++/**
++ * Вкладка TikTok в JARVIS Auto: мобильный tiktok.com во встроенном браузере,
++ * как вкладка YouTube. Досмотренное видео перелистывается само
++ * (assets/tiktok_autonext.js, вставляет {@link TikTokWebClient}).
++ * Свои настройки (последняя страница, тёмная тема, закладки) — отдельно от
++ * «Браузера», чтобы вкладки не мешали друг другу.
++ */
++@Keep
++@SuppressWarnings("unused")
++public class TikTokAddon extends WebBrowserAddon {
++	static final String DEFAULT_URL = "https://www.tiktok.com/foryou";
++	@NonNull
++	private static final AddonInfo info = FermataAddon.findAddonInfo(TikTokAddon.class.getName());
++	private static final Pref<Supplier<String>> TT_LAST_URL = Pref.s("TT_LAST_URL", DEFAULT_URL);
++	private static final Pref<IntSupplier> TT_DARK_MODE = Pref.i("TT_DARK_MODE", DARK_MODE_AUTO);
++	private static final Pref<BooleanSupplier> TT_DESKTOP_VERSION = Pref.b("TT_DESKTOP_VERSION", false);
++	private static final Pref<Supplier<String[]>> TT_BOOKMARKS = Pref.sa("TT_BOOKMARKS");
++
++	@IdRes
++	@Override
++	public int getAddonId() {
++		return me.aap.fermata.R.id.tiktok_fragment;
++	}
++
++	@NonNull
++	@Override
++	public AddonInfo getInfo() {
++		return info;
++	}
++
++	@NonNull
++	@Override
++	public ActivityFragment createFragment() {
++		return new TikTokFragment();
++	}
++
++	@Override
++	public void contributeSettings(Context ctx, PreferenceStore store, PreferenceSet set,
++																 ChangeableCondition visibility) {
++		// Только тёмная тема; слушатели «Браузера» (открывать при запуске) не нужны
++		set.addListPref(o -> {
++			o.store = getPreferenceStore();
++			o.pref = getForceDarkPref();
++			o.title = R.string.force_dark;
++			o.subtitle = R.string.force_dark_sub;
++			o.visibility = visibility;
++			o.formatSubtitle = true;
++			o.values = new int[]{R.string.force_dark_disabled, R.string.force_dark_enabled,
++					R.string.force_dark_auto};
++		});
++	}
++
++	@Override
++	public void onPreferenceChanged(PreferenceStore store, List<Pref<?>> prefs) {
++		// Настройка «открывать при запуске» принадлежит «Браузеру» — не трогаем
++	}
++
++	@Override
++	public Pref<IntSupplier> getForceDarkPref() {
++		return TT_DARK_MODE;
++	}
++
++	@Override
++	public Pref<BooleanSupplier> getDesktopVersionPref() {
++		return TT_DESKTOP_VERSION;
++	}
++
++	@Override
++	public Pref<Supplier<String[]>> getBookmarksPref() {
++		return TT_BOOKMARKS;
++	}
++
++	@Override
++	String getLastUrl() {
++		return getPreferenceStore().getStringPref(TT_LAST_URL);
++	}
++
++	@Override
++	void setLastUrl(String url) {
++		getPreferenceStore().applyStringPref(TT_LAST_URL, url);
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
+new file mode 100644
+index 0000000..69bbc76
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
+@@ -0,0 +1,51 @@
++package me.aap.fermata.addon.web;
++
++import android.content.Context;
++import android.os.Bundle;
++import android.view.View;
++import android.view.ViewGroup;
++
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import me.aap.fermata.addon.AddonManager;
++import me.aap.fermata.ui.activity.MainActivityDelegate;
++
++/**
++ * Экран вкладки TikTok: тот же встроенный браузер, что у «Браузера», но со
++ * своим веб-клиентом ({@link TikTokWebClient}) и поиском по TikTok.
++ */
++@Keep
++@SuppressWarnings("unused")
++public class TikTokFragment extends WebBrowserFragment {
++
++	@Override
++	public int getFragmentId() {
++		return me.aap.fermata.R.id.tiktok_fragment;
++	}
++
++	@Override
++	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
++		WebBrowserAddon addon = getAddon();
++		if (addon == null) return;
++		Context ctx = view.getContext();
++		FermataWebView webView = view.findViewById(R.id.browserWebView);
++		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
++		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
++		webView.init(addon, new TikTokWebClient(), chromeClient);
++		webView.loadUrl(addon.getLastUrl());
++		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
++	}
++
++	@Nullable
++	@Override
++	protected WebBrowserAddon getAddon() {
++		return AddonManager.get().getAddon(TikTokAddon.class);
++	}
++
++	@Override
++	protected String getSearchUrl() {
++		return "https://www.tiktok.com/search?q=";
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
+new file mode 100644
+index 0000000..bc73825
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
+@@ -0,0 +1,63 @@
++package me.aap.fermata.addon.web;
++
++import static me.aap.fermata.util.Utils.dynCtx;
++
++import android.content.Context;
++import android.net.Uri;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebView;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++
++import me.aap.utils.log.Log;
++
++/**
++ * После загрузки страницы TikTok вставляет скрипт автоперелистывания
++ * (assets/tiktok_autonext.js). Повторная вставка безвредна: скрипт
++ * запускается один раз на страницу.
++ */
++public class TikTokWebClient extends FermataWebClient {
++	@Nullable
++	private static String script;
++
++	@Override
++	public void onPageFinished(WebView view, String url) {
++		super.onPageFinished(view, url);
++		if (!isTikTok(Uri.parse(url))) return;
++		String js = script(view.getContext());
++		if (js != null) view.evaluateJavascript(js, null);
++	}
++
++	@Override
++	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
++																					@NonNull WebResourceRequest request) {
++		String scheme = request.getUrl().getScheme();
++		// «Открыть приложение» ведёт на snssdk…:// и intent:// — во вкладке их не открыть
++		if (!"http".equals(scheme) && !"https".equals(scheme)) return true;
++		return super.shouldOverrideUrlLoading(view, request);
++	}
++
++	static boolean isTikTok(Uri uri) {
++		String host = uri.getHost();
++		return (host != null) && (host.equals("tiktok.com") || host.endsWith(".tiktok.com"));
++	}
++
++	@Nullable
++	private static String script(Context ctx) {
++		if (script != null) return script;
++		try (InputStream in = dynCtx(ctx).getAssets().open("tiktok_autonext.js")) {
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			byte[] buf = new byte[8192];
++			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++			return script = out.toString(StandardCharsets.UTF_8.name());
++		} catch (Exception ex) {
++			Log.e(ex, "TikTok: failed to load tiktok_autonext.js");
++			return null;
++		}
 +	}
 +}
