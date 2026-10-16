@@ -75,25 +75,25 @@ Fermata 2.0.2 уже лежит в репозитории распакованн
   но системный диалог разрешения там не покажется — разрешение нужно выдать
   заранее на телефоне.
 
-## Fermata в Android Auto — итог проверки 16.10.2026
+## Fermata в Android Auto — как заработало (16.10.2026)
 
-Fermata Auto в «Настроить панель запуска» Android Auto не появилась ни в
-одном варианте (Redmi 10C, Android 13, Android Auto 17.8, «Неизвестные
-источники» включены):
+Fermata Auto, Fermata Mirror и Fermata Media Service появились в «Настроить
+панель запуска» Android Auto 17.8 (Redmi 10C, Android 13), когда сошлись два
+условия:
 
-| Вариант | Итог |
-|---|---|
-| обычная установка, источник «Google Play» (пометка Lucky Patcher) | нет |
-| перенос в систему Lucky Patcher | копию с подписью только v3 телефон отверг при загрузке и стёр Fermata |
-| системное приложение модулем `magisk-fermata` (подпись v2+v3) | нет |
-| системное приложение + источник «Google Play» | нет |
+1. **Своё имя пакета.** Сборка с `-PAPP_ID_SFX=.lichnaya` →
+   `me.aap.fermata.auto.lichnaya` (так велит README Fermata). С именем по
+   умолчанию `me.aap.fermata.auto` Android Auto отсеивал приложение при любой
+   установке — видимо, оно в серверном чёрном списке.
+2. **Установка через KingInstaller на пустое место** (не обновлением): в
+   `/data/system/packages.xml` установщик `com.android.vending`, инициатор
+   `com.google.android.packageinstaller`. Так проверяет Android Auto 17.7+ —
+   разбор https://github.com/AndreyPavlenko/Fermata/discussions/847
 
-Журнал Android Auto причину не пишет. Вывод: Fermata Auto отсеивается по
-объявленной «проекции» (`fermata/src/auto/res/xml/automotive_app_desc.xml`),
-которую Android Auto допускает только для одобренных Google приложений;
-признаки установки на это не влияют. Без вмешательства в Android Auto (LSPosed —
-отвергнуто) полного экрана Fermata в машине нет. Вкладка JARVIS работает на
-телефоне.
+Что не нужно и не помогает: «системное приложение» (модуль `magisk-fermata`
+оставлен для истории), перенос Lucky Patcher, пометка установщика через
+`pm install -i` (инициатором пишется оболочка), LSPosed. Каждое обновление
+Fermata — так же, через KingInstaller.
 
 ## Дальше
 
