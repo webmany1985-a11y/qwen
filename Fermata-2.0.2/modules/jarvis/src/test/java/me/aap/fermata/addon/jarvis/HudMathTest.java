@@ -184,16 +184,6 @@ public class HudMathTest {
 		}
 		assertTrue("в покое — заметно, но спокойнее", idleMax > 0.03f && idleMax < loudMax);
 		assertTrue("с голосом — сильно", loudMax > 0.12f);
-		for (float rn = 0f; rn <= 1.4f; rn += 0.05f) {
-			for (float t = 0f; t < 20f; t += 0.37f) {
-				assertTrue(Math.abs(HudMath.twist(rn, t, 1f)) <= HudMath.TWIST_MAX);
-			}
-		}
-		// Слои на разной глубине повёрнуты по-разному
-		float spread = 0f;
-		for (float rn = 0f; rn <= 1f; rn += 0.1f)
-			spread = Math.max(spread, Math.abs(HudMath.twist(rn, 2f, 0.5f) - HudMath.twist(0f, 2f, 0.5f)));
-		assertTrue(spread > 0.05f);
 		// Разные участки края в один момент сдвинуты по-разному
 		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
 	}

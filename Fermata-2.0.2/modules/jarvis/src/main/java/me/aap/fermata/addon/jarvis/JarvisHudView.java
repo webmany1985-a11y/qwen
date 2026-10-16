@@ -408,14 +408,12 @@ public class JarvisHudView extends View {
 			for (int gx = 0; gx <= MESH; gx++) {
 				float dx = gx * bw / MESH - bw / 2f;
 				float rn = (float) Math.sqrt(dx * dx + dy * dy) / imgR;
+				// Только волны по краю, без поворота слоёв: поворот растягивал линии
+				// в завихрения, и сфера выглядела размытой (замечание 16.10.2026)
 				float f = 1f + HudMath.warp((float) Math.atan2(dy, dx), rn, t, level);
-				// Слой на своём радиусе ещё и повёрнут — по-своему для каждого слоя
-				float tw = HudMath.twist(rn, t, level);
-				float c2 = ca * (float) Math.cos(tw) - sa * (float) Math.sin(tw);
-				float s2 = sa * (float) Math.cos(tw) + ca * (float) Math.sin(tw);
 				float x = dx * f, y = dy * f;
-				mesh[k++] = cx + (x * c2 - y * s2) * sc;
-				mesh[k++] = cy + (x * s2 + y * c2) * sc;
+				mesh[k++] = cx + (x * ca - y * sa) * sc;
+				mesh[k++] = cy + (x * sa + y * ca) * sc;
 			}
 		}
 		// Один слой: второй, увеличенный слой-свечение двоил картинку — сфера
