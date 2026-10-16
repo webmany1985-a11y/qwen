@@ -180,7 +180,7 @@ public final class HudMath {
 	/** Во сколько раз сфера-картинка больше нарисованной (замечание 16.10.2026: «увеличь»). */
 	public static final float IMAGE_SPHERE_SCALE = 1.3f;
 	/** Предел смещения точки сферы-картинки при пульсации, доля радиуса. */
-	public static final float WARP_MAX = 0.2f;
+	public static final float WARP_MAX = 0.25f;
 
 	/**
 	 * Пульсация сферы-картинки по частям: на сколько (доля радиуса) сдвинуть
@@ -198,9 +198,25 @@ public final class HudMath {
 				0.3f * l * (float) Math.sin(13f * theta - 6.5f * t + rn * 7f);
 		// w в пределах ±1.6; вес — от центра к краю
 		float weight = clamp(rn, 0f, 1f);
-		weight *= weight;
-		float amp = 0.025f + 0.095f * l;
+		// В покое — заметно (замечание 16.10.2026: «пульсации не видно»), с голосом — сильно
+		float amp = 0.06f + 0.12f * l;
 		return clamp(w / 1.6f * amp * weight, -WARP_MAX, WARP_MAX);
+	}
+
+	/** Предел поворота слоя сферы-картинки, радианы. */
+	public static final float TWIST_MAX = 0.6f;
+
+	/**
+	 * Поворот слоя сферы-картинки на расстоянии rn радиусов от центра:
+	 * соседние кольца-слои качаются в разные стороны и с разной скоростью —
+	 * сфера переливается изнутри, а не только по краю. С голосом размах больше.
+	 */
+	public static float twist(float rn, float t, float level) {
+		float l = clamp(level, 0f, 1f);
+		float a = 0.16f * (float) Math.sin(rn * 6f - t * 1.1f) +
+				0.11f * (float) Math.sin(rn * 11f + t * 1.7f + 0.8f) +
+				0.08f * l * (float) Math.sin(rn * 17f - t * 4.3f);
+		return clamp(a * (0.7f + 0.8f * l), -TWIST_MAX, TWIST_MAX);
 	}
 
 	/** Наклон оси сферы к зрителю: широты видны эллипсами. */

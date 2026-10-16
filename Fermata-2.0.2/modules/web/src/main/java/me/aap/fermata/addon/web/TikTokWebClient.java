@@ -52,10 +52,26 @@ public class TikTokWebClient extends FermataWebClient {
 	@Override
 	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 																					@NonNull WebResourceRequest request) {
-		String scheme = request.getUrl().getScheme();
+		Uri u = request.getUrl();
+		String scheme = u.getScheme();
 		// «Открыть приложение» ведёт на snssdk…:// и intent:// — во вкладке их не открыть
 		if (!"http".equals(scheme) && !"https".equals(scheme)) return true;
+		// …и на https-ссылки «открыть в приложении» (snssdk1180.onelink.me): во вкладке
+		// это белая страница, которая к тому же запоминалась как последняя (16.10.2026)
+		if (isAppLink(u)) {
+			Log.i("TikTok: app link blocked ", u);
+			return true;
+		}
 		return super.shouldOverrideUrlLoading(view, request);
+	}
+
+	/** Ссылка, ведущая не на страницу, а в приложение TikTok или в магазин. */
+	static boolean isAppLink(Uri uri) {
+		String host = uri.getHost();
+		if (host == null) return false;
+		return host.endsWith("onelink.me") || host.endsWith("app.link") ||
+				host.endsWith("appsflyer.com") || host.equals("play.google.com") ||
+				host.equals("apps.apple.com") || host.startsWith("snssdk");
 	}
 
 	static boolean isTikTok(Uri uri) {

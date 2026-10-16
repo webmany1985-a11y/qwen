@@ -409,9 +409,13 @@ public class JarvisHudView extends View {
 				float dx = gx * bw / MESH - bw / 2f;
 				float rn = (float) Math.sqrt(dx * dx + dy * dy) / imgR;
 				float f = 1f + HudMath.warp((float) Math.atan2(dy, dx), rn, t, level);
+				// Слой на своём радиусе ещё и повёрнут — по-своему для каждого слоя
+				float tw = HudMath.twist(rn, t, level);
+				float c2 = ca * (float) Math.cos(tw) - sa * (float) Math.sin(tw);
+				float s2 = sa * (float) Math.cos(tw) + ca * (float) Math.sin(tw);
 				float x = dx * f, y = dy * f;
-				mesh[k++] = cx + (x * ca - y * sa) * sc;
-				mesh[k++] = cy + (x * sa + y * ca) * sc;
+				mesh[k++] = cx + (x * c2 - y * s2) * sc;
+				mesh[k++] = cy + (x * s2 + y * c2) * sc;
 			}
 		}
 		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));

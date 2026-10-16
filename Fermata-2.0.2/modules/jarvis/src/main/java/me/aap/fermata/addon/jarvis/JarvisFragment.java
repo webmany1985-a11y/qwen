@@ -179,9 +179,13 @@ public class JarvisFragment extends MainActivityFragment
 		continuations = CONTINUATIONS;
 		phrase = null;
 		firstAlternatives = null;
-		sayListening(a, () -> {
-			if (busy && (hud != null) && (recognizer == null)) createRecognizer(a);
-		});
+		// В машине звук идёт через Android Auto с задержкой: телефон уже закончил
+		// «Слушаю», а динамики ещё говорят, и микрофон слышит само «Слушаю»
+		// (журнал/замечание 16.10.2026: JARVIS отвечал «Не расслышал»)
+		long pause = a.isCarActivityNotMirror() ? AFTER_GREETING_CAR_MS : AFTER_GREETING_MS;
+		sayListening(a, () -> main.postDelayed(() -> {
+			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) createRecognizer(a);
+		}, pause));
 	}
 
 	/** Произнести «Слушаю» и затем, в главном потоке, выполнить then. */
@@ -322,11 +326,17 @@ public class JarvisFragment extends MainActivityFragment
 	public void onResults(Bundle results) {
 		if (recognizer == null) return;
 		destroyRecognizer();
-		List<String> q = (results == null) ? null :
-				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+		List<String> q = stripGreeting((results == null) ? null :
+				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION));
 		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
 		Log.i("JARVIS tab: recognized ", q);
 		if (phrase == null) {
+			if (empty && !heard && (retries > 0) && busy && (hud != null)) {
+				// Услышали только эхо «Слушаю» — слушаем ещё раз
+				retries--;
+				createRecognizer(getActivityDelegate());
+				return;
+			}
 			if (empty) {
 				toast(R.string.jarvis_not_heard);
 				done();
@@ -377,6 +387,22 @@ public class JarvisFragment extends MainActivityFragment
 	public void onEvent(int eventType, Bundle params) {
 	}
 
+	/**
+	 * Убрать из распознанного эхо «Слушаю», если микрофон его поймал. Варианты,
+	 * от которых ничего не осталось, выбрасываются.
+	 */
+	@Nullable
+	static List<String> stripGreeting(@Nullable List<String> q) {
+		if (q == null) return null;
+		java.util.ArrayList<String> out = new java.util.ArrayList<>(q.size());
+		for (String s : q) {
+			if (s == null) continue;
+			String t = GREETING_ECHO.matcher(s.trim()).replaceFirst("").trim();
+			if (!t.isEmpty()) out.add(t);
+		}
+		return out;
+	}
+
 	private static String errorName(int e) {
 		return switch (e) {
 			case SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT";
@@ -424,6 +450,12 @@ public class JarvisFragment extends MainActivityFragment
 	private static final int SILENCE_MS = 3000;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 	private static final int RETRIES = 1;
+	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
+	private static final long AFTER_GREETING_MS = 300;
+	private static final long AFTER_GREETING_CAR_MS = 1200;
+	/** «Слушаю» (и «слушаю, сэр» и т. п.) в начале распознанного — это эхо. */
+	private static final java.util.regex.Pattern GREETING_ECHO = java.util.regex.Pattern.compile(
+			"^(?iu)(слушаю|слушай|слушаем)[\\s,.!…]*");
 	/** Сколько раз дослушать продолжение фразы после паузы. */
 	private static final int CONTINUATIONS = 3;
 	/** Сколько ждать продолжения фразы после паузы, мс. */

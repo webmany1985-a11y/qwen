@@ -92,11 +92,20 @@ public class TikTokAddon extends WebBrowserAddon {
 
 	@Override
 	String getLastUrl() {
-		return getPreferenceStore().getStringPref(TT_LAST_URL);
+		String u = getPreferenceStore().getStringPref(TT_LAST_URL);
+		// Запомненная ссылка «открыть в приложении» давала белый экран при каждом входе
+		return isTikTokPage(u) ? u : DEFAULT_URL;
 	}
 
 	@Override
 	void setLastUrl(String url) {
-		getPreferenceStore().applyStringPref(TT_LAST_URL, url);
+		if (isTikTokPage(url)) getPreferenceStore().applyStringPref(TT_LAST_URL, url);
+	}
+
+	/** Запоминаем только страницы tiktok.com. */
+	static boolean isTikTokPage(@androidx.annotation.Nullable String url) {
+		if (url == null) return false;
+		android.net.Uri u = android.net.Uri.parse(url);
+		return "https".equals(u.getScheme()) && TikTokWebClient.isTikTok(u);
 	}
 }

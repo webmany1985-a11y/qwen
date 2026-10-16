@@ -4155,10 +4155,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
-index 0000000..85c1513
+index 0000000..df6e17f
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
-@@ -0,0 +1,412 @@
+@@ -0,0 +1,428 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.lang.Math.abs;
@@ -4341,7 +4341,7 @@ index 0000000..85c1513
 +	/** Во сколько раз сфера-картинка больше нарисованной (замечание 16.10.2026: «увеличь»). */
 +	public static final float IMAGE_SPHERE_SCALE = 1.3f;
 +	/** Предел смещения точки сферы-картинки при пульсации, доля радиуса. */
-+	public static final float WARP_MAX = 0.2f;
++	public static final float WARP_MAX = 0.25f;
 +
 +	/**
 +	 * Пульсация сферы-картинки по частям: на сколько (доля радиуса) сдвинуть
@@ -4359,9 +4359,25 @@ index 0000000..85c1513
 +				0.3f * l * (float) Math.sin(13f * theta - 6.5f * t + rn * 7f);
 +		// w в пределах ±1.6; вес — от центра к краю
 +		float weight = clamp(rn, 0f, 1f);
-+		weight *= weight;
-+		float amp = 0.025f + 0.095f * l;
++		// В покое — заметно (замечание 16.10.2026: «пульсации не видно»), с голосом — сильно
++		float amp = 0.06f + 0.12f * l;
 +		return clamp(w / 1.6f * amp * weight, -WARP_MAX, WARP_MAX);
++	}
++
++	/** Предел поворота слоя сферы-картинки, радианы. */
++	public static final float TWIST_MAX = 0.6f;
++
++	/**
++	 * Поворот слоя сферы-картинки на расстоянии rn радиусов от центра:
++	 * соседние кольца-слои качаются в разные стороны и с разной скоростью —
++	 * сфера переливается изнутри, а не только по краю. С голосом размах больше.
++	 */
++	public static float twist(float rn, float t, float level) {
++		float l = clamp(level, 0f, 1f);
++		float a = 0.16f * (float) Math.sin(rn * 6f - t * 1.1f) +
++				0.11f * (float) Math.sin(rn * 11f + t * 1.7f + 0.8f) +
++				0.08f * l * (float) Math.sin(rn * 17f - t * 4.3f);
++		return clamp(a * (0.7f + 0.8f * l), -TWIST_MAX, TWIST_MAX);
 +	}
 +
 +	/** Наклон оси сферы к зрителю: широты видны эллипсами. */
@@ -4615,10 +4631,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..38ebd0b
+index 0000000..a98e40b
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,442 @@
+@@ -0,0 +1,474 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -4800,9 +4816,13 @@ index 0000000..38ebd0b
 +		continuations = CONTINUATIONS;
 +		phrase = null;
 +		firstAlternatives = null;
-+		sayListening(a, () -> {
-+			if (busy && (hud != null) && (recognizer == null)) createRecognizer(a);
-+		});
++		// В машине звук идёт через Android Auto с задержкой: телефон уже закончил
++		// «Слушаю», а динамики ещё говорят, и микрофон слышит само «Слушаю»
++		// (журнал/замечание 16.10.2026: JARVIS отвечал «Не расслышал»)
++		long pause = a.isCarActivityNotMirror() ? AFTER_GREETING_CAR_MS : AFTER_GREETING_MS;
++		sayListening(a, () -> main.postDelayed(() -> {
++			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) createRecognizer(a);
++		}, pause));
 +	}
 +
 +	/** Произнести «Слушаю» и затем, в главном потоке, выполнить then. */
@@ -4943,11 +4963,17 @@ index 0000000..38ebd0b
 +	public void onResults(Bundle results) {
 +		if (recognizer == null) return;
 +		destroyRecognizer();
-+		List<String> q = (results == null) ? null :
-+				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
++		List<String> q = stripGreeting((results == null) ? null :
++				results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION));
 +		boolean empty = (q == null) || q.isEmpty() || q.get(0).trim().isEmpty();
 +		Log.i("JARVIS tab: recognized ", q);
 +		if (phrase == null) {
++			if (empty && !heard && (retries > 0) && busy && (hud != null)) {
++				// Услышали только эхо «Слушаю» — слушаем ещё раз
++				retries--;
++				createRecognizer(getActivityDelegate());
++				return;
++			}
 +			if (empty) {
 +				toast(R.string.jarvis_not_heard);
 +				done();
@@ -4998,6 +5024,22 @@ index 0000000..38ebd0b
 +	public void onEvent(int eventType, Bundle params) {
 +	}
 +
++	/**
++	 * Убрать из распознанного эхо «Слушаю», если микрофон его поймал. Варианты,
++	 * от которых ничего не осталось, выбрасываются.
++	 */
++	@Nullable
++	static List<String> stripGreeting(@Nullable List<String> q) {
++		if (q == null) return null;
++		java.util.ArrayList<String> out = new java.util.ArrayList<>(q.size());
++		for (String s : q) {
++			if (s == null) continue;
++			String t = GREETING_ECHO.matcher(s.trim()).replaceFirst("").trim();
++			if (!t.isEmpty()) out.add(t);
++		}
++		return out;
++	}
++
 +	private static String errorName(int e) {
 +		return switch (e) {
 +			case SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK_TIMEOUT";
@@ -5045,6 +5087,12 @@ index 0000000..38ebd0b
 +	private static final int SILENCE_MS = 3000;
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 +	private static final int RETRIES = 1;
++	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
++	private static final long AFTER_GREETING_MS = 300;
++	private static final long AFTER_GREETING_CAR_MS = 1200;
++	/** «Слушаю» (и «слушаю, сэр» и т. п.) в начале распознанного — это эхо. */
++	private static final java.util.regex.Pattern GREETING_ECHO = java.util.regex.Pattern.compile(
++			"^(?iu)(слушаю|слушай|слушаем)[\\s,.!…]*");
 +	/** Сколько раз дослушать продолжение фразы после паузы. */
 +	private static final int CONTINUATIONS = 3;
 +	/** Сколько ждать продолжения фразы после паузы, мс. */
@@ -5063,10 +5111,10 @@ index 0000000..38ebd0b
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
 new file mode 100644
-index 0000000..fd6bd6c
+index 0000000..4b603a2
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
-@@ -0,0 +1,475 @@
+@@ -0,0 +1,479 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static me.aap.fermata.addon.jarvis.HudMath.NODES;
@@ -5478,9 +5526,13 @@ index 0000000..fd6bd6c
 +				float dx = gx * bw / MESH - bw / 2f;
 +				float rn = (float) Math.sqrt(dx * dx + dy * dy) / imgR;
 +				float f = 1f + HudMath.warp((float) Math.atan2(dy, dx), rn, t, level);
++				// Слой на своём радиусе ещё и повёрнут — по-своему для каждого слоя
++				float tw = HudMath.twist(rn, t, level);
++				float c2 = ca * (float) Math.cos(tw) - sa * (float) Math.sin(tw);
++				float s2 = sa * (float) Math.cos(tw) + ca * (float) Math.sin(tw);
 +				float x = dx * f, y = dy * f;
-+				mesh[k++] = cx + (x * ca - y * sa) * sc;
-+				mesh[k++] = cy + (x * sa + y * ca) * sc;
++				mesh[k++] = cx + (x * c2 - y * s2) * sc;
++				mesh[k++] = cy + (x * s2 + y * c2) * sc;
 +			}
 +		}
 +		image.setAlpha(Math.round(255f * clamp(open * (0.82f + 0.18f * level), 0f, 1f)));
@@ -10375,12 +10427,49 @@ index 0000000..51904bd
 +    <string name="jarvis_not_heard">Не расслышал</string>
 +    <string name="jarvis_no_recognizer">Распознавание речи на телефоне недоступно</string>
 +</resources>
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
+new file mode 100644
+index 0000000..8d95005
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
+@@ -0,0 +1,31 @@
++package me.aap.fermata.addon.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertTrue;
++
++import org.junit.Test;
++
++import java.util.Arrays;
++import java.util.List;
++
++/** Эхо «Слушаю», пойманное микрофоном, не должно уходить JARVIS. */
++public class GreetingEchoTest {
++
++	@Test
++	public void echoRemovedCommandKept() {
++		List<String> q = JarvisFragment.stripGreeting(
++				Arrays.asList("Слушаю включи радио", "слушаю, включи радио", "включи радио"));
++		assertEquals(Arrays.asList("включи радио", "включи радио", "включи радио"), q);
++	}
++
++	@Test
++	public void onlyEchoGivesEmpty() {
++		assertTrue(JarvisFragment.stripGreeting(Arrays.asList("Слушаю", "слушаю.", "")).isEmpty());
++	}
++
++	@Test
++	public void wordInsidePhraseKept() {
++		assertEquals(Arrays.asList("я слушаю музыку"),
++				JarvisFragment.stripGreeting(Arrays.asList("я слушаю музыку")));
++	}
++}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
 new file mode 100644
-index 0000000..838c156
+index 0000000..69a5e20
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,200 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -10565,8 +10654,18 @@ index 0000000..838c156
 +			}
 +			assertEquals(0f, HudMath.warp(theta, 0f, t, 1f), 0f);
 +		}
-+		assertTrue("в покое — едва заметно", idleMax < 0.03f);
-+		assertTrue("с голосом — заметно", loudMax > 0.06f);
++		assertTrue("в покое — заметно, но спокойнее", idleMax > 0.03f && idleMax < loudMax);
++		assertTrue("с голосом — сильно", loudMax > 0.12f);
++		for (float rn = 0f; rn <= 1.4f; rn += 0.05f) {
++			for (float t = 0f; t < 20f; t += 0.37f) {
++				assertTrue(Math.abs(HudMath.twist(rn, t, 1f)) <= HudMath.TWIST_MAX);
++			}
++		}
++		// Слои на разной глубине повёрнуты по-разному
++		float spread = 0f;
++		for (float rn = 0f; rn <= 1f; rn += 0.1f)
++			spread = Math.max(spread, Math.abs(HudMath.twist(rn, 2f, 0.5f) - HudMath.twist(0f, 2f, 0.5f)));
++		assertTrue(spread > 0.1f);
 +		// Разные участки края в один момент сдвинуты по-разному
 +		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
 +	}
@@ -10693,10 +10792,10 @@ index 0000000..e000051
 +})();
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java
 new file mode 100644
-index 0000000..ddb5ee0
+index 0000000..06b8585
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,111 @@
 +package me.aap.fermata.addon.web;
 +
 +import android.content.Context;
@@ -10791,12 +10890,21 @@ index 0000000..ddb5ee0
 +
 +	@Override
 +	String getLastUrl() {
-+		return getPreferenceStore().getStringPref(TT_LAST_URL);
++		String u = getPreferenceStore().getStringPref(TT_LAST_URL);
++		// Запомненная ссылка «открыть в приложении» давала белый экран при каждом входе
++		return isTikTokPage(u) ? u : DEFAULT_URL;
 +	}
 +
 +	@Override
 +	void setLastUrl(String url) {
-+		getPreferenceStore().applyStringPref(TT_LAST_URL, url);
++		if (isTikTokPage(url)) getPreferenceStore().applyStringPref(TT_LAST_URL, url);
++	}
++
++	/** Запоминаем только страницы tiktok.com. */
++	static boolean isTikTokPage(@androidx.annotation.Nullable String url) {
++		if (url == null) return false;
++		android.net.Uri u = android.net.Uri.parse(url);
++		return "https".equals(u.getScheme()) && TikTokWebClient.isTikTok(u);
 +	}
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
@@ -10858,10 +10966,10 @@ index 0000000..69bbc76
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
 new file mode 100644
-index 0000000..ef01d1b
+index 0000000..9a6ca19
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,95 @@
 +package me.aap.fermata.addon.web;
 +
 +import static me.aap.fermata.util.Utils.dynCtx;
@@ -10916,10 +11024,26 @@ index 0000000..ef01d1b
 +	@Override
 +	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 +																					@NonNull WebResourceRequest request) {
-+		String scheme = request.getUrl().getScheme();
++		Uri u = request.getUrl();
++		String scheme = u.getScheme();
 +		// «Открыть приложение» ведёт на snssdk…:// и intent:// — во вкладке их не открыть
 +		if (!"http".equals(scheme) && !"https".equals(scheme)) return true;
++		// …и на https-ссылки «открыть в приложении» (snssdk1180.onelink.me): во вкладке
++		// это белая страница, которая к тому же запоминалась как последняя (16.10.2026)
++		if (isAppLink(u)) {
++			Log.i("TikTok: app link blocked ", u);
++			return true;
++		}
 +		return super.shouldOverrideUrlLoading(view, request);
++	}
++
++	/** Ссылка, ведущая не на страницу, а в приложение TikTok или в магазин. */
++	static boolean isAppLink(Uri uri) {
++		String host = uri.getHost();
++		if (host == null) return false;
++		return host.endsWith("onelink.me") || host.endsWith("app.link") ||
++				host.endsWith("appsflyer.com") || host.equals("play.google.com") ||
++				host.equals("apps.apple.com") || host.startsWith("snssdk");
 +	}
 +
 +	static boolean isTikTok(Uri uri) {
