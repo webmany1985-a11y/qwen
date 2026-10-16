@@ -95,6 +95,7 @@ import me.aap.fermata.addon.FermataActivityAddon;
 import me.aap.fermata.addon.FermataAddon;
 import me.aap.fermata.addon.FermataFragmentAddon;
 import me.aap.fermata.addon.MediaLibAddon;
+import me.aap.fermata.jarvis.JarvisBridge;
 import me.aap.fermata.media.engine.MediaEngineManager;
 import me.aap.fermata.media.lib.AtvInterface;
 import me.aap.fermata.media.lib.DefaultMediaLib;
@@ -832,7 +833,8 @@ public class MainActivityDelegate extends ActivityDelegate
 			} else {
 				VoiceCommandHandler h = voiceCommandHandler;
 				if (h == null) h = voiceCommandHandler = new VoiceCommandHandler(this);
-				h.handle(q);
+				// Не поняли сами — отдаём фразу голосовому ассистенту JARVIS
+				if (!h.handle(q) && !q.isEmpty()) JarvisBridge.ask(this, q.get(0));
 			}
 		});
 	}
