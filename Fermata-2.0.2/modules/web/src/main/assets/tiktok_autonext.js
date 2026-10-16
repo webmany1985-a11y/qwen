@@ -11,11 +11,35 @@
       document.querySelector('video');
   }
 
-  // Окно «Воспользуйтесь всеми функциями приложения» — «Не сейчас»
+  // Окно «Воспользуйтесь всеми функциями приложения». Бывает с «Не сейчас»,
+  // бывает только с «Открыть TikTok» (16.10.2026, телефон) — тогда прячем само
+  // окно: поднимаемся от его содержимого до слоя на весь экран без видео.
   function closePopups() {
     var c = document.querySelector(
       '[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="modal-close-inner-button"]');
-    if (c && c.offsetParent !== null) c.click();
+    if (c && c.offsetParent !== null) { c.click(); return; }
+    var m = document.querySelector('[data-e2e="middle-cta-container"],[data-e2e="middle-cta-confirm-btn"]');
+    if (!m || m.offsetParent === null) return;
+    var e = m, layer = null;
+    while (e && e !== document.body) {
+      if (e.querySelector('video')) break;
+      var st = getComputedStyle(e);
+      if (st.position === 'fixed' || st.position === 'absolute') layer = e;
+      e = e.parentElement;
+    }
+    (layer || m).style.setProperty('display', 'none', 'important');
+    // Затемнение под окном — отдельный слой на весь экран без содержимого
+    var all = document.querySelectorAll('body *');
+    for (var i = 0; i < all.length; i++) {
+      var x = all[i];
+      if (x.childElementCount || x.textContent.trim()) continue;
+      var cs = getComputedStyle(x);
+      if (cs.position !== 'fixed') continue;
+      var r = x.getBoundingClientRect();
+      if (r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.9 &&
+          cs.backgroundColor.indexOf('rgba') === 0) x.style.setProperty('display', 'none', 'important');
+    }
+    document.body.style.overflow = '';
   }
 
   function swipe() {
