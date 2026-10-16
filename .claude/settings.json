@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tar xzf Fermata-2.0.2.tar.gz)",
+      "Bash(git rm Fermata-2.0.2.zip Fermata-2.0.2.tar.gz)"
+    ]
+  }
+}
