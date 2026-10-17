@@ -72,6 +72,13 @@
   }
 
   function swipe() {
+    // Лента на Swiper: если его объект доступен — листать им, без касаний
+    // (искусственное касание TikTok мог принять за нажатие на видео)
+    var sw = document.querySelector('.swiper');
+    if (sw && sw.swiper && typeof sw.swiper.slideNext === 'function') {
+      sw.swiper.slideNext();
+      return;
+    }
     var el = document.querySelector('[data-e2e="video-slide-active"]') ||
       document.querySelector('.swiper') || document.body;
     var r = el.getBoundingClientRect();

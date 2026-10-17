@@ -70,6 +70,13 @@ public class JarvisFragment extends MainActivityFragment
 	private int retries;
 	/** В этой записи речь началась. */
 	private boolean heard;
+	@Nullable
+	private FutureSupplier<TextToSpeech> warm;
+	@Nullable
+	private Locale warmLocale;
+	/** Распознавание Google не запустилось — до конца сессии брать системное. */
+	private boolean useDefaultRecognizer;
+	private boolean usingGoogle;
 	/** Последний промежуточный итог распознавания в этой записи. */
 	@Nullable
 	private String partial;
@@ -108,12 +115,20 @@ public class JarvisFragment extends MainActivityFragment
 		hud = v;
 		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 		me.aap.fermata.jarvis.JarvisVoice.refresh();
+		// И синтезатор подключается заранее — первое «Слушаю» без задержки
+		try {
+			MainActivityDelegate a = getActivityDelegate();
+			warmTts(requireContext(), Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
+		} catch (Exception ex) {
+			Log.e(ex, "JARVIS tab: TTS warm-up failed");
+		}
 		return v;
 	}
 
 	@Override
 	public void onDestroyView() {
 		stopListening();
+		closeWarm();
 		hud = null;
 		super.onDestroyView();
 	}
@@ -198,16 +213,14 @@ public class JarvisFragment extends MainActivityFragment
 		Context ctx = requireContext();
 		String text = dynCtx(ctx).getString(R.string.jarvis_say_listening);
 		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
-		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
+		warmTts(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
 			if (err != null) {
 				Log.e(err, "JARVIS tab: TTS «Слушаю» init failed, lang=", locale);
+				warm = null;
 				then.run();
 				return;
 			}
-			if (!busy) {
-				tts.close();
-				return;
-			}
+			if (!busy) return;
 			greeting = tts;
 			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
@@ -215,7 +228,6 @@ public class JarvisFragment extends MainActivityFragment
 				if (greeting != tts) return; // запись уже отменена
 				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
 				greeting = null;
-				tts.close();
 				then.run();
 			}));
 		}));
@@ -224,7 +236,47 @@ public class JarvisFragment extends MainActivityFragment
 	private void closeGreeting() {
 		TextToSpeech tts = greeting;
 		greeting = null;
-		if (tts != null) tts.close();
+		if (tts != null) tts.stop();
+	}
+
+	/**
+	 * Синтезатор речи держится готовым, пока открыта вкладка: подключение к нему
+	 * занимало ~2 с при каждом «Слушаю» (журнал 17.10.2026, 07:22:25–33).
+	 */
+	private FutureSupplier<TextToSpeech> warmTts(Context ctx, Locale locale) {
+		FutureSupplier<TextToSpeech> w = warm;
+		if ((w == null) || !locale.equals(warmLocale)) {
+			closeWarm();
+			warmLocale = locale;
+			warm = w = TextToSpeech.create(ctx.getApplicationContext(), locale);
+		}
+		return w;
+	}
+
+	private void closeWarm() {
+		FutureSupplier<TextToSpeech> w = warm;
+		warm = null;
+		if (w != null) w.onSuccess(TextToSpeech::close);
+	}
+
+	/**
+	 * Распознавание приложения Google (по сети). Распознавание по умолчанию на
+	 * телефоне — офлайн-модуль «Распознавание и синтез речи Google», и на русских
+	 * фразах он отвечал NO_MATCH (журнал 17.10.2026, 07:22:33–57).
+	 */
+	@Nullable
+	private static android.content.ComponentName googleRecognizer(Context ctx) {
+		try {
+			for (android.content.pm.ResolveInfo r : ctx.getPackageManager().queryIntentServices(
+					new Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)) {
+				if ("com.google.android.googlequicksearchbox".equals(r.serviceInfo.packageName)) {
+					return new android.content.ComponentName(r.serviceInfo.packageName, r.serviceInfo.name);
+				}
+			}
+		} catch (Exception ex) {
+			Log.e(ex, "JARVIS tab: failed to query recognition services");
+		}
+		return null;
 	}
 
 	private void createRecognizer(MainActivityDelegate a) {
@@ -232,7 +284,12 @@ public class JarvisFragment extends MainActivityFragment
 		partial = null;
 		Log.i("JARVIS tab: recognizer start, segment=", (phrase == null) ? 1 : 1 + CONTINUATIONS - continuations,
 				", retries=", retries, ", lang=", a.getPrefs().getVoiceControlLang(a));
-		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
+		Context ctx = requireContext();
+		android.content.ComponentName google = useDefaultRecognizer ? null : googleRecognizer(ctx);
+		Log.i("JARVIS tab: recognizer ", (google != null) ? google.flattenToShortString() : "default");
+		SpeechRecognizer sr = (google != null) ? SpeechRecognizer.createSpeechRecognizer(ctx, google) :
+				SpeechRecognizer.createSpeechRecognizer(ctx);
+		usingGoogle = (google != null);
 		sr.setRecognitionListener(this);
 		recognizer = sr;
 		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
@@ -327,6 +384,15 @@ public class JarvisFragment extends MainActivityFragment
 		if (silence && (retries > 0) && busy && (hud != null)) {
 			// Тишина или неразборчиво — ещё одна попытка, без повторного «Слушаю»
 			retries--;
+			createRecognizer(getActivityDelegate());
+			return;
+		}
+		if (!silence && usingGoogle && busy && (hud != null) &&
+				((error == SpeechRecognizer.ERROR_CLIENT) || (error == SpeechRecognizer.ERROR_SERVER) ||
+						(error == SpeechRecognizer.ERROR_NETWORK) || (error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) ||
+						(error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS))) {
+			Log.i("JARVIS tab: Google recognizer failed, falling back to default");
+			useDefaultRecognizer = true;
 			createRecognizer(getActivityDelegate());
 			return;
 		}

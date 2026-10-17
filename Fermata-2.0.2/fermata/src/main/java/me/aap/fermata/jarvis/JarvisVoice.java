@@ -47,15 +47,18 @@ public final class JarvisVoice {
 		if (loading || (System.currentTimeMillis() - loadedAt < TTL_MS)) return;
 		loading = true;
 		FermataApplication.get().execute(() -> {
+			String xml = null;
 			try {
-				String xml = readPrefs();
+				xml = readPrefs();
 				if (xml != null) {
 					cached = parse(xml);
 					Log.i("JARVIS voice: rate=", cached.rate, " pitch=", cached.pitch, " voice=",
 							cached.voice);
 				}
+				// Не прочитали (root ещё не разрешён) — попробовать снова через 10 с
+				loadedAt = (xml != null) ? System.currentTimeMillis() :
+						System.currentTimeMillis() - TTL_MS + 10_000L;
 			} finally {
-				loadedAt = System.currentTimeMillis();
 				loading = false;
 			}
 		});

@@ -28,8 +28,32 @@ public class TikTokWebClient extends FermataWebClient {
 	@Nullable
 	private static String script;
 
+	private long recoveredAt;
+
+	/**
+	 * Ссылка «открыть в приложении» всё-таки загрузилась (так бывает при
+	 * переадресации сервером: журнал 17.10.2026, 07:24:55) — вернуться в ленту.
+	 */
+	private boolean recoverFromAppLink(WebView view, String url) {
+		if ((url == null) || !isAppLink(Uri.parse(url))) return false;
+		view.stopLoading();
+		long now = System.currentTimeMillis();
+		if (now - recoveredAt < 5000) return true;
+		recoveredAt = now;
+		Log.i("TikTok: left app link, back to the feed");
+		view.loadUrl(TikTokAddon.DEFAULT_URL);
+		return true;
+	}
+
+	@Override
+	public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+		if (recoverFromAppLink(view, url)) return;
+		super.onPageStarted(view, url, favicon);
+	}
+
 	@Override
 	public void onPageFinished(WebView view, String url) {
+		if (recoverFromAppLink(view, url)) return;
 		super.onPageFinished(view, url);
 		Log.i("TikTok: page finished ", url, ", view ", view.getWidth(), "x", view.getHeight());
 		if (!isTikTok(Uri.parse(url))) return;

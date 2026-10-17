@@ -436,10 +436,10 @@ index 0000000..8a4ddb4
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
 new file mode 100644
-index 0000000..030c53f
+index 0000000..1d6282f
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,138 @@
 +package me.aap.fermata.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -489,15 +489,18 @@ index 0000000..030c53f
 +		if (loading || (System.currentTimeMillis() - loadedAt < TTL_MS)) return;
 +		loading = true;
 +		FermataApplication.get().execute(() -> {
++			String xml = null;
 +			try {
-+				String xml = readPrefs();
++				xml = readPrefs();
 +				if (xml != null) {
 +					cached = parse(xml);
 +					Log.i("JARVIS voice: rate=", cached.rate, " pitch=", cached.pitch, " voice=",
 +							cached.voice);
 +				}
++				// Не прочитали (root ещё не разрешён) — попробовать снова через 10 с
++				loadedAt = (xml != null) ? System.currentTimeMillis() :
++						System.currentTimeMillis() - TTL_MS + 10_000L;
 +			} finally {
-+				loadedAt = System.currentTimeMillis();
 +				loading = false;
 +			}
 +		});
@@ -5057,10 +5060,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..6fbb1c6
+index 0000000..f431613
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,568 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5133,6 +5136,13 @@ index 0000000..6fbb1c6
 +	private int retries;
 +	/** В этой записи речь началась. */
 +	private boolean heard;
++	@Nullable
++	private FutureSupplier<TextToSpeech> warm;
++	@Nullable
++	private Locale warmLocale;
++	/** Распознавание Google не запустилось — до конца сессии брать системное. */
++	private boolean useDefaultRecognizer;
++	private boolean usingGoogle;
 +	/** Последний промежуточный итог распознавания в этой записи. */
 +	@Nullable
 +	private String partial;
@@ -5171,12 +5181,20 @@ index 0000000..6fbb1c6
 +		hud = v;
 +		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 +		me.aap.fermata.jarvis.JarvisVoice.refresh();
++		// И синтезатор подключается заранее — первое «Слушаю» без задержки
++		try {
++			MainActivityDelegate a = getActivityDelegate();
++			warmTts(requireContext(), Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
++		} catch (Exception ex) {
++			Log.e(ex, "JARVIS tab: TTS warm-up failed");
++		}
 +		return v;
 +	}
 +
 +	@Override
 +	public void onDestroyView() {
 +		stopListening();
++		closeWarm();
 +		hud = null;
 +		super.onDestroyView();
 +	}
@@ -5261,16 +5279,14 @@ index 0000000..6fbb1c6
 +		Context ctx = requireContext();
 +		String text = dynCtx(ctx).getString(R.string.jarvis_say_listening);
 +		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
-+		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
++		warmTts(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
 +			if (err != null) {
 +				Log.e(err, "JARVIS tab: TTS «Слушаю» init failed, lang=", locale);
++				warm = null;
 +				then.run();
 +				return;
 +			}
-+			if (!busy) {
-+				tts.close();
-+				return;
-+			}
++			if (!busy) return;
 +			greeting = tts;
 +			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 +			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
@@ -5278,7 +5294,6 @@ index 0000000..6fbb1c6
 +				if (greeting != tts) return; // запись уже отменена
 +				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
 +				greeting = null;
-+				tts.close();
 +				then.run();
 +			}));
 +		}));
@@ -5287,7 +5302,47 @@ index 0000000..6fbb1c6
 +	private void closeGreeting() {
 +		TextToSpeech tts = greeting;
 +		greeting = null;
-+		if (tts != null) tts.close();
++		if (tts != null) tts.stop();
++	}
++
++	/**
++	 * Синтезатор речи держится готовым, пока открыта вкладка: подключение к нему
++	 * занимало ~2 с при каждом «Слушаю» (журнал 17.10.2026, 07:22:25–33).
++	 */
++	private FutureSupplier<TextToSpeech> warmTts(Context ctx, Locale locale) {
++		FutureSupplier<TextToSpeech> w = warm;
++		if ((w == null) || !locale.equals(warmLocale)) {
++			closeWarm();
++			warmLocale = locale;
++			warm = w = TextToSpeech.create(ctx.getApplicationContext(), locale);
++		}
++		return w;
++	}
++
++	private void closeWarm() {
++		FutureSupplier<TextToSpeech> w = warm;
++		warm = null;
++		if (w != null) w.onSuccess(TextToSpeech::close);
++	}
++
++	/**
++	 * Распознавание приложения Google (по сети). Распознавание по умолчанию на
++	 * телефоне — офлайн-модуль «Распознавание и синтез речи Google», и на русских
++	 * фразах он отвечал NO_MATCH (журнал 17.10.2026, 07:22:33–57).
++	 */
++	@Nullable
++	private static android.content.ComponentName googleRecognizer(Context ctx) {
++		try {
++			for (android.content.pm.ResolveInfo r : ctx.getPackageManager().queryIntentServices(
++					new Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)) {
++				if ("com.google.android.googlequicksearchbox".equals(r.serviceInfo.packageName)) {
++					return new android.content.ComponentName(r.serviceInfo.packageName, r.serviceInfo.name);
++				}
++			}
++		} catch (Exception ex) {
++			Log.e(ex, "JARVIS tab: failed to query recognition services");
++		}
++		return null;
 +	}
 +
 +	private void createRecognizer(MainActivityDelegate a) {
@@ -5295,7 +5350,12 @@ index 0000000..6fbb1c6
 +		partial = null;
 +		Log.i("JARVIS tab: recognizer start, segment=", (phrase == null) ? 1 : 1 + CONTINUATIONS - continuations,
 +				", retries=", retries, ", lang=", a.getPrefs().getVoiceControlLang(a));
-+		SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(requireContext());
++		Context ctx = requireContext();
++		android.content.ComponentName google = useDefaultRecognizer ? null : googleRecognizer(ctx);
++		Log.i("JARVIS tab: recognizer ", (google != null) ? google.flattenToShortString() : "default");
++		SpeechRecognizer sr = (google != null) ? SpeechRecognizer.createSpeechRecognizer(ctx, google) :
++				SpeechRecognizer.createSpeechRecognizer(ctx);
++		usingGoogle = (google != null);
 +		sr.setRecognitionListener(this);
 +		recognizer = sr;
 +		Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
@@ -5390,6 +5450,15 @@ index 0000000..6fbb1c6
 +		if (silence && (retries > 0) && busy && (hud != null)) {
 +			// Тишина или неразборчиво — ещё одна попытка, без повторного «Слушаю»
 +			retries--;
++			createRecognizer(getActivityDelegate());
++			return;
++		}
++		if (!silence && usingGoogle && busy && (hud != null) &&
++				((error == SpeechRecognizer.ERROR_CLIENT) || (error == SpeechRecognizer.ERROR_SERVER) ||
++						(error == SpeechRecognizer.ERROR_NETWORK) || (error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) ||
++						(error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS))) {
++			Log.i("JARVIS tab: Google recognizer failed, falling back to default");
++			useDefaultRecognizer = true;
 +			createRecognizer(getActivityDelegate());
 +			return;
 +		}
@@ -16260,10 +16329,10 @@ index 7b574fe..adb25e2 100644
                      icon : 'web',
 diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
 new file mode 100644
-index 0000000..1a0ef10
+index 0000000..0350afb
 --- /dev/null
 +++ b/modules/web/src/main/assets/tiktok_autonext.js
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,150 @@
 +// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
 +// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 +// листают, листает только касание — поэтому свайп собирается из TouchEvent.
@@ -16338,6 +16407,13 @@ index 0000000..1a0ef10
 +  }
 +
 +  function swipe() {
++    // Лента на Swiper: если его объект доступен — листать им, без касаний
++    // (искусственное касание TikTok мог принять за нажатие на видео)
++    var sw = document.querySelector('.swiper');
++    if (sw && sw.swiper && typeof sw.swiper.slideNext === 'function') {
++      sw.swiper.slideNext();
++      return;
++    }
 +    var el = document.querySelector('[data-e2e="video-slide-active"]') ||
 +      document.querySelector('.swiper') || document.body;
 +    var r = el.getBoundingClientRect();
@@ -16649,10 +16725,10 @@ index 0000000..69bbc76
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
 new file mode 100644
-index 0000000..9a6ca19
+index 0000000..0a528e1
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokWebClient.java
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,119 @@
 +package me.aap.fermata.addon.web;
 +
 +import static me.aap.fermata.util.Utils.dynCtx;
@@ -16683,8 +16759,32 @@ index 0000000..9a6ca19
 +	@Nullable
 +	private static String script;
 +
++	private long recoveredAt;
++
++	/**
++	 * Ссылка «открыть в приложении» всё-таки загрузилась (так бывает при
++	 * переадресации сервером: журнал 17.10.2026, 07:24:55) — вернуться в ленту.
++	 */
++	private boolean recoverFromAppLink(WebView view, String url) {
++		if ((url == null) || !isAppLink(Uri.parse(url))) return false;
++		view.stopLoading();
++		long now = System.currentTimeMillis();
++		if (now - recoveredAt < 5000) return true;
++		recoveredAt = now;
++		Log.i("TikTok: left app link, back to the feed");
++		view.loadUrl(TikTokAddon.DEFAULT_URL);
++		return true;
++	}
++
++	@Override
++	public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
++		if (recoverFromAppLink(view, url)) return;
++		super.onPageStarted(view, url, favicon);
++	}
++
 +	@Override
 +	public void onPageFinished(WebView view, String url) {
++		if (recoverFromAppLink(view, url)) return;
 +		super.onPageFinished(view, url);
 +		Log.i("TikTok: page finished ", url, ", view ", view.getWidth(), "x", view.getHeight());
 +		if (!isTikTok(Uri.parse(url))) return;
