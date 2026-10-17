@@ -35,7 +35,13 @@ public final class JarvisVoice {
 	static final float DEFAULT_RATE = 0.95f;
 	static final float DEFAULT_PITCH = 0.9f;
 
-	private static volatile Settings cached = new Settings(DEFAULT_RATE, DEFAULT_PITCH, null);
+	/**
+	 * Последние прочитанные настройки хранятся у себя: root в Magisk бывает выдан
+	 * на время, и без него голос откатывался на стандартный (журнал 17.10.2026,
+	 * 08:00:15 — в 07:27 root был, в 08:00 уже нет).
+	 */
+	private static final String STORE = "jarvis_voice";
+	private static volatile Settings cached = loadStored();
 	private static volatile long loadedAt;
 	private static volatile boolean loading;
 
@@ -52,6 +58,7 @@ public final class JarvisVoice {
 				xml = readPrefs();
 				if (xml != null) {
 					cached = parse(xml);
+					store(cached);
 					Log.i("JARVIS voice: rate=", cached.rate, " pitch=", cached.pitch, " voice=",
 							cached.voice);
 				}
@@ -81,7 +88,7 @@ public final class JarvisVoice {
 		try {
 			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
 			p = new ProcessBuilder("su", "-c",
-					"abx2xml " + PREFS + " - 2>/dev/null || cat " + PREFS).start();
+					"abx2xml " + PREFS + " - 2>/dev/null || cat " + PREFS).redirectErrorStream(true).start();
 			p.getOutputStream().close();
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			try (InputStream in = p.getInputStream()) {
@@ -89,7 +96,10 @@ public final class JarvisVoice {
 				for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
 			}
 			if (!p.waitFor(15, TimeUnit.SECONDS) || (p.exitValue() != 0)) {
-				Log.i("JARVIS voice: cannot read JARVIS settings (no root?)");
+				String tail = out.toString(UTF_8.name()).trim();
+				if (tail.length() > 200) tail = tail.substring(tail.length() - 200);
+				Log.i("JARVIS voice: cannot read JARVIS settings (no root?), exit ",
+						p.isAlive() ? "timeout" : p.exitValue(), ": ", tail);
 				return null;
 			}
 			return out.toString(UTF_8.name());
@@ -98,6 +108,26 @@ public final class JarvisVoice {
 			return null;
 		} finally {
 			if (p != null) p.destroy();
+		}
+	}
+
+	private static Settings loadStored() {
+		try {
+			android.content.SharedPreferences sp = FermataApplication.get()
+					.getSharedPreferences(STORE, android.content.Context.MODE_PRIVATE);
+			return new Settings(sp.getFloat("rate", DEFAULT_RATE), sp.getFloat("pitch", DEFAULT_PITCH),
+					sp.getString("voice", null));
+		} catch (Throwable ex) {
+			return new Settings(DEFAULT_RATE, DEFAULT_PITCH, null);
+		}
+	}
+
+	private static void store(Settings s) {
+		try {
+			FermataApplication.get().getSharedPreferences(STORE, android.content.Context.MODE_PRIVATE)
+					.edit().putFloat("rate", s.rate).putFloat("pitch", s.pitch).putString("voice", s.voice)
+					.apply();
+		} catch (Throwable ignore) {
 		}
 	}
 
