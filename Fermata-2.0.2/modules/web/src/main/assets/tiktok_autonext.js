@@ -2,15 +2,20 @@
 // Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 // листают, листает только касание — поэтому свайп собирается из TouchEvent.
 // Проверено на tiktok.com 16.10.2026 (мобильная версия, Chromium).
+// В машине вкладка открывает версию для компьютера (широкий экран, нет окна
+// «Открыть TikTok»): там лента листается кнопкой feed-navigation-next
+// (проверено 17.10.2026, 960×420).
 (function () {
   if (window.__jarvisTt) return;
   var S = { lastSrc: null, lastT: 0, fired: null, firedAt: 0, key: null, keySince: 0, userAt: 0 };
   // Пока вы листаете сами, скрипт не вмешивается (замечание 16.10.2026:
   // при ручном перелистывании лента подвисала)
   var USER_QUIET_MS = 4000;
-  document.addEventListener('touchstart', function (e) {
-    if (e.isTrusted) S.userAt = Date.now();
-  }, { capture: true, passive: true });
+  ['touchstart', 'mousedown', 'wheel', 'keydown'].forEach(function (t) {
+    document.addEventListener(t, function (e) {
+      if (e.isTrusted) S.userAt = Date.now();
+    }, { capture: true, passive: true });
+  });
   // Сколько стоять на публикации без видео (фото-слайд-шоу, трансляция,
   // реклама) и сверх длины видео, прежде чем листать принудительно.
   // Зависание на одной публикации — замечание 16.10.2026
@@ -27,9 +32,58 @@
     return 'u:' + location.href;
   }
 
+  function isDesktop() {
+    return !!document.querySelector('button[data-e2e="feed-navigation-next"]') ||
+      (!document.querySelector('[data-e2e="video-slide-active"]') && !!document.querySelector('article'));
+  }
+
+  // Видео на экране: в мобильной ленте — активный слайд, в версии для
+  // компьютера — то, что больше всего видно
   function video() {
-    return document.querySelector('[data-e2e="video-slide-active"] video') ||
-      document.querySelector('video');
+    var v = document.querySelector('[data-e2e="video-slide-active"] video');
+    if (v) return v;
+    var best = null, area = 0, vs = document.querySelectorAll('video');
+    for (var i = 0; i < vs.length; i++) {
+      var r = vs[i].getBoundingClientRect();
+      var w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+      var h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+      if (w > 0 && h > 0 && w * h > area) { area = w * h; best = vs[i]; }
+    }
+    return best;
+  }
+
+  // Версия для компьютера: окно входа — «Пропустить» (вход сохраняется в
+  // куках, войти можно и потом)
+  function skipLogin() {
+    var b = document.querySelectorAll('[role="button"],button');
+    for (var i = 0; i < b.length; i++) {
+      var t = (b[i].textContent || '').trim();
+      if ((t === 'Пропустить' || t === 'Skip') && b[i].offsetParent !== null &&
+          b[i].closest('[role="dialog"],[class*="Modal"],[class*="modal"]')) {
+        b[i].click();
+        log('login dialog skipped');
+        return;
+      }
+    }
+  }
+
+  function nextDesktop() {
+    var b = document.querySelector('button[data-e2e="feed-navigation-next"]');
+    if (b && !b.disabled) { b.click(); return; }
+    // Запасные пути: клавиша «вниз», затем прокрутка ленты на экран
+    var ev = { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true };
+    document.dispatchEvent(new KeyboardEvent('keydown', ev));
+    document.dispatchEvent(new KeyboardEvent('keyup', ev));
+    var v = video(), e = v;
+    while (e && e !== document.body) {
+      var st = getComputedStyle(e);
+      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && e.scrollHeight > e.clientHeight) {
+        e.scrollBy({ top: e.clientHeight, behavior: 'smooth' });
+        return;
+      }
+      e = e.parentElement;
+    }
+    window.scrollBy({ top: innerHeight, behavior: 'smooth' });
   }
 
   // Окно «Воспользуйтесь всеми функциями приложения». Бывает с «Не сейчас»,
@@ -101,7 +155,7 @@
 
   function next() {
     closePopups();
-    swipe();
+    if (isDesktop()) nextDesktop(); else swipe();
   }
 
   setInterval(function () {
@@ -113,6 +167,7 @@
       return;
     }
     closePopups();
+    skipLogin();
     var key = slideKey();
     if (key !== S.key) { S.key = key; S.keySince = now; }
     var v = video();

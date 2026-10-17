@@ -34,8 +34,25 @@ public class TikTokFragment extends WebBrowserFragment {
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new TikTokWebClient(), chromeClient);
+		if (isCarScreen(ctx)) {
+			// В машине — версия TikTok для компьютера: под широкий экран, без окна
+			// «Открыть TikTok», которое в мобильной версии затемняло экран и
+			// останавливало ленту (замечание 17.10.2026)
+			android.webkit.WebSettings ws = webView.getSettings();
+			String ua = FermataWebView.UserAgent.getUaDesktop(ws, addon);
+			ws.setUserAgentString(ua);
+			me.aap.utils.log.Log.i("TikTok: car screen, desktop version: ", ua);
+		}
 		webView.loadUrl(addon.getLastUrl());
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
+	}
+
+	private static boolean isCarScreen(Context ctx) {
+		try {
+			return MainActivityDelegate.get(ctx).isCarActivityNotMirror();
+		} catch (RuntimeException ex) {
+			return false;
+		}
 	}
 
 	@Nullable
