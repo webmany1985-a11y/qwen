@@ -24,6 +24,16 @@
 
   // Что сейчас на экране: видео — по адресу, иначе — по первой картинке слайда
   function slideKey() {
+    // Версия для компьютера: какая публикация ленты сейчас сверху
+    var arts = document.querySelectorAll('article');
+    if (arts.length && !document.querySelector('[data-e2e="video-slide-active"]')) {
+      var bi = -1, bd = 1e9;
+      for (var k = 0; k < arts.length; k++) {
+        var d = Math.abs(arts[k].getBoundingClientRect().top);
+        if (d < bd) { bd = d; bi = k; }
+      }
+      if (bi >= 0) return 'a:' + (arts[bi].getAttribute('data-scroll-index') || bi);
+    }
     var s = document.querySelector('[data-e2e="video-slide-active"]');
     var v = video();
     if (v && (v.currentSrc || v.src)) return 'v:' + (v.currentSrc || v.src);
@@ -52,39 +62,92 @@
     return best;
   }
 
-  // Версия для компьютера: окно входа — «Пропустить» (вход сохраняется в
-  // куках, войти можно и потом)
+  // Версия для компьютера: окно «Войдите в TikTok». Его «Пропустить» ведёт
+  // не в ленту, а в регистрацию («Когда у вас день рождения?», проверено
+  // 21.10.2026) — поэтому окно не нажимается, а прячется вместе с затемнением.
   function skipLogin() {
-    var b = document.querySelectorAll('[role="button"],button');
-    for (var i = 0; i < b.length; i++) {
-      var t = (b[i].textContent || '').trim();
-      if ((t === 'Пропустить' || t === 'Skip') && b[i].offsetParent !== null &&
-          b[i].closest('[role="dialog"],[class*="Modal"],[class*="modal"]')) {
-        b[i].click();
-        log('login dialog skipped');
-        return;
+    var d = document.querySelectorAll('[role="dialog"]');
+    for (var i = 0; i < d.length; i++) {
+      if (d[i].__jarvisHidden || d[i].offsetParent === null) continue;
+      var t = d[i].textContent || '';
+      if (t.indexOf('Войдите в TikTok') < 0 && t.indexOf('Log in to TikTok') < 0) continue;
+      // Прятать весь слой окна (с затемнением), а не только его содержимое
+      var e = d[i].closest('[class*="ModalContainer"]');
+      if (!e) {
+        for (var x = d[i]; x && x !== document.body; x = x.parentElement) {
+          if (getComputedStyle(x).position === 'fixed') e = x;
+        }
       }
+      (e || d[i]).style.setProperty('display', 'none', 'important');
+      d[i].__jarvisHidden = true;
+      document.body.style.overflow = '';
+      log('login dialog hidden');
     }
   }
 
-  function nextDesktop() {
-    var b = document.querySelector('button[data-e2e="feed-navigation-next"]');
-    if (b && !b.disabled) { b.click(); return; }
-    // Запасные пути: клавиша «вниз», затем прокрутка ленты на экран
-    var ev = { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true };
-    document.dispatchEvent(new KeyboardEvent('keydown', ev));
-    document.dispatchEvent(new KeyboardEvent('keyup', ev));
+
+  // Способы перелистнуть версию для компьютера. Какой сработает в машине —
+  // заранее неизвестно (журнал 20.10.2026: кнопка ленту не сдвинула), поэтому
+  // если после перелистывания видео то же, в следующий раз берётся следующий
+  // способ; сработавший запоминается.
+  var METHODS = ['button', 'wheel', 'key', 'scroll'];
+  var D = { m: 0, keyAt: null, checkAt: 0 };
+
+  function feedBox() {
     var v = video(), e = v;
     while (e && e !== document.body) {
       var st = getComputedStyle(e);
-      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && e.scrollHeight > e.clientHeight) {
-        e.scrollBy({ top: e.clientHeight, behavior: 'smooth' });
-        return;
-      }
+      if ((st.overflowY === 'auto' || st.overflowY === 'scroll') && e.scrollHeight > e.clientHeight) return e;
       e = e.parentElement;
     }
-    window.scrollBy({ top: innerHeight, behavior: 'smooth' });
+    return document.scrollingElement || document.documentElement;
   }
+
+  function nextDesktop() {
+    var how = METHODS[D.m % METHODS.length];
+    D.keyAt = slideKey();
+    D.checkAt = Date.now() + 3000;
+    log('desktop next: ' + how);
+    if (how === 'button') {
+      var b = document.querySelector('button[data-e2e="feed-navigation-next"]');
+      if (b && !b.disabled) { b.click(); return; }
+      log('desktop next: no button');
+    }
+    if (how === 'wheel' || how === 'button') {
+      var v = video(), t = v || document.elementFromPoint(innerWidth / 2, innerHeight / 2) || document.body;
+      var r = t.getBoundingClientRect();
+      t.dispatchEvent(new WheelEvent('wheel', { deltaY: 300, deltaMode: 0, bubbles: true, cancelable: true,
+        clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+      return;
+    }
+    if (how === 'key') {
+      var ev = { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true };
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', ev));
+      document.dispatchEvent(new KeyboardEvent('keydown', ev));
+      document.dispatchEvent(new KeyboardEvent('keyup', ev));
+      return;
+    }
+    var box = feedBox();
+    box.scrollBy({ top: box.clientHeight || innerHeight, behavior: 'smooth' });
+  }
+
+  // Проверка через 3 с: лента сдвинулась — способ хороший, нет — следующий
+  function checkDesktopNext() {
+    if (!D.checkAt || Date.now() < D.checkAt) return;
+    D.checkAt = 0;
+    if (slideKey() !== D.keyAt) {
+      D.fails = 0;
+      log('desktop next ok: ' + METHODS[D.m % METHODS.length]);
+    } else {
+      D.m++;
+      D.fails = (D.fails || 0) + 1;
+      log('desktop next failed, will try ' + METHODS[D.m % METHODS.length]);
+      // Сразу ещё раз другим способом — но не по кругу без конца
+      if (D.fails < METHODS.length) S.keySince = Date.now() - 1e9;
+      else D.fails = 0;
+    }
+  }
+
 
   // Окно «Воспользуйтесь всеми функциями приложения». Бывает с «Не сейчас»,
   // бывает только с «Открыть TikTok» (16.10.2026, телефон) — тогда прячем само
@@ -168,6 +231,7 @@
     }
     closePopups();
     skipLogin();
+    if (isDesktop()) checkDesktopNext();
     var key = slideKey();
     if (key !== S.key) { S.key = key; S.keySince = now; }
     var v = video();

@@ -2,7 +2,11 @@
 
 | Файл | Что это |
 |---|---|
-| `jarvis-auto-2.0.2.apk` | JARVIS Auto — Fermata Auto 2.0.2 под названием JARVIS Auto (JARVIS Музыка, JARVIS Экран) со значком JARVIS, полная (VLC, субтитры, перевод и прочие модули), с вкладками JARVIS (круг ассистента, голосовой ввод) и TikTok (мобильный tiktok.com, досмотренное видео перелистывается само) и передачей непонятых голосовых фраз в JARVIS. Только arm64-v8a. |
+| `jarvis-auto-N.apk` | JARVIS Auto — Fermata Auto 2.0.2 под названием JARVIS Auto (JARVIS Музыка, JARVIS Экран) со значком JARVIS, полная (VLC, субтитры, перевод и прочие модули), с вкладками JARVIS (круг ассистента, голосовой ввод) и TikTok (на телефоне — мобильный tiktok.com, в машине — версия для компьютера; досмотренное видео перелистывается само) и передачей непонятых голосовых фраз в JARVIS. Только arm64-v8a. |
+
+Номер сборки — в имени файла (с 21.10.2026, по просьбе пользователя): N из
+`vypusk/nomer-sborki.txt`, при каждом выпуске +1, старый файл удаляется.
+Внутри приложения версия прежняя (2.0.2, 268).
 
 Сборка: `Fermata-2.0.2/` с наложенным `jarvis-v-fermata/fermata-jarvis.patch`,
 `./gradlew -I ../vypusk/compress-jni.gradle fermata:packageAutoReleaseUniversalApk -PABI=arm64-v8a -PAPP_ID_SFX=.lichnaya`
