@@ -111,7 +111,15 @@ public class JarvisFragment extends MainActivityFragment
 	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 													 @Nullable Bundle savedInstanceState) {
 		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
-		v.setOnClickListener(x -> onCircleClick());
+		// Голос — только касанием шара; касание в любом другом месте показывает
+		// строку приложений, которая сама прячется (пожелание 21.10.2026)
+		v.setOnTouchListener((view, e) -> {
+			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
+			if (v.isOnSphere(e.getX(), e.getY())) onCircleClick();
+			else showBarsForAWhile();
+			view.performClick();
+			return true;
+		});
 		hud = v;
 		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 		me.aap.fermata.jarvis.JarvisVoice.refresh();
@@ -124,8 +132,40 @@ public class JarvisFragment extends MainActivityFragment
 		return v;
 	}
 
+	/** Сколько строка приложений видна после касания или входа во вкладку, мс. */
+	private static final long BARS_VISIBLE_MS = 4000;
+	private final Runnable hideBars = () -> setBars(false);
+
+	private void setBars(boolean visible) {
+		Context ctx = getContext();
+		if (ctx == null) return;
+		try {
+			MainActivityDelegate.get(ctx).setBarsHidden(!visible);
+		} catch (RuntimeException ignore) {
+		}
+	}
+
+	private void showBarsForAWhile() {
+		main.removeCallbacks(hideBars);
+		setBars(true);
+		main.postDelayed(hideBars, BARS_VISIBLE_MS);
+	}
+
+	/** Вкладка ушла с экрана — строку вернуть насовсем. */
+	private void restoreBars() {
+		main.removeCallbacks(hideBars);
+		setBars(true);
+	}
+
+	@Override
+	public void onResume() {
+		super.onResume();
+		if (!isHidden()) showBarsForAWhile();
+	}
+
 	@Override
 	public void onDestroyView() {
+		restoreBars();
 		stopListening();
 		closeWarm();
 		hud = null;
@@ -135,13 +175,19 @@ public class JarvisFragment extends MainActivityFragment
 	@Override
 	public void onPause() {
 		super.onPause();
+		restoreBars();
 		stopListening();
 	}
 
 	@Override
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
-		if (hidden) stopListening();
+		if (hidden) {
+			restoreBars();
+			stopListening();
+		} else {
+			showBarsForAWhile();
+		}
 	}
 
 	@Override
@@ -299,6 +345,7 @@ public class JarvisFragment extends MainActivityFragment
 		// Паузы в речи (EXTRA_SPEECH_INPUT_*_SILENCE_*) больше не задаём: Google их
 		// не выполняет, длинную фразу дослушивает CONTINUATIONS
 		i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+		i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
 		sr.startListening(i);
 	}
 
@@ -542,17 +589,17 @@ public class JarvisFragment extends MainActivityFragment
 
 	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
-	private static final int RETRIES = 1;
+	private static final int RETRIES = 2;
 	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
 	private static final long AFTER_GREETING_MS = 300;
-	private static final long AFTER_GREETING_CAR_MS = 1200;
+	private static final long AFTER_GREETING_CAR_MS = 800;
 	/** «Слушаю» (и «слушаю, сэр» и т. п.) в начале распознанного — это эхо. */
 	private static final java.util.regex.Pattern GREETING_ECHO = java.util.regex.Pattern.compile(
 			"^(?iu)(слушаю|слушай|слушаем)[\\s,.!…]*");
 	/** Сколько раз дослушать продолжение фразы после паузы. */
 	private static final int CONTINUATIONS = 3;
 	/** Сколько ждать продолжения фразы после паузы, мс. */
-	private static final long CONTINUE_WAIT_MS = 1500;
+	private static final long CONTINUE_WAIT_MS = 1000;
 
 	private static final class FbMediator implements FloatingButton.Mediator {
 		static final FbMediator instance = new FbMediator();

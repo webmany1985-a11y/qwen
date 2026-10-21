@@ -100,6 +100,15 @@ public class JarvisHudView extends View {
 		setFocusable(true);
 	}
 
+	/** Касание в точке (x, y) попало в шар (с небольшим запасом вокруг). */
+	public boolean isOnSphere(float x, float y) {
+		float w = getWidth(), h = getHeight();
+		float r = HudMath.sphereRadius(Math.min(w, h), 0f, 1f) *
+				((sfera != null) ? HudMath.IMAGE_SPHERE_SCALE : 1f) * 1.15f;
+		float dx = x - w / 2f, dy = y - h / 2f;
+		return dx * dx + dy * dy <= r * r;
+	}
+
 	public HudMath.Phase getPhase() {
 		return phase;
 	}

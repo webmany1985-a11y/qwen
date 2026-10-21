@@ -5115,10 +5115,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..650f2bf
+index 0000000..4c633d3
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,567 @@
+@@ -0,0 +1,614 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5232,7 +5232,15 @@ index 0000000..650f2bf
 +	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 +													 @Nullable Bundle savedInstanceState) {
 +		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
-+		v.setOnClickListener(x -> onCircleClick());
++		// Голос — только касанием шара; касание в любом другом месте показывает
++		// строку приложений, которая сама прячется (пожелание 21.10.2026)
++		v.setOnTouchListener((view, e) -> {
++			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
++			if (v.isOnSphere(e.getX(), e.getY())) onCircleClick();
++			else showBarsForAWhile();
++			view.performClick();
++			return true;
++		});
 +		hud = v;
 +		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 +		me.aap.fermata.jarvis.JarvisVoice.refresh();
@@ -5245,8 +5253,40 @@ index 0000000..650f2bf
 +		return v;
 +	}
 +
++	/** Сколько строка приложений видна после касания или входа во вкладку, мс. */
++	private static final long BARS_VISIBLE_MS = 4000;
++	private final Runnable hideBars = () -> setBars(false);
++
++	private void setBars(boolean visible) {
++		Context ctx = getContext();
++		if (ctx == null) return;
++		try {
++			MainActivityDelegate.get(ctx).setBarsHidden(!visible);
++		} catch (RuntimeException ignore) {
++		}
++	}
++
++	private void showBarsForAWhile() {
++		main.removeCallbacks(hideBars);
++		setBars(true);
++		main.postDelayed(hideBars, BARS_VISIBLE_MS);
++	}
++
++	/** Вкладка ушла с экрана — строку вернуть насовсем. */
++	private void restoreBars() {
++		main.removeCallbacks(hideBars);
++		setBars(true);
++	}
++
++	@Override
++	public void onResume() {
++		super.onResume();
++		if (!isHidden()) showBarsForAWhile();
++	}
++
 +	@Override
 +	public void onDestroyView() {
++		restoreBars();
 +		stopListening();
 +		closeWarm();
 +		hud = null;
@@ -5256,13 +5296,19 @@ index 0000000..650f2bf
 +	@Override
 +	public void onPause() {
 +		super.onPause();
++		restoreBars();
 +		stopListening();
 +	}
 +
 +	@Override
 +	public void onHiddenChanged(boolean hidden) {
 +		super.onHiddenChanged(hidden);
-+		if (hidden) stopListening();
++		if (hidden) {
++			restoreBars();
++			stopListening();
++		} else {
++			showBarsForAWhile();
++		}
 +	}
 +
 +	@Override
@@ -5420,6 +5466,7 @@ index 0000000..650f2bf
 +		// Паузы в речи (EXTRA_SPEECH_INPUT_*_SILENCE_*) больше не задаём: Google их
 +		// не выполняет, длинную фразу дослушивает CONTINUATIONS
 +		i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
++		i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
 +		sr.startListening(i);
 +	}
 +
@@ -5663,17 +5710,17 @@ index 0000000..650f2bf
 +
 +	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
-+	private static final int RETRIES = 1;
++	private static final int RETRIES = 2;
 +	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
 +	private static final long AFTER_GREETING_MS = 300;
-+	private static final long AFTER_GREETING_CAR_MS = 1200;
++	private static final long AFTER_GREETING_CAR_MS = 800;
 +	/** «Слушаю» (и «слушаю, сэр» и т. п.) в начале распознанного — это эхо. */
 +	private static final java.util.regex.Pattern GREETING_ECHO = java.util.regex.Pattern.compile(
 +			"^(?iu)(слушаю|слушай|слушаем)[\\s,.!…]*");
 +	/** Сколько раз дослушать продолжение фразы после паузы. */
 +	private static final int CONTINUATIONS = 3;
 +	/** Сколько ждать продолжения фразы после паузы, мс. */
-+	private static final long CONTINUE_WAIT_MS = 1500;
++	private static final long CONTINUE_WAIT_MS = 1000;
 +
 +	private static final class FbMediator implements FloatingButton.Mediator {
 +		static final FbMediator instance = new FbMediator();
@@ -5688,10 +5735,10 @@ index 0000000..650f2bf
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
 new file mode 100644
-index 0000000..6f99720
+index 0000000..0769310
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisHudView.java
-@@ -0,0 +1,472 @@
+@@ -0,0 +1,481 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static me.aap.fermata.addon.jarvis.HudMath.NODES;
@@ -5792,6 +5839,15 @@ index 0000000..6f99720
 +		setLayerType(LAYER_TYPE_HARDWARE, null);
 +		setClickable(true);
 +		setFocusable(true);
++	}
++
++	/** Касание в точке (x, y) попало в шар (с небольшим запасом вокруг). */
++	public boolean isOnSphere(float x, float y) {
++		float w = getWidth(), h = getHeight();
++		float r = HudMath.sphereRadius(Math.min(w, h), 0f, 1f) *
++				((sfera != null) ? HudMath.IMAGE_SPHERE_SCALE : 1f) * 1.15f;
++		float dx = x - w / 2f, dy = y - h / 2f;
++		return dx * dx + dy * dy <= r * r;
 +	}
 +
 +	public HudMath.Phase getPhase() {
@@ -16383,10 +16439,10 @@ index 7b574fe..adb25e2 100644
                      icon : 'web',
 diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
 new file mode 100644
-index 0000000..e648432
+index 0000000..653cd8c
 --- /dev/null
 +++ b/modules/web/src/main/assets/tiktok_autonext.js
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,431 @@
 +// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
 +// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 +// листают, листает только касание — поэтому свайп собирается из TouchEvent.
@@ -16517,7 +16573,7 @@ index 0000000..e648432
 +  // касание — пауза, двойное касание — «на всю высоту» ↔ «заполнить».
 +  // Ручной свайп по самой странице для компьютера подвисал — теперь листает
 +  // скрипт той же кнопкой ленты, что и автоматически.
-+  var P = { v: null, layer: null, fit: 'contain', lastTap: 0, tapTimer: 0, y0: null, t0: 0 };
++  var P = { v: null, layer: null, fit: 'contain', lastTap: 0, tapTimer: 0, y0: null, t0: 0, userPaused: false };
 +  try { P.fit = localStorage.getItem('jarvisTtFit') || 'contain'; } catch (e) {}
 +
 +  function playerStyle() {
@@ -16528,7 +16584,12 @@ index 0000000..e648432
 +      'video.jarvis-pl{position:fixed!important;left:0!important;top:0!important;' +
 +      'width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;' +
 +      'margin:0!important;transform:none!important;z-index:2147483646!important;background:#000!important;' +
-+      'object-fit:var(--jarvis-fit,contain)!important}' +
++      'object-fit:var(--jarvis-fit,contain)!important;visibility:visible!important}' +
++      // Под плеером страница не рисуется: в машине видео тормозило
++      // (21.10.2026), а страница для компьютера шириной ~1500 точек тяжёлая
++      'html.jarvis-player body *{visibility:hidden!important}' +
++      'html.jarvis-player body video.jarvis-pl,html.jarvis-player #jarvis-tt-layer,' +
++      'html.jarvis-player #jarvis-tt-hint{visibility:visible!important}' +
 +      '#jarvis-tt-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;' +
 +      'background:transparent;touch-action:none}' +
 +      '#jarvis-tt-hint{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);' +
@@ -16584,12 +16645,23 @@ index 0000000..e648432
 +    P.tapTimer = setTimeout(function () {
 +      var v = P.v;
 +      if (!v) return;
-+      if (v.paused) { v.play(); hint('▶'); } else { v.pause(); hint('❚❚'); }
++      if (v.paused) { P.userPaused = false; v.play(); hint('▶'); }
++      else { P.userPaused = true; v.pause(); hint('❚❚'); }
 +    }, 360);
 +  }
 +
 +  function updatePlayer() {
 +    playerStyle();
++    document.documentElement.classList.add('jarvis-player');
++    // Версия для компьютера начинает видео без звука, пока по странице не
++    // нажали (в машине «без звука», 21.10.2026) — включаем звук сами; и
++    // запускаем видео, если стоит не по вашему касанию
++    if (P.v) {
++      if (P.v.muted) { P.v.muted = false; P.v.volume = 1; }
++      if (P.v.paused && !P.userPaused && !P.v.ended && P.v.readyState >= 2) {
++        var pr = P.v.play(); if (pr && pr.catch) pr.catch(function () {});
++      }
++    }
 +    if (!P.layer || !P.layer.isConnected) {
 +      var l = document.createElement('div');
 +      l.id = 'jarvis-tt-layer';
@@ -16619,9 +16691,10 @@ index 0000000..e648432
 +      }
 +    }
 +    if (!v || v === P.v) return;
-+    if (P.v) P.v.classList.remove('jarvis-pl');
++    if (P.v) { P.v.classList.remove('jarvis-pl'); try { P.v.pause(); } catch (x) {} }
 +    v.classList.add('jarvis-pl');
 +    P.v = v;
++    P.userPaused = false;
 +  }
 +
 +  function nextDesktop() {

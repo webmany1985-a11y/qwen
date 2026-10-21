@@ -128,7 +128,7 @@
   // касание — пауза, двойное касание — «на всю высоту» ↔ «заполнить».
   // Ручной свайп по самой странице для компьютера подвисал — теперь листает
   // скрипт той же кнопкой ленты, что и автоматически.
-  var P = { v: null, layer: null, fit: 'contain', lastTap: 0, tapTimer: 0, y0: null, t0: 0 };
+  var P = { v: null, layer: null, fit: 'contain', lastTap: 0, tapTimer: 0, y0: null, t0: 0, userPaused: false };
   try { P.fit = localStorage.getItem('jarvisTtFit') || 'contain'; } catch (e) {}
 
   function playerStyle() {
@@ -139,7 +139,12 @@
       'video.jarvis-pl{position:fixed!important;left:0!important;top:0!important;' +
       'width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;' +
       'margin:0!important;transform:none!important;z-index:2147483646!important;background:#000!important;' +
-      'object-fit:var(--jarvis-fit,contain)!important}' +
+      'object-fit:var(--jarvis-fit,contain)!important;visibility:visible!important}' +
+      // Под плеером страница не рисуется: в машине видео тормозило
+      // (21.10.2026), а страница для компьютера шириной ~1500 точек тяжёлая
+      'html.jarvis-player body *{visibility:hidden!important}' +
+      'html.jarvis-player body video.jarvis-pl,html.jarvis-player #jarvis-tt-layer,' +
+      'html.jarvis-player #jarvis-tt-hint{visibility:visible!important}' +
       '#jarvis-tt-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;' +
       'background:transparent;touch-action:none}' +
       '#jarvis-tt-hint{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);' +
@@ -195,12 +200,23 @@
     P.tapTimer = setTimeout(function () {
       var v = P.v;
       if (!v) return;
-      if (v.paused) { v.play(); hint('▶'); } else { v.pause(); hint('❚❚'); }
+      if (v.paused) { P.userPaused = false; v.play(); hint('▶'); }
+      else { P.userPaused = true; v.pause(); hint('❚❚'); }
     }, 360);
   }
 
   function updatePlayer() {
     playerStyle();
+    document.documentElement.classList.add('jarvis-player');
+    // Версия для компьютера начинает видео без звука, пока по странице не
+    // нажали (в машине «без звука», 21.10.2026) — включаем звук сами; и
+    // запускаем видео, если стоит не по вашему касанию
+    if (P.v) {
+      if (P.v.muted) { P.v.muted = false; P.v.volume = 1; }
+      if (P.v.paused && !P.userPaused && !P.v.ended && P.v.readyState >= 2) {
+        var pr = P.v.play(); if (pr && pr.catch) pr.catch(function () {});
+      }
+    }
     if (!P.layer || !P.layer.isConnected) {
       var l = document.createElement('div');
       l.id = 'jarvis-tt-layer';
@@ -230,9 +246,10 @@
       }
     }
     if (!v || v === P.v) return;
-    if (P.v) P.v.classList.remove('jarvis-pl');
+    if (P.v) { P.v.classList.remove('jarvis-pl'); try { P.v.pause(); } catch (x) {} }
     v.classList.add('jarvis-pl');
     P.v = v;
+    P.userPaused = false;
   }
 
   function nextDesktop() {
