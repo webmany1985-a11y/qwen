@@ -101,7 +101,10 @@ public final class JarvisVoice {
 		Process p = null;
 		try {
 			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
-			p = new ProcessBuilder("su", "-c", FIND_CMD).redirectErrorStream(true).start();
+			// --mount-master: root в общем пространстве системы. Иначе root видит
+			// только папку JARVIS Auto — папки JARVIS «нет» (журнал 21.10.2026,
+			// 17:41: «/data/user/0/com.jarvis.assistant/shared_prefs: No such file»)
+			p = new ProcessBuilder("su", "--mount-master", "-c", FIND_CMD).redirectErrorStream(true).start();
 			p.getOutputStream().close();
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			try (InputStream in = p.getInputStream()) {

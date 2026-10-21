@@ -116,12 +116,11 @@ public class JarvisFragment extends MainActivityFragment
 		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 		me.aap.fermata.jarvis.JarvisVoice.refresh();
 		// И синтезатор подключается заранее — первое «Слушаю» без задержки
-		try {
-			MainActivityDelegate a = getActivityDelegate();
-			warmTts(requireContext(), Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
-		} catch (Exception ex) {
-			Log.e(ex, "JARVIS tab: TTS warm-up failed");
-		}
+		// Приложение могло ещё не подняться (восстановление после выгрузки) — ждать его
+		Context wctx = requireContext();
+		MainActivityDelegate.getActivityDelegate(wctx).onSuccess(a -> {
+			if (hud != null) warmTts(wctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
+		});
 		return v;
 	}
 

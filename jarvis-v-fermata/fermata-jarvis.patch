@@ -436,10 +436,10 @@ index 0000000..8a4ddb4
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
 new file mode 100644
-index 0000000..58f6044
+index 0000000..7502e67
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,184 @@
 +package me.aap.fermata.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -543,7 +543,10 @@ index 0000000..58f6044
 +		Process p = null;
 +		try {
 +			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
-+			p = new ProcessBuilder("su", "-c", FIND_CMD).redirectErrorStream(true).start();
++			// --mount-master: root в общем пространстве системы. Иначе root видит
++			// только папку JARVIS Auto — папки JARVIS «нет» (журнал 21.10.2026,
++			// 17:41: «/data/user/0/com.jarvis.assistant/shared_prefs: No such file»)
++			p = new ProcessBuilder("su", "--mount-master", "-c", FIND_CMD).redirectErrorStream(true).start();
 +			p.getOutputStream().close();
 +			ByteArrayOutputStream out = new ByteArrayOutputStream();
 +			try (InputStream in = p.getInputStream()) {
@@ -5112,10 +5115,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..f431613
+index 0000000..650f2bf
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,568 @@
+@@ -0,0 +1,567 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5234,12 +5237,11 @@ index 0000000..f431613
 +		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 +		me.aap.fermata.jarvis.JarvisVoice.refresh();
 +		// И синтезатор подключается заранее — первое «Слушаю» без задержки
-+		try {
-+			MainActivityDelegate a = getActivityDelegate();
-+			warmTts(requireContext(), Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
-+		} catch (Exception ex) {
-+			Log.e(ex, "JARVIS tab: TTS warm-up failed");
-+		}
++		// Приложение могло ещё не подняться (восстановление после выгрузки) — ждать его
++		Context wctx = requireContext();
++		MainActivityDelegate.getActivityDelegate(wctx).onSuccess(a -> {
++			if (hud != null) warmTts(wctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
++		});
 +		return v;
 +	}
 +
