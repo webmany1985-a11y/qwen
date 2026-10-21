@@ -28,4 +28,12 @@ public class GreetingEchoTest {
 		assertEquals(Arrays.asList("я слушаю музыку"),
 				JarvisFragment.stripGreeting(Arrays.asList("я слушаю музыку")));
 	}
+
+	@Test
+	public void repeatPromptEchoRemoved() {
+		List<String> q = JarvisFragment.stripGreeting(
+				Arrays.asList("Не расслышал, повторите какая погода", "не расслышал повтори какая погода",
+						"какая погода"));
+		assertEquals(Arrays.asList("какая погода", "какая погода", "какая погода"), q);
+	}
 }

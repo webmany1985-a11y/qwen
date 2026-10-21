@@ -5271,10 +5271,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..4fcc6b4
+index 0000000..d10a158
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,763 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5326,12 +5326,14 @@ index 0000000..4fcc6b4
 + * (вход, история разговора); кнопка «Готово» прячет обратно.
 + *
 + * Перед записью JARVIS говорит «Слушаю». Тишина в начале не обрывает
-+ * запись сразу: если речь так и не началась, слушаем ещё один раз.
++ * запись сразу: если речь так и не началась, слушаем ещё раз, молча. Если
++ * речь была, но не разобрана, — JARVIS говорит «Не расслышал, повторите» и
++ * слушает ещё раз (журнал 21.10.2026, 23:18: молчаливые повторы после речи
++ * выглядели как «микрофон срабатывает несколько раз подряд»).
 + *
-+ * Распознавание Google заканчивает фразу на первой же короткой паузе и
-+ * просьбу ждать дольше часто не выполняет. Поэтому после
-+ * распознанного куска слушаем дальше: если в течение CONTINUE_WAIT_MS
-+ * речь продолжилась, куски склеиваются в одну команду.
++ * Микрофон включается на фразу один раз: распознавание просится ждать паузу
++ * SILENCE_MS. Дослушивание продолжения отдельной записью (CONTINUATIONS)
++ * выключено по той же причине — каждое включение телефон отмечает сигналом.
 + *
 + * Музыка стоит на паузе, пока слушаем, ждём и произносим ответ, и
 + * возобновляется после.
@@ -5604,16 +5606,21 @@ index 0000000..4fcc6b4
 +		// В машине звук идёт через Android Auto с задержкой: телефон уже закончил
 +		// «Слушаю», а динамики ещё говорят, и микрофон слышит само «Слушаю»
 +		// (журнал/замечание 16.10.2026: JARVIS отвечал «Не расслышал»)
++		promptAndListen(a, R.string.jarvis_say_listening);
++	}
++
++	/** Произнести подсказку («Слушаю», «Не расслышал, повторите») и включить микрофон. */
++	private void promptAndListen(MainActivityDelegate a, int textRes) {
 +		long pause = a.isCarActivityNotMirror() ? AFTER_GREETING_CAR_MS : AFTER_GREETING_MS;
-+		sayListening(a, () -> main.postDelayed(() -> {
++		sayPrompt(a, textRes, () -> main.postDelayed(() -> {
 +			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) createRecognizer(a);
 +		}, pause));
 +	}
 +
-+	/** Произнести «Слушаю» и затем, в главном потоке, выполнить then. */
-+	private void sayListening(MainActivityDelegate a, Runnable then) {
++	/** Произнести подсказку и затем, в главном потоке, выполнить then. */
++	private void sayPrompt(MainActivityDelegate a, int textRes, Runnable then) {
 +		Context ctx = requireContext();
-+		String text = dynCtx(ctx).getString(R.string.jarvis_say_listening);
++		String text = dynCtx(ctx).getString(textRes);
 +		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
 +		warmTts(ctx, locale).onCompletion((tts, err) -> main.post(() -> {
 +			if (err != null) {
@@ -5703,6 +5710,10 @@ index 0000000..4fcc6b4
 +		// не выполняет, длинную фразу дослушивает CONTINUATIONS
 +		i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
 +		i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
++		// Не обрывать фразу на короткой паузе. Распознавание может эту просьбу
++		// не выполнить — тогда это будет видно по журналу (фраза обрезана)
++		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MS);
++		i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, SILENCE_MS);
 +		sr.startListening(i);
 +	}
 +
@@ -5785,9 +5796,16 @@ index 0000000..4fcc6b4
 +		boolean silence = (error == SpeechRecognizer.ERROR_NO_MATCH) ||
 +				(error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT);
 +		if (silence && (retries > 0) && busy && (hud != null)) {
-+			// Тишина или неразборчиво — ещё одна попытка, без повторного «Слушаю»
 +			retries--;
-+			createRecognizer(getActivityDelegate());
++			if (heard) {
++				// Речь была, но не разобрана — сказать об этом и слушать снова
++				Log.i("JARVIS tab: speech not understood, asking to repeat");
++				setPhase(HudMath.Phase.APPEAR);
++				promptAndListen(getActivityDelegate(), R.string.jarvis_say_repeat);
++			} else {
++				// Речь ещё не началась — слушать ещё раз, молча
++				createRecognizer(getActivityDelegate());
++			}
 +			return;
 +		}
 +		if (!silence && usingGoogle && busy && (hud != null) &&
@@ -5989,7 +6007,6 @@ index 0000000..4fcc6b4
 +		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
 +	}
 +
-+	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
 +	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
 +	private static final long LONG_PRESS_MS = 700;
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
@@ -5997,11 +6014,16 @@ index 0000000..4fcc6b4
 +	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
 +	private static final long AFTER_GREETING_MS = 300;
 +	private static final long AFTER_GREETING_CAR_MS = 800;
-+	/** «Слушаю» (и «слушаю, сэр» и т. п.) в начале распознанного — это эхо. */
++	/** «Слушаю» или «Не расслышал, повторите» в начале распознанного — это эхо подсказки. */
 +	private static final java.util.regex.Pattern GREETING_ECHO = java.util.regex.Pattern.compile(
-+			"^(?iu)(слушаю|слушай|слушаем)[\\s,.!…]*");
-+	/** Сколько раз дослушать продолжение фразы после паузы. */
-+	private static final int CONTINUATIONS = 3;
++			"^(?iu)((не\\s+)?расслышал[\\s,.!…]*(повторите|повтори)?|слушаю|слушай|слушаем)[\\s,.!…]*");
++	/**
++	 * Сколько раз дослушать продолжение фразы отдельной записью. 0 — не
++	 * дослушивать: микрофон на фразу включается один раз (21.10.2026).
++	 */
++	private static final int CONTINUATIONS = 0;
++	/** Пауза в речи, после которой фраза закончена, мс. */
++	private static final long SILENCE_MS = 2000;
 +	/** Сколько ждать продолжения фразы после паузы, мс. */
 +	private static final long CONTINUE_WAIT_MS = 1000;
 +
@@ -16721,15 +16743,16 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..e4db2d3
+index 0000000..321de0f
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,17 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
 +    <string name="jarvis_hud_listening">Слушаю…</string>
 +    <string name="jarvis_say_listening">Слушаю</string>
++    <string name="jarvis_say_repeat">Не расслышал, повторите</string>
 +    <string name="jarvis_hud_thinking">Думаю…</string>
 +    <string name="jarvis_hud_description">Круг ассистента JARVIS. Коснитесь, чтобы сказать команду</string>
 +    <string name="jarvis_not_installed">JARVIS не установлен</string>
@@ -16743,10 +16766,10 @@ index 0000000..e4db2d3
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
 new file mode 100644
-index 0000000..8d95005
+index 0000000..9ee76e0
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,39 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -16776,6 +16799,14 @@ index 0000000..8d95005
 +	public void wordInsidePhraseKept() {
 +		assertEquals(Arrays.asList("я слушаю музыку"),
 +				JarvisFragment.stripGreeting(Arrays.asList("я слушаю музыку")));
++	}
++
++	@Test
++	public void repeatPromptEchoRemoved() {
++		List<String> q = JarvisFragment.stripGreeting(
++				Arrays.asList("Не расслышал, повторите какая погода", "не расслышал повтори какая погода",
++						"какая погода"));
++		assertEquals(Arrays.asList("какая погода", "какая погода", "какая погода"), q);
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/HudMathTest.java

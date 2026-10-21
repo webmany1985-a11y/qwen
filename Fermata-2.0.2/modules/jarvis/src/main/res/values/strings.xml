@@ -3,6 +3,7 @@
     <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
     <string name="jarvis_hud_listening">Слушаю…</string>
     <string name="jarvis_say_listening">Слушаю</string>
+    <string name="jarvis_say_repeat">Не расслышал, повторите</string>
     <string name="jarvis_hud_thinking">Думаю…</string>
     <string name="jarvis_hud_description">Круг ассистента JARVIS. Коснитесь, чтобы сказать команду</string>
     <string name="jarvis_not_installed">JARVIS не установлен</string>
