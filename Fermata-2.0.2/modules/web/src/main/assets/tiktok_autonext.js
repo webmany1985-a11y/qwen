@@ -90,7 +90,7 @@
   // заранее неизвестно (журнал 20.10.2026: кнопка ленту не сдвинула), поэтому
   // если после перелистывания видео то же, в следующий раз берётся следующий
   // способ; сработавший запоминается.
-  var METHODS = ['button', 'wheel', 'key', 'scroll'];
+  var METHODS = ['button', 'column', 'wheel', 'key', 'scroll'];
   var D = { m: 0, keyAt: null, checkAt: 0 };
 
   function feedBox() {
@@ -101,6 +101,25 @@
       e = e.parentElement;
     }
     return document.scrollingElement || document.documentElement;
+  }
+
+  // Экран машины низкий (800×320…400), а версия для компьютера рассчитана на
+  // высоту от ~600: карточка видео не помещалась, кнопки «вверх/вниз» уходили
+  // за край (замечание 21.10.2026). Браузеру сообщается экран 640 точек в
+  // высоту, и страница целиком вписывается в экран машины; меню слева скрыто,
+  // чтобы видео было крупнее. Проверено 21.10.2026 на 800×400.
+  function fitCarScreen() {
+    if (window.__jarvisFit || !isDesktop() || innerHeight >= 600) return;
+    window.__jarvisFit = true;
+    var w = Math.ceil(640 * innerWidth / innerHeight);
+    var m = document.querySelector('meta[name="viewport"]');
+    if (!m) { m = document.createElement('meta'); m.name = 'viewport'; document.head.appendChild(m); }
+    m.content = 'width=' + w;
+    var st = document.createElement('style');
+    st.textContent = '[class*="DivSideNavPlaceholderContainer"],[class*="DivSideNavContainer"]' +
+      '{display:none!important}';
+    document.head.appendChild(st);
+    log('car screen fit: width ' + w);
   }
 
   function nextDesktop() {
@@ -119,6 +138,12 @@
       t.dispatchEvent(new WheelEvent('wheel', { deltaY: 300, deltaMode: 0, bubbles: true, cancelable: true,
         clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
       return;
+    }
+    if (how === 'column') {
+      // Колонка ленты: прокрутка у неё скрыта, но двигать её можно
+      var c = document.querySelector('[class*="DivColumnListContainer"]');
+      if (c) { c.scrollTop += c.clientHeight; return; }
+      log('desktop next: no column');
     }
     if (how === 'key') {
       var ev = { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true };
@@ -231,7 +256,7 @@
     }
     closePopups();
     skipLogin();
-    if (isDesktop()) checkDesktopNext();
+    if (isDesktop()) { fitCarScreen(); checkDesktopNext(); }
     var key = slideKey();
     if (key !== S.key) { S.key = key; S.keySince = now; }
     var v = video();
