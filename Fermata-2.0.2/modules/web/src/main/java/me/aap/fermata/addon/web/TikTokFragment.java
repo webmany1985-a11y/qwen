@@ -98,15 +98,25 @@ public class TikTokFragment extends WebBrowserFragment {
 		toggle = b;
 	}
 
+	/** Скрипт ленты не листает, пока вкладка не на экране. */
+	private void setScriptPaused(boolean paused) {
+		FermataWebView v = getWebView();
+		if (v != null) v.evaluateJavascript("window.__jarvisTtPaused=" + paused + ";", null);
+	}
+
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (!isHidden()) setCarFullScreen(true);
+		if (!isHidden()) {
+			setCarFullScreen(true);
+			setScriptPaused(false);
+		}
 	}
 
 	@Override
 	public void onPause() {
 		setCarFullScreen(false);
+		setScriptPaused(true);
 		super.onPause();
 	}
 
@@ -114,6 +124,7 @@ public class TikTokFragment extends WebBrowserFragment {
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
 		setCarFullScreen(!hidden);
+		setScriptPaused(hidden);
 	}
 
 	@Override

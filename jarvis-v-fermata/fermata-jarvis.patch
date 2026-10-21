@@ -436,10 +436,10 @@ index 0000000..8a4ddb4
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
 new file mode 100644
-index 0000000..3a519a4
+index 0000000..58f6044
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
-@@ -0,0 +1,168 @@
+@@ -0,0 +1,181 @@
 +package me.aap.fermata.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -471,7 +471,21 @@ index 0000000..3a519a4
 + * Без root — значения JARVIS по умолчанию: скорость 0.95, высота 0.9.
 + */
 +public final class JarvisVoice {
-+	private static final String PREFS = "/data/data/com.jarvis.assistant/shared_prefs/jarvis.xml";
++	/**
++	 * Где искать настройки JARVIS. По адресу /data/data/…/shared_prefs/jarvis.xml
++	 * файла не оказалось (журнал 21.10.2026, 09:15:10: «No such file or
++	 * directory»), поэтому просматриваются все папки настроек JARVIS — обычная
++	 * и защищённая (user_de) — и берётся файл, где есть speech_rate или
++	 * voice_id. Не нашлось — в ответ список файлов, он попадает в журнал.
++	 */
++	private static final String FIND_CMD =
++			"for d in /data/user/0/com.jarvis.assistant /data/data/com.jarvis.assistant " +
++					"/data/user_de/0/com.jarvis.assistant; do for f in $d/shared_prefs/*.xml; do " +
++					"[ -f \"$f\" ] || continue; " +
++					"x=$(abx2xml \"$f\" - 2>/dev/null || cat \"$f\"); " +
++					"case \"$x\" in *speech_rate*|*voice_id*) echo \"$x\"; exit 0;; esac; done; done; " +
++					"echo 'not found:'; ls -la /data/user/0/com.jarvis.assistant/shared_prefs " +
++					"/data/user_de/0/com.jarvis.assistant/shared_prefs 2>&1; exit 1";
 +	/** Как часто перечитывать настройки JARVIS, мс: голос могли сменить. */
 +	private static final long TTL_MS = 60_000L;
 +	static final float DEFAULT_RATE = 0.95f;
@@ -529,8 +543,7 @@ index 0000000..3a519a4
 +		Process p = null;
 +		try {
 +			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
-+			p = new ProcessBuilder("su", "-c",
-+					"abx2xml " + PREFS + " - 2>/dev/null || cat " + PREFS).redirectErrorStream(true).start();
++			p = new ProcessBuilder("su", "-c", FIND_CMD).redirectErrorStream(true).start();
 +			p.getOutputStream().close();
 +			ByteArrayOutputStream out = new ByteArrayOutputStream();
 +			try (InputStream in = p.getInputStream()) {
@@ -539,7 +552,7 @@ index 0000000..3a519a4
 +			}
 +			if (!p.waitFor(15, TimeUnit.SECONDS) || (p.exitValue() != 0)) {
 +				String tail = out.toString(UTF_8.name()).trim();
-+				if (tail.length() > 200) tail = tail.substring(tail.length() - 200);
++				if (tail.length() > 600) tail = tail.substring(tail.length() - 600);
 +				Log.i("JARVIS voice: cannot read JARVIS settings (no root?), exit ",
 +						p.isAlive() ? "timeout" : p.exitValue(), ": ", tail);
 +				return null;
@@ -16359,10 +16372,10 @@ index 7b574fe..adb25e2 100644
                      icon : 'web',
 diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
 new file mode 100644
-index 0000000..19fcda2
+index 0000000..eb0af0f
 --- /dev/null
 +++ b/modules/web/src/main/assets/tiktok_autonext.js
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,301 @@
 +// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
 +// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 +// листают, листает только касание — поэтому свайп собирается из TouchEvent.
@@ -16613,6 +16626,10 @@ index 0000000..19fcda2
 +
 +  setInterval(function () {
 +    var now = Date.now();
++    // Вкладка скрыта (вы ушли на другую) — не листать вслепую: в журнале
++    // 21.10.2026 09:20 скрипт перебирал способы, пока вкладку не было видно
++    // (__jarvisTtPaused ставит вкладка: в машине страница считается видимой всегда)
++    if (document.hidden || window.__jarvisTtPaused) { S.keySince = now; return; }
 +    if (now - S.userAt < USER_QUIET_MS) {
 +      // Вы листаете сами: таймер страховки — заново, своё перелистывание — нет
 +      S.keySince = now;
@@ -16630,7 +16647,10 @@ index 0000000..19fcda2
 +    var d0 = v ? v.duration : NaN;
 +    // Видео без известной длины (ещё грузится) — ждать дольше, чтобы не
 +    // перелистнуть недосмотренное
-+    var limit = !v ? NO_VIDEO_MS : (isFinite(d0) && d0 > 0) ? d0 * 1000 + OVER_MS : UNKNOWN_MS;
++    // В версии для компьютера конец видео не ловится (журнал 21.10.2026):
++    // листать почти сразу после его длины, а не через 8 с
++    var over = isDesktop() ? 2000 : OVER_MS;
++    var limit = !v ? NO_VIDEO_MS : (isFinite(d0) && d0 > 0) ? d0 * 1000 + over : UNKNOWN_MS;
 +    if (now - S.keySince > limit) {
 +      log('stuck ' + Math.round((now - S.keySince) / 1000) + 's on ' + key.slice(0, 2) + ', next');
 +      S.keySince = now;
@@ -16842,10 +16862,10 @@ index 0000000..06b8585
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
 new file mode 100644
-index 0000000..b702197
+index 0000000..e6e6105
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,155 @@
 +package me.aap.fermata.addon.web;
 +
 +import android.content.Context;
@@ -16946,15 +16966,25 @@ index 0000000..b702197
 +		toggle = b;
 +	}
 +
++	/** Скрипт ленты не листает, пока вкладка не на экране. */
++	private void setScriptPaused(boolean paused) {
++		FermataWebView v = getWebView();
++		if (v != null) v.evaluateJavascript("window.__jarvisTtPaused=" + paused + ";", null);
++	}
++
 +	@Override
 +	public void onResume() {
 +		super.onResume();
-+		if (!isHidden()) setCarFullScreen(true);
++		if (!isHidden()) {
++			setCarFullScreen(true);
++			setScriptPaused(false);
++		}
 +	}
 +
 +	@Override
 +	public void onPause() {
 +		setCarFullScreen(false);
++		setScriptPaused(true);
 +		super.onPause();
 +	}
 +
@@ -16962,6 +16992,7 @@ index 0000000..b702197
 +	public void onHiddenChanged(boolean hidden) {
 +		super.onHiddenChanged(hidden);
 +		setCarFullScreen(!hidden);
++		setScriptPaused(hidden);
 +	}
 +
 +	@Override

@@ -248,6 +248,10 @@
 
   setInterval(function () {
     var now = Date.now();
+    // Вкладка скрыта (вы ушли на другую) — не листать вслепую: в журнале
+    // 21.10.2026 09:20 скрипт перебирал способы, пока вкладку не было видно
+    // (__jarvisTtPaused ставит вкладка: в машине страница считается видимой всегда)
+    if (document.hidden || window.__jarvisTtPaused) { S.keySince = now; return; }
     if (now - S.userAt < USER_QUIET_MS) {
       // Вы листаете сами: таймер страховки — заново, своё перелистывание — нет
       S.keySince = now;
@@ -265,7 +269,10 @@
     var d0 = v ? v.duration : NaN;
     // Видео без известной длины (ещё грузится) — ждать дольше, чтобы не
     // перелистнуть недосмотренное
-    var limit = !v ? NO_VIDEO_MS : (isFinite(d0) && d0 > 0) ? d0 * 1000 + OVER_MS : UNKNOWN_MS;
+    // В версии для компьютера конец видео не ловится (журнал 21.10.2026):
+    // листать почти сразу после его длины, а не через 8 с
+    var over = isDesktop() ? 2000 : OVER_MS;
+    var limit = !v ? NO_VIDEO_MS : (isFinite(d0) && d0 > 0) ? d0 * 1000 + over : UNKNOWN_MS;
     if (now - S.keySince > limit) {
       log('stuck ' + Math.round((now - S.keySince) / 1000) + 's on ' + key.slice(0, 2) + ', next');
       S.keySince = now;

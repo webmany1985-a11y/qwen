@@ -29,7 +29,21 @@ import me.aap.utils.voice.TextToSpeech;
  * Без root — значения JARVIS по умолчанию: скорость 0.95, высота 0.9.
  */
 public final class JarvisVoice {
-	private static final String PREFS = "/data/data/com.jarvis.assistant/shared_prefs/jarvis.xml";
+	/**
+	 * Где искать настройки JARVIS. По адресу /data/data/…/shared_prefs/jarvis.xml
+	 * файла не оказалось (журнал 21.10.2026, 09:15:10: «No such file or
+	 * directory»), поэтому просматриваются все папки настроек JARVIS — обычная
+	 * и защищённая (user_de) — и берётся файл, где есть speech_rate или
+	 * voice_id. Не нашлось — в ответ список файлов, он попадает в журнал.
+	 */
+	private static final String FIND_CMD =
+			"for d in /data/user/0/com.jarvis.assistant /data/data/com.jarvis.assistant " +
+					"/data/user_de/0/com.jarvis.assistant; do for f in $d/shared_prefs/*.xml; do " +
+					"[ -f \"$f\" ] || continue; " +
+					"x=$(abx2xml \"$f\" - 2>/dev/null || cat \"$f\"); " +
+					"case \"$x\" in *speech_rate*|*voice_id*) echo \"$x\"; exit 0;; esac; done; done; " +
+					"echo 'not found:'; ls -la /data/user/0/com.jarvis.assistant/shared_prefs " +
+					"/data/user_de/0/com.jarvis.assistant/shared_prefs 2>&1; exit 1";
 	/** Как часто перечитывать настройки JARVIS, мс: голос могли сменить. */
 	private static final long TTL_MS = 60_000L;
 	static final float DEFAULT_RATE = 0.95f;
@@ -87,8 +101,7 @@ public final class JarvisVoice {
 		Process p = null;
 		try {
 			// На новых Android файлы бывают в двоичном XML (ABX) — тогда abx2xml
-			p = new ProcessBuilder("su", "-c",
-					"abx2xml " + PREFS + " - 2>/dev/null || cat " + PREFS).redirectErrorStream(true).start();
+			p = new ProcessBuilder("su", "-c", FIND_CMD).redirectErrorStream(true).start();
 			p.getOutputStream().close();
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			try (InputStream in = p.getInputStream()) {
@@ -97,7 +110,7 @@ public final class JarvisVoice {
 			}
 			if (!p.waitFor(15, TimeUnit.SECONDS) || (p.exitValue() != 0)) {
 				String tail = out.toString(UTF_8.name()).trim();
-				if (tail.length() > 200) tail = tail.substring(tail.length() - 200);
+				if (tail.length() > 600) tail = tail.substring(tail.length() - 600);
 				Log.i("JARVIS voice: cannot read JARVIS settings (no root?), exit ",
 						p.isAlive() ? "timeout" : p.exitValue(), ": ", tail);
 				return null;
