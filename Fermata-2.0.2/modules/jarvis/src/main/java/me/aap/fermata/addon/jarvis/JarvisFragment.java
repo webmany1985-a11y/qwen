@@ -40,8 +40,13 @@ import me.aap.utils.voice.TextToSpeech;
  * кнопки «голосовое управление» (например, на руле) — сказать фразу.
  *
  * Порядок как при голосовом поиске Fermata: сначала фразу пробует выполнить
- * сама Fermata («пауза», «играй…»), непонятую получает JARVIS. Ответ JARVIS
- * только произносится — под кругом ничего не показывается.
+ * сама Fermata («пауза», «играй…»). Команду телефону («позвони», «открой»…)
+ * выполняет JARVIS на телефоне, а разговор ведёт Qwen с chat.qwen.ai
+ * (QwenChat; пожелание 21.10.2026). Ответ только произносится голосом
+ * JARVIS — под кругом ничего не показывается.
+ *
+ * Сайт Qwen открыт под кругом невидимым. Долгое касание шара показывает его
+ * (вход, история разговора); кнопка «Готово» прячет обратно.
  *
  * Перед записью JARVIS говорит «Слушаю». Тишина в начале не обрывает
  * запись сразу: если речь так и не началась, слушаем ещё один раз.
@@ -58,6 +63,12 @@ public class JarvisFragment extends MainActivityFragment
 		implements RecognitionListener, JarvisBridge.Listener {
 	@Nullable
 	private JarvisHudView hud;
+	@Nullable
+	private QwenChat qwen;
+	@Nullable
+	private View qwenDone;
+	/** Когда коснулись шара — долгое касание открывает сайт Qwen. */
+	private long downAt;
 	@Nullable
 	private SpeechRecognizer recognizer;
 	private Cancellable interrupt = Cancellable.CANCELED;
@@ -110,26 +121,88 @@ public class JarvisFragment extends MainActivityFragment
 	@Override
 	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 													 @Nullable Bundle savedInstanceState) {
-		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
+		Context ctx = requireContext();
+		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
+		QwenChat q = new QwenChat(ctx);
+		View web = q.getView();
+		web.setAlpha(0f);
+		web.setFocusable(false);
+		root.addView(web, new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+		qwen = q;
+
+		JarvisHudView v = new JarvisHudView(dynCtx(ctx));
 		// Голос — только касанием шара; касание в любом другом месте показывает
 		// строку приложений, которая сама прячется (пожелание 21.10.2026)
 		v.setOnTouchListener((view, e) -> {
+			if (e.getAction() == android.view.MotionEvent.ACTION_DOWN) downAt = e.getEventTime();
 			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
-			if (v.isOnSphere(e.getX(), e.getY())) onCircleClick();
-			else showBarsForAWhile();
+			if (v.isOnSphere(e.getX(), e.getY())) {
+				if ((e.getEventTime() - downAt >= LONG_PRESS_MS) && !busy) showQwenPage();
+				else onCircleClick();
+			} else {
+				showBarsForAWhile();
+			}
 			view.performClick();
 			return true;
 		});
+		root.addView(v, new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 		hud = v;
+
+		android.widget.Button close = new android.widget.Button(ctx);
+		close.setText(dynCtx(ctx).getString(R.string.jarvis_qwen_done));
+		close.setVisibility(View.GONE);
+		close.setOnClickListener(b -> hideQwenPage());
+		android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+				android.view.Gravity.BOTTOM | android.view.Gravity.END);
+		int m = (int) (16 * ctx.getResources().getDisplayMetrics().density);
+		lp.setMargins(m, m, m, m);
+		root.addView(close, lp);
+		qwenDone = close;
 		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 		me.aap.fermata.jarvis.JarvisVoice.refresh();
 		// И синтезатор подключается заранее — первое «Слушаю» без задержки
 		// Приложение могло ещё не подняться (восстановление после выгрузки) — ждать его
-		Context wctx = requireContext();
-		MainActivityDelegate.getActivityDelegate(wctx).onSuccess(a -> {
-			if (hud != null) warmTts(wctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {
+			if (hud != null) warmTts(ctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
 		});
-		return v;
+		return root;
+	}
+
+	/** Показать сайт Qwen поверх круга: войти, посмотреть разговор. */
+	private void showQwenPage() {
+		QwenChat q = qwen;
+		if ((q == null) || (hud == null) || (qwenDone == null)) return;
+		Log.i("[QWEN] page shown");
+		restoreBars();
+		View web = q.getView();
+		web.setAlpha(1f);
+		web.setFocusable(true);
+		web.setFocusableInTouchMode(true);
+		hud.setVisibility(View.GONE);
+		qwenDone.setVisibility(View.VISIBLE);
+	}
+
+	private void hideQwenPage() {
+		QwenChat q = qwen;
+		if ((q == null) || (hud == null) || (qwenDone == null)) return;
+		Log.i("[QWEN] page hidden");
+		View web = q.getView();
+		web.clearFocus();
+		web.setFocusable(false);
+		web.setAlpha(0f);
+		android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
+				web.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+		if (im != null) im.hideSoftInputFromWindow(web.getWindowToken(), 0);
+		qwenDone.setVisibility(View.GONE);
+		hud.setVisibility(View.VISIBLE);
+		showBarsForAWhile();
+	}
+
+	private boolean isQwenPageShown() {
+		return (qwenDone != null) && (qwenDone.getVisibility() == View.VISIBLE);
 	}
 
 	/** Сколько строка приложений видна после касания или входа во вкладку, мс. */
@@ -168,6 +241,12 @@ public class JarvisFragment extends MainActivityFragment
 		restoreBars();
 		stopListening();
 		closeWarm();
+		QwenChat q = qwen;
+		qwen = null;
+		qwenDone = null;
+		if (q != null) q.destroy();
+		// Вопрос Qwen остался без ответа — разговор окончен, иначе круг не примет новый
+		if (busy) done();
 		hud = null;
 		super.onDestroyView();
 	}
@@ -214,6 +293,7 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void listen() {
 		if (busy || (hud == null)) return;
+		if (isQwenPageShown()) hideQwenPage();
 		MainActivityDelegate a = getActivityDelegate();
 		Context ctx = requireContext();
 		if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
@@ -509,10 +589,55 @@ public class JarvisFragment extends MainActivityFragment
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
+		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
+			Log.i("JARVIS tab: phone command — to JARVIS");
+			JarvisBridge.ask(a, q.get(0), this);
+		} else if (qwen != null) {
+			askQwen(a, q.get(0));
 		} else if (!JarvisBridge.ask(a, q.get(0), this)) {
 			toast(R.string.jarvis_not_installed);
 			done();
 		}
+	}
+
+	/** Вопрос — Qwen, ответ — голосом JARVIS. */
+	private void askQwen(MainActivityDelegate a, String text) {
+		QwenChat q = qwen;
+		if (q == null) return;
+		setPhase(HudMath.Phase.THINK);
+		q.ask(text, new QwenChat.Callback() {
+			@Override
+			public void onReply(@NonNull String reply) {
+				String s = QwenChat.forSpeech(reply);
+				say(a, s.isEmpty() ? str(R.string.jarvis_qwen_empty) : s);
+			}
+
+			@Override
+			public void onLogin() {
+				if (a.isCarActivityNotMirror()) {
+					say(a, str(R.string.jarvis_qwen_login_car));
+				} else {
+					showQwenPage();
+					say(a, str(R.string.jarvis_qwen_login));
+				}
+			}
+
+			@Override
+			public void onError(@NonNull String why) {
+				say(a, str(R.string.jarvis_qwen_error) + why);
+			}
+		});
+	}
+
+	private void say(MainActivityDelegate a, String text) {
+		if (!busy) return;
+		setPhase(HudMath.Phase.SPEAK);
+		JarvisBridge.say(a, text, this);
+	}
+
+	private String str(int id) {
+		Context ctx = getContext();
+		return (ctx == null) ? "" : dynCtx(ctx).getString(id);
 	}
 
 	@Override
@@ -588,6 +713,8 @@ public class JarvisFragment extends MainActivityFragment
 	}
 
 	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
+	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
+	private static final long LONG_PRESS_MS = 700;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 	private static final int RETRIES = 2;
 	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */

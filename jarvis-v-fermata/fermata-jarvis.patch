@@ -197,10 +197,10 @@ index 4911c14..d03de6c 100644
          </intent>
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
 new file mode 100644
-index 0000000..8a4ddb4
+index 0000000..5e2d2d4
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,233 @@
+@@ -0,0 +1,244 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -330,6 +330,33 @@ index 0000000..8a4ddb4
 +		return true;
 +	}
 +
++	/**
++	 * Произнести текст голосом JARVIS, приостановив музыку. Так произносится
++	 * и ответ JARVIS, и ответ Qwen во вкладке JARVIS. {@code listener.onDone()}
++	 * — когда произнесено или произнести не удалось.
++	 */
++	public static void say(@NonNull MainActivityDelegate a, @NonNull String text,
++												 @Nullable Listener listener) {
++		Context ctx = a.getContext().getApplicationContext();
++		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
++		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
++			if (err != null) {
++				Log.e(err, "JARVIS: TTS failed");
++				if (listener != null) listener.onDone();
++				return;
++			}
++			JarvisVoice.apply(tts);
++			Cancellable interrupt = a.interruptPlayback();
++			tts.speak(text).onCompletion((r, serr) -> {
++				if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
++				else Log.i("JARVIS: reply spoken");
++				interrupt.cancel();
++				tts.close();
++				if (listener != null) listener.onDone();
++			});
++		});
++	}
++
 +	/** Один запрос: привязаться, отправить, дождаться ответа, отвязаться. */
 +	private static final class Call implements ServiceConnection {
 +		private final MainActivityDelegate a;
@@ -414,23 +441,7 @@ index 0000000..8a4ddb4
 +		}
 +
 +		private void speak(String reply) {
-+			Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
-+			TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
-+				if (err != null) {
-+					Log.e(err, "JARVIS: TTS failed");
-+					if (listener != null) listener.onDone();
-+					return;
-+				}
-+				JarvisVoice.apply(tts);
-+				Cancellable interrupt = a.interruptPlayback();
-+				tts.speak(reply).onCompletion((r, serr) -> {
-+					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
-+					else Log.i("JARVIS: reply spoken");
-+					interrupt.cancel();
-+					tts.close();
-+					if (listener != null) listener.onDone();
-+				});
-+			});
++			say(a, reply, listener);
 +		}
 +	}
 +}
@@ -4651,6 +4662,151 @@ index 0000000..b3f8131
 +        <dist:fusing dist:include="true" />
 +    </dist:module>
 +</manifest>
+diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
+new file mode 100644
+index 0000000..17a7358
+--- /dev/null
++++ b/modules/jarvis/src/main/assets/qwen_chat.js
+@@ -0,0 +1,139 @@
++// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
++// Страница открыта в невидимом WebView под кругом JARVIS.
++// Имена классов — из кода сайта (21.10.2026): поле ввода
++// textarea.message-input-textarea, кнопка .message-input-right-button-send,
++// ответ .response-message-content (текст в .qwen-markdown), пока Qwen пишет —
++// есть .stop-button. Сайт меняется — поэтому запасные пути и запись в журнал.
++(function () {
++	if (window.__jq) return;
++	const LOG = '[QWEN] ';
++	const log = m => { try { console.log(LOG + m); } catch (e) { } };
++
++	function visible(e) {
++		if (!e) return false;
++		const r = e.getBoundingClientRect();
++		return (r.width > 0) && (r.height > 0);
++	}
++
++	function input() {
++		return document.querySelector('textarea.message-input-textarea') ||
++			document.querySelector('textarea#chat-input') ||
++			document.querySelector('textarea');
++	}
++
++	function sendButton() {
++		return document.querySelector('.message-input-right-button-send') ||
++			document.querySelector('button[class*="send"]') ||
++			document.querySelector('[class*="send-button"]');
++	}
++
++	/** Гость: видна кнопка «Войти», либо окно «Войдите…» после отправки. */
++	function needLogin() {
++		const els = document.querySelectorAll('button, a, [role="button"]');
++		for (const e of els) {
++			const t = (e.innerText || '').trim();
++			if (/^(Войти|Log in|Login|Sign in)$/i.test(t) && visible(e)) return true;
++		}
++		const modal = document.querySelector('[class*="modal"], [role="dialog"]');
++		return !!(modal && visible(modal) && /Войдите|Log in|Sign in/i.test(modal.innerText || ''));
++	}
++
++	function generating() {
++		const s = document.querySelector('.stop-button');
++		return !!(s && visible(s) && !s.disabled);
++	}
++
++	function replies() {
++		return Array.from(document.querySelectorAll('.response-message-content'))
++			.filter(e => !/think/i.test(String(e.className)));
++	}
++
++	function replyText(e) {
++		const md = e.querySelector('.qwen-markdown');
++		return ((md || e).innerText || '').trim();
++	}
++
++	function path(e) {
++		const p = [];
++		for (let i = 0; e && (i < 4); i++, e = e.parentElement) {
++			p.push(e.tagName.toLowerCase() + '.' + String(e.className).trim().split(/\s+/).slice(0, 3).join('.'));
++		}
++		return p.join(' < ');
++	}
++
++	let before = [];
++	let question = '';
++	let last = '';
++	let lastChange = 0;
++	let sentAt = 0;
++	let how = '';
++
++	/** Текст после вопроса — если блока ответа не нашлось. */
++	function fallback() {
++		const body = (document.body && document.body.innerText) || '';
++		const i = body.lastIndexOf(question.slice(0, 40));
++		if (i < 0) return '';
++		return body.slice(i + question.length).trim();
++	}
++
++	window.__jq = {
++		state: function () {
++			return JSON.stringify({
++				input: !!input(), send: !!sendButton(), login: needLogin(), url: location.href
++			});
++		},
++
++		send: function (text) {
++			const ta = input();
++			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
++			before = replies();
++			question = text;
++			last = '';
++			how = '';
++			sentAt = lastChange = Date.now();
++			// Поле под React: значение — через родной сеттер, затем событие input
++			const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
++			set.call(ta, text);
++			ta.dispatchEvent(new Event('input', { bubbles: true }));
++			setTimeout(() => {
++				const b = sendButton();
++				if (b) {
++					b.click();
++					log('sent, button ' + path(b));
++				} else {
++					// Без кнопки — Enter (на телефоне сайт его может не принять)
++					ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
++					log('sent by Enter: no send button');
++				}
++			}, 300);
++			return JSON.stringify({ ok: true });
++		},
++
++		poll: function () {
++			if (needLogin()) return JSON.stringify({ state: 'login' });
++			const all = replies();
++			const fresh = all.filter(e => before.indexOf(e) < 0);
++			let text = '';
++			if (fresh.length) {
++				const e = fresh[fresh.length - 1];
++				text = replyText(e);
++				if (!how) how = 'reply ' + path(e);
++			} else if ((Date.now() - sentAt) > 8000) {
++				text = fallback();
++				if (text && !how) how = 'fallback: after question text';
++			}
++			const now = Date.now();
++			if (text !== last) {
++				last = text;
++				lastChange = now;
++			}
++			const gen = generating();
++			const quiet = now - lastChange;
++			const done = !!text && ((!gen && (quiet >= 1500)) || (quiet >= 6000));
++			return JSON.stringify({
++				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length
++			});
++		}
++	};
++	log('ready, ' + window.__jq.state());
++})();
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
 index 0000000..7872521
@@ -5115,10 +5271,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..4c633d3
+index 0000000..4fcc6b4
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,614 @@
+@@ -0,0 +1,741 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5161,8 +5317,13 @@ index 0000000..4c633d3
 + * кнопки «голосовое управление» (например, на руле) — сказать фразу.
 + *
 + * Порядок как при голосовом поиске Fermata: сначала фразу пробует выполнить
-+ * сама Fermata («пауза», «играй…»), непонятую получает JARVIS. Ответ JARVIS
-+ * только произносится — под кругом ничего не показывается.
++ * сама Fermata («пауза», «играй…»). Команду телефону («позвони», «открой»…)
++ * выполняет JARVIS на телефоне, а разговор ведёт Qwen с chat.qwen.ai
++ * (QwenChat; пожелание 21.10.2026). Ответ только произносится голосом
++ * JARVIS — под кругом ничего не показывается.
++ *
++ * Сайт Qwen открыт под кругом невидимым. Долгое касание шара показывает его
++ * (вход, история разговора); кнопка «Готово» прячет обратно.
 + *
 + * Перед записью JARVIS говорит «Слушаю». Тишина в начале не обрывает
 + * запись сразу: если речь так и не началась, слушаем ещё один раз.
@@ -5179,6 +5340,12 @@ index 0000000..4c633d3
 +		implements RecognitionListener, JarvisBridge.Listener {
 +	@Nullable
 +	private JarvisHudView hud;
++	@Nullable
++	private QwenChat qwen;
++	@Nullable
++	private View qwenDone;
++	/** Когда коснулись шара — долгое касание открывает сайт Qwen. */
++	private long downAt;
 +	@Nullable
 +	private SpeechRecognizer recognizer;
 +	private Cancellable interrupt = Cancellable.CANCELED;
@@ -5231,26 +5398,88 @@ index 0000000..4c633d3
 +	@Override
 +	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 +													 @Nullable Bundle savedInstanceState) {
-+		JarvisHudView v = new JarvisHudView(dynCtx(requireContext()));
++		Context ctx = requireContext();
++		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
++		QwenChat q = new QwenChat(ctx);
++		View web = q.getView();
++		web.setAlpha(0f);
++		web.setFocusable(false);
++		root.addView(web, new android.widget.FrameLayout.LayoutParams(
++				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++		qwen = q;
++
++		JarvisHudView v = new JarvisHudView(dynCtx(ctx));
 +		// Голос — только касанием шара; касание в любом другом месте показывает
 +		// строку приложений, которая сама прячется (пожелание 21.10.2026)
 +		v.setOnTouchListener((view, e) -> {
++			if (e.getAction() == android.view.MotionEvent.ACTION_DOWN) downAt = e.getEventTime();
 +			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
-+			if (v.isOnSphere(e.getX(), e.getY())) onCircleClick();
-+			else showBarsForAWhile();
++			if (v.isOnSphere(e.getX(), e.getY())) {
++				if ((e.getEventTime() - downAt >= LONG_PRESS_MS) && !busy) showQwenPage();
++				else onCircleClick();
++			} else {
++				showBarsForAWhile();
++			}
 +			view.performClick();
 +			return true;
 +		});
++		root.addView(v, new android.widget.FrameLayout.LayoutParams(
++				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 +		hud = v;
++
++		android.widget.Button close = new android.widget.Button(ctx);
++		close.setText(dynCtx(ctx).getString(R.string.jarvis_qwen_done));
++		close.setVisibility(View.GONE);
++		close.setOnClickListener(b -> hideQwenPage());
++		android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
++				ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
++				android.view.Gravity.BOTTOM | android.view.Gravity.END);
++		int m = (int) (16 * ctx.getResources().getDisplayMetrics().density);
++		lp.setMargins(m, m, m, m);
++		root.addView(close, lp);
++		qwenDone = close;
 +		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
 +		me.aap.fermata.jarvis.JarvisVoice.refresh();
 +		// И синтезатор подключается заранее — первое «Слушаю» без задержки
 +		// Приложение могло ещё не подняться (восстановление после выгрузки) — ждать его
-+		Context wctx = requireContext();
-+		MainActivityDelegate.getActivityDelegate(wctx).onSuccess(a -> {
-+			if (hud != null) warmTts(wctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
++		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {
++			if (hud != null) warmTts(ctx, Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a)));
 +		});
-+		return v;
++		return root;
++	}
++
++	/** Показать сайт Qwen поверх круга: войти, посмотреть разговор. */
++	private void showQwenPage() {
++		QwenChat q = qwen;
++		if ((q == null) || (hud == null) || (qwenDone == null)) return;
++		Log.i("[QWEN] page shown");
++		restoreBars();
++		View web = q.getView();
++		web.setAlpha(1f);
++		web.setFocusable(true);
++		web.setFocusableInTouchMode(true);
++		hud.setVisibility(View.GONE);
++		qwenDone.setVisibility(View.VISIBLE);
++	}
++
++	private void hideQwenPage() {
++		QwenChat q = qwen;
++		if ((q == null) || (hud == null) || (qwenDone == null)) return;
++		Log.i("[QWEN] page hidden");
++		View web = q.getView();
++		web.clearFocus();
++		web.setFocusable(false);
++		web.setAlpha(0f);
++		android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
++				web.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
++		if (im != null) im.hideSoftInputFromWindow(web.getWindowToken(), 0);
++		qwenDone.setVisibility(View.GONE);
++		hud.setVisibility(View.VISIBLE);
++		showBarsForAWhile();
++	}
++
++	private boolean isQwenPageShown() {
++		return (qwenDone != null) && (qwenDone.getVisibility() == View.VISIBLE);
 +	}
 +
 +	/** Сколько строка приложений видна после касания или входа во вкладку, мс. */
@@ -5289,6 +5518,12 @@ index 0000000..4c633d3
 +		restoreBars();
 +		stopListening();
 +		closeWarm();
++		QwenChat q = qwen;
++		qwen = null;
++		qwenDone = null;
++		if (q != null) q.destroy();
++		// Вопрос Qwen остался без ответа — разговор окончен, иначе круг не примет новый
++		if (busy) done();
 +		hud = null;
 +		super.onDestroyView();
 +	}
@@ -5335,6 +5570,7 @@ index 0000000..4c633d3
 +
 +	private void listen() {
 +		if (busy || (hud == null)) return;
++		if (isQwenPageShown()) hideQwenPage();
 +		MainActivityDelegate a = getActivityDelegate();
 +		Context ctx = requireContext();
 +		if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
@@ -5630,10 +5866,55 @@ index 0000000..4c633d3
 +			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 +			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 +			done();
++		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
++			Log.i("JARVIS tab: phone command — to JARVIS");
++			JarvisBridge.ask(a, q.get(0), this);
++		} else if (qwen != null) {
++			askQwen(a, q.get(0));
 +		} else if (!JarvisBridge.ask(a, q.get(0), this)) {
 +			toast(R.string.jarvis_not_installed);
 +			done();
 +		}
++	}
++
++	/** Вопрос — Qwen, ответ — голосом JARVIS. */
++	private void askQwen(MainActivityDelegate a, String text) {
++		QwenChat q = qwen;
++		if (q == null) return;
++		setPhase(HudMath.Phase.THINK);
++		q.ask(text, new QwenChat.Callback() {
++			@Override
++			public void onReply(@NonNull String reply) {
++				String s = QwenChat.forSpeech(reply);
++				say(a, s.isEmpty() ? str(R.string.jarvis_qwen_empty) : s);
++			}
++
++			@Override
++			public void onLogin() {
++				if (a.isCarActivityNotMirror()) {
++					say(a, str(R.string.jarvis_qwen_login_car));
++				} else {
++					showQwenPage();
++					say(a, str(R.string.jarvis_qwen_login));
++				}
++			}
++
++			@Override
++			public void onError(@NonNull String why) {
++				say(a, str(R.string.jarvis_qwen_error) + why);
++			}
++		});
++	}
++
++	private void say(MainActivityDelegate a, String text) {
++		if (!busy) return;
++		setPhase(HudMath.Phase.SPEAK);
++		JarvisBridge.say(a, text, this);
++	}
++
++	private String str(int id) {
++		Context ctx = getContext();
++		return (ctx == null) ? "" : dynCtx(ctx).getString(id);
 +	}
 +
 +	@Override
@@ -5709,6 +5990,8 @@ index 0000000..4c633d3
 +	}
 +
 +	/** Пауза в речи, после которой фраза закончена, мс (обычно около секунды). */
++	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
++	private static final long LONG_PRESS_MS = 700;
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
 +	private static final int RETRIES = 2;
 +	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
@@ -6218,6 +6501,310 @@ index 0000000..0769310
 +
 +	private static int argb(float alpha, int r, int g, int b) {
 +		return Color.argb(Math.round(clamp(alpha, 0f, 1f) * 255f), r, g, b);
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
+new file mode 100644
+index 0000000..c1c73e3
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
+@@ -0,0 +1,298 @@
++package me.aap.fermata.addon.jarvis;
++
++import static java.nio.charset.StandardCharsets.UTF_8;
++import static me.aap.fermata.util.Utils.dynCtx;
++
++import android.annotation.SuppressLint;
++import android.content.Context;
++import android.os.Handler;
++import android.os.Looper;
++import android.webkit.ConsoleMessage;
++import android.webkit.CookieManager;
++import android.webkit.WebChromeClient;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebSettings;
++import android.webkit.WebView;
++import android.webkit.WebViewClient;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++import androidx.annotation.VisibleForTesting;
++
++import org.json.JSONObject;
++import org.json.JSONTokener;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.util.Locale;
++import java.util.regex.Pattern;
++
++import me.aap.utils.log.Log;
++
++/**
++ * Разговор во вкладке JARVIS ведёт Qwen с сайта chat.qwen.ai (пожелание
++ * 21.10.2026: «берём ИИ Квин с его сайта и обворачиваем его в визуальную
++ * оболочку джарвиза»). Сайт открыт в WebView под кругом JARVIS: невидимым,
++ * пока не нужен вход. Фраза вписывается в поле сайта и отправляется его
++ * кнопкой, ответ читается со страницы скриптом assets/qwen_chat.js.
++ *
++ * Вход — один раз, по почте (вход через Google в WebView Google не пускает);
++ * cookies сайта сохраняются, как в браузере.
++ */
++final class QwenChat {
++	static final String URL = "https://chat.qwen.ai/";
++	/** Сколько ждать загрузки страницы и ответа Qwen, мс. */
++	private static final long LOAD_WAIT_MS = 25_000;
++	private static final long REPLY_WAIT_MS = 90_000;
++	private static final long POLL_MS = 700;
++	/** Длина ответа для озвучивания: синтезатор берёт ~4000 знаков, слушать длинное в машине тяжело. */
++	static final int MAX_SPEECH = 1200;
++	/**
++	 * Первая фраза разговора — с просьбой отвечать коротко и без разметки:
++	 * ответ слушают, а не читают. Видно в истории разговора на сайте.
++	 */
++	static final String FIRST_PREFIX =
++			"Отвечай кратко, по-русски, обычным текстом без списков, таблиц и разметки — " +
++					"ответ будет озвучен голосом. ";
++
++	interface Callback {
++		void onReply(@NonNull String text);
++
++		/** Сайт просит войти. */
++		void onLogin();
++
++		void onError(@NonNull String why);
++	}
++
++	private final Handler main = new Handler(Looper.getMainLooper());
++	private final WebView web;
++	private final String script;
++	private boolean loaded;
++	/** В этом разговоре уже была фраза — просьба о краткости не повторяется. */
++	private boolean started;
++	@Nullable
++	private Callback pending;
++	private long deadline;
++	@Nullable
++	private String lastText;
++
++	@SuppressLint("SetJavaScriptEnabled")
++	QwenChat(Context ctx) {
++		script = readScript(ctx);
++		web = new WebView(ctx);
++		WebSettings s = web.getSettings();
++		s.setJavaScriptEnabled(true);
++		s.setDomStorageEnabled(true);
++		s.setDatabaseEnabled(true);
++		s.setMediaPlaybackRequiresUserGesture(true);
++		CookieManager cm = CookieManager.getInstance();
++		cm.setAcceptCookie(true);
++		cm.setAcceptThirdPartyCookies(web, true);
++		web.setWebViewClient(new WebViewClient() {
++			@Override
++			public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++				// Ссылки на приложения (intent:, market: …) не открывать
++				String scheme = request.getUrl().getScheme();
++				return !"https".equals(scheme) && !"http".equals(scheme);
++			}
++
++			@Override
++			public void onPageFinished(WebView view, String url) {
++				Log.i("[QWEN] page loaded: ", url);
++				loaded = true;
++				inject();
++				CookieManager.getInstance().flush();
++			}
++		});
++		web.setWebChromeClient(new WebChromeClient() {
++			@Override
++			public boolean onConsoleMessage(ConsoleMessage m) {
++				if (m.message().startsWith("[QWEN]")) Log.i(m.message());
++				return true;
++			}
++		});
++		web.loadUrl(URL);
++	}
++
++	WebView getView() {
++		return web;
++	}
++
++	/** Задать вопрос; ответ — в главном потоке через cb. Предыдущий вопрос отменяется. */
++	void ask(@NonNull String text, @NonNull Callback cb) {
++		cancel();
++		pending = cb;
++		lastText = null;
++		String q = started ? text : FIRST_PREFIX + text;
++		Log.i("[QWEN] ask «", text, "», loaded=", loaded);
++		long loadUntil = System.currentTimeMillis() + LOAD_WAIT_MS;
++		sendWhenReady(cb, q, loadUntil);
++	}
++
++	private void sendWhenReady(Callback cb, String q, long until) {
++		if (pending != cb) return;
++		if (!loaded) {
++			if (System.currentTimeMillis() > until) {
++				fail(cb, "страница Qwen не загрузилась");
++				return;
++			}
++			main.postDelayed(() -> sendWhenReady(cb, q, until), 500);
++			return;
++		}
++		inject();
++		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ") : null", r -> {
++			if (pending != cb) return;
++			JSONObject o = parse(r);
++			if (o == null) {
++				// Скрипт ещё не встал (страница перезагружалась) — повторить
++				if (System.currentTimeMillis() > until) fail(cb, "страница Qwen не отвечает");
++				else main.postDelayed(() -> sendWhenReady(cb, q, until), 500);
++				return;
++			}
++			if (!o.optBoolean("ok")) {
++				Log.i("[QWEN] send failed: ", o);
++				if (o.optBoolean("login")) login(cb);
++				else if (System.currentTimeMillis() > until) fail(cb, "нет поля для вопроса");
++				else main.postDelayed(() -> sendWhenReady(cb, q, until), 1000);
++				return;
++			}
++			started = true;
++			deadline = System.currentTimeMillis() + REPLY_WAIT_MS;
++			main.postDelayed(() -> poll(cb), POLL_MS);
++		});
++	}
++
++	private void poll(Callback cb) {
++		if (pending != cb) return;
++		web.evaluateJavascript("window.__jq ? __jq.poll() : null", r -> {
++			if (pending != cb) return;
++			JSONObject o = parse(r);
++			String state = (o == null) ? "" : o.optString("state");
++			if ("login".equals(state)) {
++				login(cb);
++				return;
++			}
++			String text = (o == null) ? "" : o.optString("text");
++			if (!text.isEmpty()) lastText = text;
++			if ("done".equals(state)) {
++				pending = null;
++				Log.i("[QWEN] reply via ", o.optString("how"), ", ", text.length(), " chars: «",
++						shorten(text, 300), "»");
++				cb.onReply(text);
++				return;
++			}
++			if (System.currentTimeMillis() > deadline) {
++				pending = null;
++				String t = lastText;
++				Log.i("[QWEN] reply timeout, have ", (t == null) ? 0 : t.length(), " chars, last poll ", o);
++				if (t != null) cb.onReply(t);
++				else cb.onError("Qwen не ответил");
++				return;
++			}
++			main.postDelayed(() -> poll(cb), POLL_MS);
++		});
++	}
++
++	private void login(Callback cb) {
++		pending = null;
++		started = false;
++		Log.i("[QWEN] login required");
++		cb.onLogin();
++	}
++
++	private void fail(Callback cb, String why) {
++		pending = null;
++		Log.i("[QWEN] error: ", why);
++		cb.onError(why);
++	}
++
++	void cancel() {
++		pending = null;
++		main.removeCallbacksAndMessages(null);
++	}
++
++	void destroy() {
++		cancel();
++		CookieManager.getInstance().flush();
++		web.destroy();
++	}
++
++	private void inject() {
++		if (script != null) web.evaluateJavascript(script, null);
++	}
++
++	@Nullable
++	private static JSONObject parse(@Nullable String r) {
++		if ((r == null) || "null".equals(r)) return null;
++		try {
++			Object v = new JSONTokener(r).nextValue();
++			return (v instanceof String) ? new JSONObject((String) v) : null;
++		} catch (Exception ex) {
++			Log.i("[QWEN] bad script result: ", shorten(r, 200));
++			return null;
++		}
++	}
++
++	@Nullable
++	private static String readScript(Context ctx) {
++		try (InputStream in = dynCtx(ctx).getAssets().open("qwen_chat.js")) {
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			byte[] buf = new byte[8192];
++			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++			return out.toString(UTF_8.name());
++		} catch (Exception ex) {
++			Log.e(ex, "[QWEN] failed to load qwen_chat.js");
++			return null;
++		}
++	}
++
++	private static String shorten(String s, int max) {
++		return (s.length() <= max) ? s : s.substring(0, max) + "…";
++	}
++
++	private static final Pattern CODE_BLOCK = Pattern.compile("```[\\s\\S]*?(```|$)");
++	private static final Pattern LINK = Pattern.compile("\\[([^\\]]*)]\\([^)]*\\)");
++	private static final Pattern URL_RE = Pattern.compile("https?://\\S+");
++	private static final Pattern MARKS = Pattern.compile("[*_#`>|~]+");
++	private static final Pattern BULLET = Pattern.compile("(?m)^\\s*([-•]|\\d+[.)])\\s+");
++	private static final Pattern SPACES = Pattern.compile("\\s+");
++
++	/** Ответ Qwen — в текст для синтезатора: без разметки, ссылок и кода, не длиннее MAX_SPEECH. */
++	@VisibleForTesting
++	static String forSpeech(@Nullable String text) {
++		if (text == null) return "";
++		String t = CODE_BLOCK.matcher(text).replaceAll(" ");
++		t = LINK.matcher(t).replaceAll("$1");
++		t = URL_RE.matcher(t).replaceAll(" ");
++		t = BULLET.matcher(t).replaceAll("");
++		t = MARKS.matcher(t).replaceAll(" ");
++		t = SPACES.matcher(t).replaceAll(" ").trim();
++		if (t.length() <= MAX_SPEECH) return t;
++		// Обрезать по концу предложения
++		int cut = -1;
++		for (int i = MAX_SPEECH; i > MAX_SPEECH / 2; i--) {
++			char c = t.charAt(i - 1);
++			if ((c == '.') || (c == '!') || (c == '?') || (c == '…')) {
++				cut = i;
++				break;
++			}
++		}
++		return (cut > 0) ? t.substring(0, cut) : t.substring(0, MAX_SPEECH) + "…";
++	}
++
++	/**
++	 * Команда телефону — выполняет JARVIS на телефоне, а не Qwen (выбор
++	 * пользователя 21.10.2026: «команды — JARVIS, разговор — Qwen»): звонок,
++	 * сообщение, открыть приложение, музыка, будильник, навигация, громкость.
++	 */
++	private static final Pattern PHONE_COMMAND = Pattern.compile(
++			"^(?iu)(джарвис[\\s,]+)?(позвони|набери|вызови|звонок|открой|запусти|закрой|включи|выключи|" +
++					"отключи|поставь|сделай\\s+(громче|тише)|громче|тише|отправь|напиши\\s+(смс|сообщение)|" +
++					"прочитай\\s+(смс|сообщени)|разбуди|будильник|напомни|таймер|проложи|маршрут|" +
++					"поехали|навигаци|едем|найди\\s+на\\s+карте|wi-?fi|вай-?фай|блютуз|bluetooth|фонарик)");
++
++	@VisibleForTesting
++	static boolean isPhoneCommand(@Nullable String phrase) {
++		return (phrase != null) && PHONE_COMMAND.matcher(phrase.trim().toLowerCase(Locale.ROOT)).find();
 +	}
 +}
 diff --git a/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp b/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp
@@ -16134,10 +16721,10 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..51904bd
+index 0000000..e4db2d3
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,16 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
@@ -16148,6 +16735,11 @@ index 0000000..51904bd
 +    <string name="jarvis_not_installed">JARVIS не установлен</string>
 +    <string name="jarvis_not_heard">Не расслышал</string>
 +    <string name="jarvis_no_recognizer">Распознавание речи на телефоне недоступно</string>
++    <string name="jarvis_qwen_done">Готово</string>
++    <string name="jarvis_qwen_login">Войдите в Qwen по почте, затем нажмите «Готово»</string>
++    <string name="jarvis_qwen_login_car">Нужно войти в Qwen. На телефоне откройте вкладку JARVIS и задержите палец на круге</string>
++    <string name="jarvis_qwen_error">Qwen недоступен: </string>
++    <string name="jarvis_qwen_empty">Qwen ответил без текста</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
 new file mode 100644
@@ -16380,6 +16972,61 @@ index 0000000..265234a
 +		assertTrue("с голосом — сильно", loudMax > 0.12f);
 +		// Разные участки края в один момент сдвинуты по-разному
 +		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
++	}
++}
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
+new file mode 100644
+index 0000000..28ecca9
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
+@@ -0,0 +1,49 @@
++package me.aap.fermata.addon.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++
++import org.junit.Test;
++
++/** Что уходит JARVIS, что — Qwen, и как ответ Qwen готовится к озвучиванию. */
++public class QwenChatTest {
++
++	@Test
++	public void phoneCommandsGoToJarvis() {
++		assertTrue(QwenChat.isPhoneCommand("позвони маме"));
++		assertTrue(QwenChat.isPhoneCommand("Открой YouTube"));
++		assertTrue(QwenChat.isPhoneCommand("джарвис, включи музыку"));
++		assertTrue(QwenChat.isPhoneCommand("сделай громче"));
++		assertTrue(QwenChat.isPhoneCommand("проложи маршрут до Минска"));
++		assertTrue(QwenChat.isPhoneCommand("напиши смс Ивану"));
++	}
++
++	@Test
++	public void conversationGoesToQwen() {
++		assertFalse(QwenChat.isPhoneCommand("какая погода завтра в Минске"));
++		assertFalse(QwenChat.isPhoneCommand("расскажи анекдот"));
++		assertFalse(QwenChat.isPhoneCommand("напиши стихотворение про осень"));
++		assertFalse(QwenChat.isPhoneCommand("что такое договор подряда"));
++		assertFalse(QwenChat.isPhoneCommand("кто открыл Америку"));
++		assertFalse(QwenChat.isPhoneCommand(null));
++	}
++
++	@Test
++	public void markupRemovedForSpeech() {
++		assertEquals("Итог: два плюс два — четыре.", QwenChat.forSpeech("**Итог:** два плюс два — четыре."));
++		assertEquals("Первое Второе", QwenChat.forSpeech("- Первое\n- Второе"));
++		assertEquals("Смотрите сайт.", QwenChat.forSpeech("Смотрите [сайт](https://example.com)."));
++		assertEquals("Код: .", QwenChat.forSpeech("Код: ```java\nint a;\n```."));
++		assertEquals("Заголовок Текст", QwenChat.forSpeech("## Заголовок\nТекст"));
++	}
++
++	@Test
++	public void longReplyCutAtSentence() {
++		StringBuilder b = new StringBuilder();
++		while (b.length() < 3000) b.append("Это одно предложение ответа. ");
++		String s = QwenChat.forSpeech(b.toString());
++		assertTrue(s.length() <= QwenChat.MAX_SPEECH);
++		assertTrue(s.endsWith("."));
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java

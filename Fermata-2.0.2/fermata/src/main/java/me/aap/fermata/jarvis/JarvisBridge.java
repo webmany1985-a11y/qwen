@@ -127,6 +127,33 @@ public final class JarvisBridge {
 		return true;
 	}
 
+	/**
+	 * Произнести текст голосом JARVIS, приостановив музыку. Так произносится
+	 * и ответ JARVIS, и ответ Qwen во вкладке JARVIS. {@code listener.onDone()}
+	 * — когда произнесено или произнести не удалось.
+	 */
+	public static void say(@NonNull MainActivityDelegate a, @NonNull String text,
+												 @Nullable Listener listener) {
+		Context ctx = a.getContext().getApplicationContext();
+		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
+		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
+			if (err != null) {
+				Log.e(err, "JARVIS: TTS failed");
+				if (listener != null) listener.onDone();
+				return;
+			}
+			JarvisVoice.apply(tts);
+			Cancellable interrupt = a.interruptPlayback();
+			tts.speak(text).onCompletion((r, serr) -> {
+				if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
+				else Log.i("JARVIS: reply spoken");
+				interrupt.cancel();
+				tts.close();
+				if (listener != null) listener.onDone();
+			});
+		});
+	}
+
 	/** Один запрос: привязаться, отправить, дождаться ответа, отвязаться. */
 	private static final class Call implements ServiceConnection {
 		private final MainActivityDelegate a;
@@ -211,23 +238,7 @@ public final class JarvisBridge {
 		}
 
 		private void speak(String reply) {
-			Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
-			TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
-				if (err != null) {
-					Log.e(err, "JARVIS: TTS failed");
-					if (listener != null) listener.onDone();
-					return;
-				}
-				JarvisVoice.apply(tts);
-				Cancellable interrupt = a.interruptPlayback();
-				tts.speak(reply).onCompletion((r, serr) -> {
-					if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
-					else Log.i("JARVIS: reply spoken");
-					interrupt.cancel();
-					tts.close();
-					if (listener != null) listener.onDone();
-				});
-			});
+			say(a, reply, listener);
 		}
 	}
 }
