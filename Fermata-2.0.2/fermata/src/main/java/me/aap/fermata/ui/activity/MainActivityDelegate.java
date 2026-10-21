@@ -1000,10 +1000,19 @@ public class MainActivityDelegate extends ActivityDelegate
 		FermataActivity a = getAppActivity();
 		a.setContentView(getLayout());
 		if (getPrefs().getThemePref(isCarActivity()) == MainActivityPrefs.THEME_JARVIS) {
-			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками
-			ViewGroup content = a.findViewById(android.R.id.content);
-			if ((content != null) && (content.getChildCount() > 0))
-				content.getChildAt(0).setBackground(new JarvisWallpaper(a.getContext()));
+			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками.
+			// Ставится на сам главный слой (main_activity): у него своя заливка
+			// colorPrimary (чёрная на 70%), и в машине фото, поставленное под него,
+			// превращалось в сплошной чёрный (снимок экрана машины 21.10.2026)
+			View root = a.findViewById(R.id.main_activity);
+			if (root == null) {
+				ViewGroup content = a.findViewById(android.R.id.content);
+				if ((content != null) && (content.getChildCount() > 0)) root = content.getChildAt(0);
+			}
+			if (root != null) {
+				root.setBackground(new JarvisWallpaper(a.getContext()));
+				Log.i("JARVIS: wallpaper on ", root.getClass().getSimpleName(), ", car=", isCarActivity());
+			}
 		}
 		toolBar = a.findViewById(R.id.tool_bar);
 		progressBar = a.findViewById(R.id.content_loading_progress);

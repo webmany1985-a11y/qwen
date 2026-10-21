@@ -928,7 +928,7 @@ index 0000000..ac43e7f
 +	}
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
-index 03dfc56..5d2b460 100644
+index 03dfc56..054bbd3 100644
 --- a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 +++ b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 @@ -62,6 +62,7 @@ import android.view.Gravity;
@@ -979,15 +979,24 @@ index 03dfc56..5d2b460 100644
  	public FutureSupplier<List<String>> startSpeechRecognizer() {
  		return startSpeechRecognizer(null, false);
  	}
-@@ -989,6 +999,12 @@ public class MainActivityDelegate extends ActivityDelegate
+@@ -989,6 +999,21 @@ public class MainActivityDelegate extends ActivityDelegate
  	private void init() {
  		FermataActivity a = getAppActivity();
  		a.setContentView(getLayout());
 +		if (getPrefs().getThemePref(isCarActivity()) == MainActivityPrefs.THEME_JARVIS) {
-+			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками
-+			ViewGroup content = a.findViewById(android.R.id.content);
-+			if ((content != null) && (content.getChildCount() > 0))
-+				content.getChildAt(0).setBackground(new JarvisWallpaper(a.getContext()));
++			// Тема JARVIS: фото фоном под полупрозрачными панелями и списками.
++			// Ставится на сам главный слой (main_activity): у него своя заливка
++			// colorPrimary (чёрная на 70%), и в машине фото, поставленное под него,
++			// превращалось в сплошной чёрный (снимок экрана машины 21.10.2026)
++			View root = a.findViewById(R.id.main_activity);
++			if (root == null) {
++				ViewGroup content = a.findViewById(android.R.id.content);
++				if ((content != null) && (content.getChildCount() > 0)) root = content.getChildAt(0);
++			}
++			if (root != null) {
++				root.setBackground(new JarvisWallpaper(a.getContext()));
++				Log.i("JARVIS: wallpaper on ", root.getClass().getSimpleName(), ", car=", isCarActivity());
++			}
 +		}
  		toolBar = a.findViewById(R.id.tool_bar);
  		progressBar = a.findViewById(R.id.content_loading_progress);
@@ -16372,10 +16381,10 @@ index 7b574fe..adb25e2 100644
                      icon : 'web',
 diff --git a/modules/web/src/main/assets/tiktok_autonext.js b/modules/web/src/main/assets/tiktok_autonext.js
 new file mode 100644
-index 0000000..eb0af0f
+index 0000000..e648432
 --- /dev/null
 +++ b/modules/web/src/main/assets/tiktok_autonext.js
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,414 @@
 +// Вкладка TikTok в JARVIS Auto: когда видео досмотрено — свайп на следующее.
 +// Лента мобильного tiktok.com построена на Swiper; клавиши и прокрутка её не
 +// листают, листает только касание — поэтому свайп собирается из TouchEvent.
@@ -16498,6 +16507,119 @@ index 0000000..eb0af0f
 +      '{display:none!important}';
 +    document.head.appendChild(st);
 +    log('car screen fit: width ' + w);
++  }
++
++  // ── Плеер в машине (решение пользователя 21.10.2026: «свой плеер, как у
++  // YouTube»). Текущее видео — поверх страницы на весь экран; поверх него
++  // прозрачный слой касаний: свайп вверх — следующее, вниз — предыдущее,
++  // касание — пауза, двойное касание — «на всю высоту» ↔ «заполнить».
++  // Ручной свайп по самой странице для компьютера подвисал — теперь листает
++  // скрипт той же кнопкой ленты, что и автоматически.
++  var P = { v: null, layer: null, fit: 'contain', lastTap: 0, tapTimer: 0, y0: null, t0: 0 };
++  try { P.fit = localStorage.getItem('jarvisTtFit') || 'contain'; } catch (e) {}
++
++  function playerStyle() {
++    if (document.getElementById('jarvis-tt-style')) return;
++    var st = document.createElement('style');
++    st.id = 'jarvis-tt-style';
++    st.textContent =
++      'video.jarvis-pl{position:fixed!important;left:0!important;top:0!important;' +
++      'width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;' +
++      'margin:0!important;transform:none!important;z-index:2147483646!important;background:#000!important;' +
++      'object-fit:var(--jarvis-fit,contain)!important}' +
++      '#jarvis-tt-layer{position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;' +
++      'background:transparent;touch-action:none}' +
++      '#jarvis-tt-hint{position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);' +
++      'z-index:2147483647;color:#FFC14D;background:rgba(0,0,0,.55);font:600 40px sans-serif;' +
++      'padding:12px 28px;border-radius:40px;pointer-events:none;opacity:0;transition:opacity .3s}';
++    document.head.appendChild(st);
++    document.documentElement.style.setProperty('--jarvis-fit', P.fit);
++  }
++
++  function hint(text) {
++    var h = document.getElementById('jarvis-tt-hint');
++    if (!h) { h = document.createElement('div'); h.id = 'jarvis-tt-hint'; document.body.appendChild(h); }
++    h.textContent = text;
++    h.style.opacity = '1';
++    clearTimeout(h.__t);
++    h.__t = setTimeout(function () { h.style.opacity = '0'; }, 900);
++  }
++
++  function prevDesktop() {
++    var b = document.querySelector('button[data-e2e="feed-navigation-prev"]');
++    if (b && !b.disabled) { b.click(); return; }
++    var c = document.querySelector('[class*="DivColumnListContainer"]');
++    if (c) c.scrollTop -= c.clientHeight;
++  }
++
++  function onLayerTouchStart(e) {
++    var t = e.touches ? e.touches[0] : e;
++    P.y0 = t.clientY; P.t0 = Date.now();
++  }
++
++  function onLayerTouchEnd(e) {
++    if (P.y0 == null) return;
++    var t = e.changedTouches ? e.changedTouches[0] : e;
++    var dy = t.clientY - P.y0;
++    P.y0 = null;
++    S.keySince = Date.now();
++    if (Math.abs(dy) > innerHeight * 0.12) {
++      if (dy < 0) { hint('▼'); nextDesktop(); } else { hint('▲'); prevDesktop(); }
++      return;
++    }
++    var now = Date.now();
++    if (now - P.lastTap < 350) {
++      // Двойное касание: на всю высоту ↔ заполнить
++      clearTimeout(P.tapTimer);
++      P.lastTap = 0;
++      P.fit = (P.fit === 'contain') ? 'cover' : 'contain';
++      try { localStorage.setItem('jarvisTtFit', P.fit); } catch (x) {}
++      document.documentElement.style.setProperty('--jarvis-fit', P.fit);
++      hint(P.fit === 'cover' ? 'Заполнить' : 'Целиком');
++      return;
++    }
++    P.lastTap = now;
++    P.tapTimer = setTimeout(function () {
++      var v = P.v;
++      if (!v) return;
++      if (v.paused) { v.play(); hint('▶'); } else { v.pause(); hint('❚❚'); }
++    }, 360);
++  }
++
++  function updatePlayer() {
++    playerStyle();
++    if (!P.layer || !P.layer.isConnected) {
++      var l = document.createElement('div');
++      l.id = 'jarvis-tt-layer';
++      l.addEventListener('touchstart', onLayerTouchStart, { passive: true });
++      l.addEventListener('touchend', onLayerTouchEnd, { passive: true });
++      l.addEventListener('mousedown', onLayerTouchStart);
++      l.addEventListener('mouseup', onLayerTouchEnd);
++      document.body.appendChild(l);
++      P.layer = l;
++      log('car player on');
++    }
++    // Текущее видео — в статье, что сейчас сверху ленты
++    var arts = document.querySelectorAll('article'), best = null, bd = 1e9;
++    for (var i = 0; i < arts.length; i++) {
++      var d = Math.abs(arts[i].getBoundingClientRect().top);
++      if (d < bd) { bd = d; best = arts[i]; }
++    }
++    var v = best && best.querySelector('video');
++    if (!v) {
++      // В верхней статье видео ещё нет — ближайшая статья, где оно есть
++      bd = 1e9;
++      for (var j = 0; j < arts.length; j++) {
++        var vv = arts[j].querySelector('video');
++        if (!vv) continue;
++        var dd = Math.abs(arts[j].getBoundingClientRect().top);
++        if (dd < bd) { bd = dd; v = vv; }
++      }
++    }
++    if (!v || v === P.v) return;
++    if (P.v) P.v.classList.remove('jarvis-pl');
++    v.classList.add('jarvis-pl');
++    P.v = v;
 +  }
 +
 +  function nextDesktop() {
@@ -16638,7 +16760,7 @@ index 0000000..eb0af0f
 +    }
 +    closePopups();
 +    skipLogin();
-+    if (isDesktop()) { fitCarScreen(); checkDesktopNext(); }
++    if (isDesktop()) { fitCarScreen(); updatePlayer(); checkDesktopNext(); }
 +    var key = slideKey();
 +    if (key !== S.key) { S.key = key; S.keySince = now; }
 +    var v = video();
