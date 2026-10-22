@@ -285,8 +285,52 @@ public class JarvisFragment extends MainActivityFragment
 		return true;
 	}
 
+	/** Номер запроса к JARVIS: касание шара во время ожидания отменяет текущий. */
+	private int request;
+
+	/** Слушатель запроса к JARVIS (приложению): после отмены ответ не произносится. */
+	private JarvisBridge.Listener forRequest() {
+		int id = ++request;
+		return new JarvisBridge.Listener() {
+			@Override
+			public void onThinking() {
+				if (id == request) JarvisFragment.this.onThinking();
+			}
+
+			@Override
+			public void onSpeaking() {
+				if (id == request) JarvisFragment.this.onSpeaking();
+			}
+
+			@Override
+			public void onDone() {
+				if (id == request) JarvisFragment.this.onDone();
+			}
+
+			@Override
+			public boolean isCancelled() {
+				return id != request;
+			}
+		};
+	}
+
+	/** Идёт ответ голосом — чем его прервать. */
+	private Cancellable speech = Cancellable.CANCELED;
+
 	private void onCircleClick() {
 		if (!busy) listen();
+		else if ((phase() == HudMath.Phase.SPEAK) || (phase() == HudMath.Phase.THINK)) {
+			// Ответ не нужен дальше — замолчать; следующее касание — снова «Слушаю»
+			Log.i("JARVIS tab: reply stopped by touch, phase=", phase());
+			QwenChat q = qwen;
+			if (q != null) q.cancel();
+			Cancellable s = speech;
+			speech = Cancellable.CANCELED;
+			s.cancel();
+			JarvisBridge.stopSpeaking();
+			request++;
+			done();
+		}
 		else if ((phrase != null) && (recognizer != null) && !heard) {
 			// Дослушиваем продолжение, а вы уже договорили — выполнить сразу
 			destroyRecognizer();
@@ -678,10 +722,10 @@ public class JarvisFragment extends MainActivityFragment
 			done();
 		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
 			Log.i("JARVIS tab: phone command — to JARVIS");
-			JarvisBridge.ask(a, q.get(0), this);
+			JarvisBridge.ask(a, q.get(0), forRequest());
 		} else if (qwen != null) {
 			askQwen(a, q.get(0));
-		} else if (!JarvisBridge.ask(a, q.get(0), this)) {
+		} else if (!JarvisBridge.ask(a, q.get(0), forRequest())) {
 			toast(R.string.jarvis_not_installed);
 			done();
 		}
@@ -719,7 +763,7 @@ public class JarvisFragment extends MainActivityFragment
 	private void say(MainActivityDelegate a, String text) {
 		if (!busy) return;
 		setPhase(HudMath.Phase.SPEAK);
-		JarvisBridge.say(a, text, this);
+		speech = JarvisBridge.say(a, text, this);
 	}
 
 	private String str(int id) {

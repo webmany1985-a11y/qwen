@@ -68,6 +68,21 @@ public final class JarvisBridge {
 		/** Ответ произнесён (или произнести не удалось) — запрос окончен. */
 		default void onDone() {
 		}
+
+		/** Запрос отменён (касание шара во время ожидания) — ответ не произносить. */
+		default boolean isCancelled() {
+			return false;
+		}
+	}
+
+	/** Последний ответ JARVIS (приложения на телефоне), который произносится. */
+	private static Cancellable lastSpeech = Cancellable.CANCELED;
+
+	/** Прервать ответ JARVIS, если он произносится. */
+	public static void stopSpeaking() {
+		Cancellable c = lastSpeech;
+		lastSpeech = Cancellable.CANCELED;
+		c.cancel();
 	}
 
 	/** Установлен ли JARVIS с входом для команд. */
@@ -130,28 +145,46 @@ public final class JarvisBridge {
 	/**
 	 * Произнести текст голосом JARVIS, приостановив музыку. Так произносится
 	 * и ответ JARVIS, и ответ Qwen во вкладке JARVIS. {@code listener.onDone()}
-	 * — когда произнесено или произнести не удалось.
+	 * — когда произнесено, прервано или произнести не удалось.
+	 *
+	 * @return прервать речь (касание шара во время ответа, пожелание 22.10.2026)
 	 */
-	public static void say(@NonNull MainActivityDelegate a, @NonNull String text,
-												 @Nullable Listener listener) {
+	public static Cancellable say(@NonNull MainActivityDelegate a, @NonNull String text,
+																@Nullable Listener listener) {
 		Context ctx = a.getContext().getApplicationContext();
 		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
+		TextToSpeech[] speaking = new TextToSpeech[1];
+		boolean[] stopped = new boolean[1];
 		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
 			if (err != null) {
 				Log.e(err, "JARVIS: TTS failed");
 				if (listener != null) listener.onDone();
 				return;
 			}
+			if (stopped[0]) {
+				tts.close();
+				return;
+			}
 			JarvisVoice.apply(tts);
 			Cancellable interrupt = a.interruptPlayback();
+			speaking[0] = tts;
 			tts.speak(text).onCompletion((r, serr) -> {
-				if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
+				speaking[0] = null;
+				if (stopped[0]) Log.i("JARVIS: reply stopped");
+				else if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
 				else Log.i("JARVIS: reply spoken");
 				interrupt.cancel();
 				tts.close();
-				if (listener != null) listener.onDone();
+				if ((listener != null) && !stopped[0]) listener.onDone();
 			});
 		});
+		return () -> {
+			if (stopped[0]) return false;
+			stopped[0] = true;
+			TextToSpeech tts = speaking[0];
+			if (tts != null) tts.stop();
+			return true;
+		};
 	}
 
 	/** Один запрос: привязаться, отправить, дождаться ответа, отвязаться. */
@@ -232,13 +265,17 @@ public final class JarvisBridge {
 				} catch (IllegalArgumentException ignore) {
 				}
 			}
+			if ((listener != null) && listener.isCancelled()) {
+				Log.i("JARVIS: request cancelled, reply not spoken");
+				return;
+			}
 			if (listener == null) Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
 			else listener.onSpeaking();
 			speak(reply);
 		}
 
 		private void speak(String reply) {
-			say(a, reply, listener);
+			lastSpeech = say(a, reply, listener);
 		}
 	}
 }

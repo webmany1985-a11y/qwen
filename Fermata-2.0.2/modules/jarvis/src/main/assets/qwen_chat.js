@@ -11,6 +11,9 @@
 
 	function visible(e) {
 		if (!e) return false;
+		// Страница без окна может быть не разложена — тогда видимым считается всё
+		const b = document.body && document.body.getBoundingClientRect();
+		if (!b || (b.width === 0)) return true;
 		const r = e.getBoundingClientRect();
 		return (r.width > 0) && (r.height > 0);
 	}
@@ -54,9 +57,36 @@
 		return '';
 	}
 
+	// Пока Qwen пишет, вместо «Отправить» — «Стоп». Одного .stop-button мало:
+	// журнал 22.10.2026, 09:21 — на «Поиске в Интернете» ожидание кончилось раньше ответа
 	function generating() {
-		const s = document.querySelector('.stop-button');
-		return !!(s && visible(s) && !s.disabled);
+		const s = document.querySelector('.stop-button, button[aria-label="Остановить"], button[aria-label="Стоп"], button[aria-label="Stop"]');
+		if (s && visible(s) && !s.disabled) return true;
+		const box = document.querySelector('.chat-prompt-send-button');
+		return !!(box && !box.querySelector('button.send-button'));
+	}
+
+	/** Надписи сайта, а не ответ: «Поиск в Интернете», «Пропустить» и т. п. */
+	const NOISE = /^(Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
+
+	function clean(t) {
+		return t.split('\n').map(l => l.trim()).filter(l => l && !NOISE.test(l)).join('\n').trim();
+	}
+
+	/** Где на странице лежит текст ответа — в журнал, чтобы читать его оттуда напрямую. */
+	function locate(t) {
+		const key = t.split('\n')[0].slice(0, 30);
+		let best = null;
+		for (const e of document.querySelectorAll('div, p, section, article')) {
+			const it = e.innerText || '';
+			if ((it.indexOf(key) >= 0) && (!best || it.length < best.innerText.length)) best = e;
+		}
+		if (!best) return '?';
+		const p = [];
+		for (let i = 0, e = best; e && (i < 7); i++, e = e.parentElement) {
+			p.push(e.tagName.toLowerCase() + '.' + String(e.className).trim().split(/\s+/).slice(0, 3).join('.'));
+		}
+		return p.join(' < ');
 	}
 
 	function replies() {
@@ -135,9 +165,10 @@
 				text = replyText(e);
 				if (!how) how = 'reply ' + path(e);
 			} else if ((Date.now() - sentAt) > 8000) {
-				text = fallback();
+				text = clean(fallback());
 				if (text && !how) how = 'fallback: after question text';
 			}
+			text = clean(text);
 			const now = Date.now();
 			if (text !== last) {
 				last = text;
@@ -145,7 +176,10 @@
 			}
 			const gen = generating();
 			const quiet = now - lastChange;
-			const done = !!text && ((!gen && (quiet >= 1500)) || (quiet >= 6000));
+			// Блок ответа найден — 1,5 с тишины; ответ «после вопроса» — 3 с: он ловит и надписи сайта
+			const wait = fresh.length ? 1500 : 3000;
+			const done = !!text && ((!gen && (quiet >= wait)) || (quiet >= 8000));
+			if (done && !fresh.length && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
 			return JSON.stringify({
 				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
 				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)

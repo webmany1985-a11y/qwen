@@ -210,10 +210,10 @@ index 4911c14..d03de6c 100644
          </intent>
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
 new file mode 100644
-index 0000000..5e2d2d4
+index 0000000..e72a94c
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,281 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -284,6 +284,21 @@ index 0000000..5e2d2d4
 +		/** Ответ произнесён (или произнести не удалось) — запрос окончен. */
 +		default void onDone() {
 +		}
++
++		/** Запрос отменён (касание шара во время ожидания) — ответ не произносить. */
++		default boolean isCancelled() {
++			return false;
++		}
++	}
++
++	/** Последний ответ JARVIS (приложения на телефоне), который произносится. */
++	private static Cancellable lastSpeech = Cancellable.CANCELED;
++
++	/** Прервать ответ JARVIS, если он произносится. */
++	public static void stopSpeaking() {
++		Cancellable c = lastSpeech;
++		lastSpeech = Cancellable.CANCELED;
++		c.cancel();
 +	}
 +
 +	/** Установлен ли JARVIS с входом для команд. */
@@ -346,28 +361,46 @@ index 0000000..5e2d2d4
 +	/**
 +	 * Произнести текст голосом JARVIS, приостановив музыку. Так произносится
 +	 * и ответ JARVIS, и ответ Qwen во вкладке JARVIS. {@code listener.onDone()}
-+	 * — когда произнесено или произнести не удалось.
++	 * — когда произнесено, прервано или произнести не удалось.
++	 *
++	 * @return прервать речь (касание шара во время ответа, пожелание 22.10.2026)
 +	 */
-+	public static void say(@NonNull MainActivityDelegate a, @NonNull String text,
-+												 @Nullable Listener listener) {
++	public static Cancellable say(@NonNull MainActivityDelegate a, @NonNull String text,
++																@Nullable Listener listener) {
 +		Context ctx = a.getContext().getApplicationContext();
 +		Locale locale = Locale.forLanguageTag(a.getPrefs().getVoiceControlLang(a));
++		TextToSpeech[] speaking = new TextToSpeech[1];
++		boolean[] stopped = new boolean[1];
 +		TextToSpeech.create(ctx, locale).onCompletion((tts, err) -> {
 +			if (err != null) {
 +				Log.e(err, "JARVIS: TTS failed");
 +				if (listener != null) listener.onDone();
 +				return;
 +			}
++			if (stopped[0]) {
++				tts.close();
++				return;
++			}
 +			JarvisVoice.apply(tts);
 +			Cancellable interrupt = a.interruptPlayback();
++			speaking[0] = tts;
 +			tts.speak(text).onCompletion((r, serr) -> {
-+				if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
++				speaking[0] = null;
++				if (stopped[0]) Log.i("JARVIS: reply stopped");
++				else if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
 +				else Log.i("JARVIS: reply spoken");
 +				interrupt.cancel();
 +				tts.close();
-+				if (listener != null) listener.onDone();
++				if ((listener != null) && !stopped[0]) listener.onDone();
 +			});
 +		});
++		return () -> {
++			if (stopped[0]) return false;
++			stopped[0] = true;
++			TextToSpeech tts = speaking[0];
++			if (tts != null) tts.stop();
++			return true;
++		};
 +	}
 +
 +	/** Один запрос: привязаться, отправить, дождаться ответа, отвязаться. */
@@ -448,13 +481,17 @@ index 0000000..5e2d2d4
 +				} catch (IllegalArgumentException ignore) {
 +				}
 +			}
++			if ((listener != null) && listener.isCancelled()) {
++				Log.i("JARVIS: request cancelled, reply not spoken");
++				return;
++			}
 +			if (listener == null) Toast.makeText(ctx, reply, Toast.LENGTH_LONG).show();
 +			else listener.onSpeaking();
 +			speak(reply);
 +		}
 +
 +		private void speak(String reply) {
-+			say(a, reply, listener);
++			lastSpeech = say(a, reply, listener);
 +		}
 +	}
 +}
@@ -4677,10 +4714,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
 new file mode 100644
-index 0000000..50517af
+index 0000000..23c46b8
 --- /dev/null
 +++ b/modules/jarvis/src/main/assets/qwen_chat.js
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,190 @@
 +// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 +// Страница открыта в невидимом WebView под кругом JARVIS.
 +// Имена классов — из кода сайта (21.10.2026): поле ввода
@@ -4694,6 +4731,9 @@ index 0000000..50517af
 +
 +	function visible(e) {
 +		if (!e) return false;
++		// Страница без окна может быть не разложена — тогда видимым считается всё
++		const b = document.body && document.body.getBoundingClientRect();
++		if (!b || (b.width === 0)) return true;
 +		const r = e.getBoundingClientRect();
 +		return (r.width > 0) && (r.height > 0);
 +	}
@@ -4737,9 +4777,36 @@ index 0000000..50517af
 +		return '';
 +	}
 +
++	// Пока Qwen пишет, вместо «Отправить» — «Стоп». Одного .stop-button мало:
++	// журнал 22.10.2026, 09:21 — на «Поиске в Интернете» ожидание кончилось раньше ответа
 +	function generating() {
-+		const s = document.querySelector('.stop-button');
-+		return !!(s && visible(s) && !s.disabled);
++		const s = document.querySelector('.stop-button, button[aria-label="Остановить"], button[aria-label="Стоп"], button[aria-label="Stop"]');
++		if (s && visible(s) && !s.disabled) return true;
++		const box = document.querySelector('.chat-prompt-send-button');
++		return !!(box && !box.querySelector('button.send-button'));
++	}
++
++	/** Надписи сайта, а не ответ: «Поиск в Интернете», «Пропустить» и т. п. */
++	const NOISE = /^(Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
++
++	function clean(t) {
++		return t.split('\n').map(l => l.trim()).filter(l => l && !NOISE.test(l)).join('\n').trim();
++	}
++
++	/** Где на странице лежит текст ответа — в журнал, чтобы читать его оттуда напрямую. */
++	function locate(t) {
++		const key = t.split('\n')[0].slice(0, 30);
++		let best = null;
++		for (const e of document.querySelectorAll('div, p, section, article')) {
++			const it = e.innerText || '';
++			if ((it.indexOf(key) >= 0) && (!best || it.length < best.innerText.length)) best = e;
++		}
++		if (!best) return '?';
++		const p = [];
++		for (let i = 0, e = best; e && (i < 7); i++, e = e.parentElement) {
++			p.push(e.tagName.toLowerCase() + '.' + String(e.className).trim().split(/\s+/).slice(0, 3).join('.'));
++		}
++		return p.join(' < ');
 +	}
 +
 +	function replies() {
@@ -4818,9 +4885,10 @@ index 0000000..50517af
 +				text = replyText(e);
 +				if (!how) how = 'reply ' + path(e);
 +			} else if ((Date.now() - sentAt) > 8000) {
-+				text = fallback();
++				text = clean(fallback());
 +				if (text && !how) how = 'fallback: after question text';
 +			}
++			text = clean(text);
 +			const now = Date.now();
 +			if (text !== last) {
 +				last = text;
@@ -4828,7 +4896,10 @@ index 0000000..50517af
 +			}
 +			const gen = generating();
 +			const quiet = now - lastChange;
-+			const done = !!text && ((!gen && (quiet >= 1500)) || (quiet >= 6000));
++			// Блок ответа найден — 1,5 с тишины; ответ «после вопроса» — 3 с: он ловит и надписи сайта
++			const wait = fresh.length ? 1500 : 3000;
++			const done = !!text && ((!gen && (quiet >= wait)) || (quiet >= 8000));
++			if (done && !fresh.length && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
 +			return JSON.stringify({
 +				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
 +				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)
@@ -5498,10 +5569,10 @@ index 0000000..1d0c7f6
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..98cf8de
+index 0000000..f9d1fe2
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,832 @@
+@@ -0,0 +1,876 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5789,8 +5860,52 @@ index 0000000..98cf8de
 +		return true;
 +	}
 +
++	/** Номер запроса к JARVIS: касание шара во время ожидания отменяет текущий. */
++	private int request;
++
++	/** Слушатель запроса к JARVIS (приложению): после отмены ответ не произносится. */
++	private JarvisBridge.Listener forRequest() {
++		int id = ++request;
++		return new JarvisBridge.Listener() {
++			@Override
++			public void onThinking() {
++				if (id == request) JarvisFragment.this.onThinking();
++			}
++
++			@Override
++			public void onSpeaking() {
++				if (id == request) JarvisFragment.this.onSpeaking();
++			}
++
++			@Override
++			public void onDone() {
++				if (id == request) JarvisFragment.this.onDone();
++			}
++
++			@Override
++			public boolean isCancelled() {
++				return id != request;
++			}
++		};
++	}
++
++	/** Идёт ответ голосом — чем его прервать. */
++	private Cancellable speech = Cancellable.CANCELED;
++
 +	private void onCircleClick() {
 +		if (!busy) listen();
++		else if ((phase() == HudMath.Phase.SPEAK) || (phase() == HudMath.Phase.THINK)) {
++			// Ответ не нужен дальше — замолчать; следующее касание — снова «Слушаю»
++			Log.i("JARVIS tab: reply stopped by touch, phase=", phase());
++			QwenChat q = qwen;
++			if (q != null) q.cancel();
++			Cancellable s = speech;
++			speech = Cancellable.CANCELED;
++			s.cancel();
++			JarvisBridge.stopSpeaking();
++			request++;
++			done();
++		}
 +		else if ((phrase != null) && (recognizer != null) && !heard) {
 +			// Дослушиваем продолжение, а вы уже договорили — выполнить сразу
 +			destroyRecognizer();
@@ -6182,10 +6297,10 @@ index 0000000..98cf8de
 +			done();
 +		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
 +			Log.i("JARVIS tab: phone command — to JARVIS");
-+			JarvisBridge.ask(a, q.get(0), this);
++			JarvisBridge.ask(a, q.get(0), forRequest());
 +		} else if (qwen != null) {
 +			askQwen(a, q.get(0));
-+		} else if (!JarvisBridge.ask(a, q.get(0), this)) {
++		} else if (!JarvisBridge.ask(a, q.get(0), forRequest())) {
 +			toast(R.string.jarvis_not_installed);
 +			done();
 +		}
@@ -6223,7 +6338,7 @@ index 0000000..98cf8de
 +	private void say(MainActivityDelegate a, String text) {
 +		if (!busy) return;
 +		setPhase(HudMath.Phase.SPEAK);
-+		JarvisBridge.say(a, text, this);
++		speech = JarvisBridge.say(a, text, this);
 +	}
 +
 +	private String str(int id) {
