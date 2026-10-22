@@ -68,6 +68,7 @@ final class QwenChat {
 	private final WebView web;
 	private final String script;
 	private boolean loaded;
+	private boolean loadStarted;
 	/** В этом разговоре уже была фраза — просьба о краткости не повторяется. */
 	private boolean started;
 	@Nullable
@@ -111,6 +112,17 @@ final class QwenChat {
 				return true;
 			}
 		});
+	}
+
+	/**
+	 * Загрузить страницу, если ещё не начали. Не сразу при открытии вкладки:
+	 * загрузка сайта на несколько секунд задерживала «Слушаю» (журнал
+	 * 22.10.2026, 13:17:47 — «Слушаю» через 7 с, микрофон через 26 с).
+	 */
+	void load() {
+		if (loadStarted) return;
+		loadStarted = true;
+		Log.i("[QWEN] loading page");
 		web.loadUrl(URL);
 	}
 
@@ -125,6 +137,7 @@ final class QwenChat {
 		lastText = null;
 		String q = started ? text : FIRST_PREFIX + text;
 		Log.i("[QWEN] ask «", text, "», loaded=", loaded);
+		load();
 		long loadUntil = System.currentTimeMillis() + LOAD_WAIT_MS;
 		sendWhenReady(cb, q, loadUntil);
 	}
@@ -140,7 +153,9 @@ final class QwenChat {
 			return;
 		}
 		inject();
-		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ") : null", r -> {
+		String want = wantedModel();
+		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " +
+				((want == null) ? "null" : JSONObject.quote(want)) + ") : null", r -> {
 			if (pending != cb) return;
 			JSONObject o = parse(r);
 			if (o == null) {
@@ -205,6 +220,36 @@ final class QwenChat {
 		Log.i("[QWEN] error: ", why);
 		cb.onError(why);
 	}
+
+	/**
+	 * Модель, которую пользователь выбрал на странице Qwen (пожелание 22.10.2026:
+	 * «каждый раз сбрасывается на модель по умолчанию»). Новый разговор сайт
+	 * начинает с модели по умолчанию — перед вопросом скрипт выбирает эту.
+	 */
+	@Nullable
+	private String wantedModel() {
+		return web.getContext().getApplicationContext()
+				.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODEL, null);
+	}
+
+	/** Запомнить модель, выбранную сейчас на странице (после того как страницу спрятали). */
+	void rememberModel() {
+		web.evaluateJavascript("window.__jq ? __jq.model() : ''", r -> {
+			String m = null;
+			try {
+				Object v = new JSONTokener(r).nextValue();
+				if (v instanceof String) m = ((String) v).trim();
+			} catch (Exception ignore) {
+			}
+			if ((m == null) || m.isEmpty()) return;
+			web.getContext().getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+					.edit().putString(KEY_MODEL, m).apply();
+			Log.i("[QWEN] model remembered: ", m);
+		});
+	}
+
+	private static final String PREFS = "jarvis_qwen";
+	private static final String KEY_MODEL = "model";
 
 	void cancel() {
 		pending = null;

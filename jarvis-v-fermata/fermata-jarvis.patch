@@ -4734,10 +4734,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
 new file mode 100644
-index 0000000..d2e850a
+index 0000000..2e709b9
 --- /dev/null
 +++ b/modules/jarvis/src/main/assets/qwen_chat.js
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,258 @@
 +// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 +// Страница открыта в невидимом WebView под кругом JARVIS.
 +// Имена классов — из кода сайта (21.10.2026): поле ввода
@@ -4833,7 +4833,48 @@ index 0000000..d2e850a
 +
 +	function replies() {
 +		return Array.from(document.querySelectorAll('.response-message-content'))
-+			.filter(e => !/think/i.test(String(e.className)));
++			.filter(e => !/think/i.test(String(e.className)) && !e.closest('.smrm'));
++	}
++
++	/**
++	 * Сравнение двух ответов (.smrm, «Какой ответ вы предпочитаете?»): берётся
++	 * первый, и он же выбирается — иначе сайт дальше не пускает
++	 * (журнал JARVIS 22.10.2026, 12:53).
++	 */
++	function compareCards() {
++		const all = Array.from(document.querySelectorAll('.smrm')).filter(e => beforeCompare.indexOf(e) < 0);
++		if (!all.length) return null;
++		return Array.from(all[all.length - 1].querySelectorAll('.smrm-card'));
++	}
++
++	/** Модель, выбранная сейчас на сайте. */
++	function currentModel() {
++		const n = document.querySelector('.mms-trigger__name');
++		return n ? (n.innerText || '').trim() : '';
++	}
++
++	/** Выбрать модель по названию; then — после выбора (или если не вышло). */
++	function pickModel(want, then) {
++		const cur = currentModel();
++		if (!want || !cur || (cur === want)) {
++			then();
++			return;
++		}
++		const t = document.querySelector('.mms-trigger');
++		if (!t) {
++			then();
++			return;
++		}
++		t.click();
++		setTimeout(() => {
++			const it = Array.from(document.querySelectorAll('.mms-list__item')).find(e => {
++				const n = e.querySelector('.mms-list__name-text');
++				return n && ((n.innerText || '').trim() === want);
++			});
++			if (it) it.click();
++			log('model ' + cur + ' -> ' + want + (it ? '' : ': not in the list'));
++			setTimeout(then, 800);
++		}, 800);
 +	}
 +
 +	function replyText(e) {
@@ -4850,6 +4891,8 @@ index 0000000..d2e850a
 +	}
 +
 +	let before = [];
++	let beforeCompare = [];
++	let compareChosen = false;
 +	let question = '';
 +	let last = '';
 +	let lastChange = 0;
@@ -4871,18 +4914,27 @@ index 0000000..d2e850a
 +			});
 +		},
 +
-+		send: function (text) {
++		model: function () {
++			return currentModel();
++		},
++
++		send: function (text, want) {
 +			const ta = input();
 +			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
 +			before = replies();
++			beforeCompare = Array.from(document.querySelectorAll('.smrm'));
++			compareChosen = false;
 +			question = text;
 +			last = '';
 +			how = '';
 +			sentAt = lastChange = Date.now();
++			pickModel(want, () => {
++			sentAt = lastChange = Date.now();
++			const ta2 = input() || ta;
 +			// Поле под React: значение — через родной сеттер, затем событие input
 +			const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-+			set.call(ta, text);
-+			ta.dispatchEvent(new Event('input', { bubbles: true }));
++			set.call(ta2, text);
++			ta2.dispatchEvent(new Event('input', { bubbles: true }));
 +			setTimeout(() => {
 +				const b = sendButton();
 +				if (b) {
@@ -4890,10 +4942,11 @@ index 0000000..d2e850a
 +					log('sent, button ' + path(b));
 +				} else {
 +					// Без кнопки — Enter (на телефоне сайт его может не принять)
-+					ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
++					ta2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
 +					log('sent by Enter: no send button');
 +				}
 +			}, 300);
++			});
 +			return JSON.stringify({ ok: true });
 +		},
 +
@@ -4902,7 +4955,13 @@ index 0000000..d2e850a
 +			const all = replies();
 +			const fresh = all.filter(e => before.indexOf(e) < 0);
 +			let text = '';
-+			if (fresh.length) {
++			const cards = compareCards();
++			if (cards && cards.length) {
++				const c = cards[0].querySelector('.smrm-card__content') || cards[0];
++				const md = c.querySelector('.qwen-markdown');
++				text = ((md || c).innerText || '').trim();
++				how = 'compare: first of ' + cards.length;
++			} else if (fresh.length) {
 +				const e = fresh[fresh.length - 1];
 +				text = replyText(e);
 +				if (!how) how = 'reply ' + path(e);
@@ -4919,9 +4978,16 @@ index 0000000..d2e850a
 +			const gen = generating();
 +			const quiet = now - lastChange;
 +			// Блок ответа найден — 1,5 с тишины; ответ «после вопроса» — 3 с: он ловит и надписи сайта
-+			const wait = fresh.length ? 1500 : 3000;
++			const wait = (fresh.length || cards) ? 1500 : 3000;
 +			const done = !!text && ((!gen && (quiet >= wait)) || (quiet >= 8000));
-+			if (done && !fresh.length && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
++			if (done && !fresh.length && !cards && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
++			if (done && cards && cards.length && !compareChosen) {
++				// Выбрать первый ответ — сайт продолжит разговор
++				compareChosen = true;
++				const btn = cards[0].querySelector('.smrm-card__prefer-btn');
++				if (btn) btn.click();
++				log('compare: first answer chosen' + (btn ? '' : ' — no button'));
++			}
 +			return JSON.stringify({
 +				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
 +				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)
@@ -5591,10 +5657,10 @@ index 0000000..1d0c7f6
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..f9d1fe2
+index 0000000..7e91e93
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,876 @@
+@@ -0,0 +1,884 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5725,6 +5791,10 @@ index 0000000..f9d1fe2
 +		Context ctx = requireContext();
 +		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
 +		QwenChat q = new QwenChat(ctx);
++		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
++		main.postDelayed(() -> {
++			if ((qwen == q) && !busy) q.load();
++		}, QWEN_LOAD_DELAY_MS);
 +		View web = q.getView();
 +		web.setAlpha(0f);
 +		web.setFocusable(false);
@@ -5776,6 +5846,7 @@ index 0000000..f9d1fe2
 +	private void showQwenPage() {
 +		QwenChat q = qwen;
 +		if ((q == null) || (hud == null) || (qwenDone == null)) return;
++		q.load();
 +		Log.i("[QWEN] page shown");
 +		restoreBars();
 +		View web = q.getView();
@@ -5790,6 +5861,7 @@ index 0000000..f9d1fe2
 +		QwenChat q = qwen;
 +		if ((q == null) || (hud == null) || (qwenDone == null)) return;
 +		Log.i("[QWEN] page hidden");
++		q.rememberModel();
 +		View web = q.getView();
 +		web.clearFocus();
 +		web.setFocusable(false);
@@ -6440,6 +6512,8 @@ index 0000000..f9d1fe2
 +		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
 +	}
 +
++	/** Через сколько после открытия вкладки загружать страницу Qwen, мс. */
++	private static final long QWEN_LOAD_DELAY_MS = 3000;
 +	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
 +	private static final long LONG_PRESS_MS = 700;
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
@@ -6960,10 +7034,10 @@ index 0000000..0769310
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 new file mode 100644
-index 0000000..199449f
+index 0000000..43abf4d
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,352 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -7034,6 +7108,7 @@ index 0000000..199449f
 +	private final WebView web;
 +	private final String script;
 +	private boolean loaded;
++	private boolean loadStarted;
 +	/** В этом разговоре уже была фраза — просьба о краткости не повторяется. */
 +	private boolean started;
 +	@Nullable
@@ -7077,6 +7152,17 @@ index 0000000..199449f
 +				return true;
 +			}
 +		});
++	}
++
++	/**
++	 * Загрузить страницу, если ещё не начали. Не сразу при открытии вкладки:
++	 * загрузка сайта на несколько секунд задерживала «Слушаю» (журнал
++	 * 22.10.2026, 13:17:47 — «Слушаю» через 7 с, микрофон через 26 с).
++	 */
++	void load() {
++		if (loadStarted) return;
++		loadStarted = true;
++		Log.i("[QWEN] loading page");
 +		web.loadUrl(URL);
 +	}
 +
@@ -7091,6 +7177,7 @@ index 0000000..199449f
 +		lastText = null;
 +		String q = started ? text : FIRST_PREFIX + text;
 +		Log.i("[QWEN] ask «", text, "», loaded=", loaded);
++		load();
 +		long loadUntil = System.currentTimeMillis() + LOAD_WAIT_MS;
 +		sendWhenReady(cb, q, loadUntil);
 +	}
@@ -7106,7 +7193,9 @@ index 0000000..199449f
 +			return;
 +		}
 +		inject();
-+		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ") : null", r -> {
++		String want = wantedModel();
++		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " +
++				((want == null) ? "null" : JSONObject.quote(want)) + ") : null", r -> {
 +			if (pending != cb) return;
 +			JSONObject o = parse(r);
 +			if (o == null) {
@@ -7171,6 +7260,36 @@ index 0000000..199449f
 +		Log.i("[QWEN] error: ", why);
 +		cb.onError(why);
 +	}
++
++	/**
++	 * Модель, которую пользователь выбрал на странице Qwen (пожелание 22.10.2026:
++	 * «каждый раз сбрасывается на модель по умолчанию»). Новый разговор сайт
++	 * начинает с модели по умолчанию — перед вопросом скрипт выбирает эту.
++	 */
++	@Nullable
++	private String wantedModel() {
++		return web.getContext().getApplicationContext()
++				.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODEL, null);
++	}
++
++	/** Запомнить модель, выбранную сейчас на странице (после того как страницу спрятали). */
++	void rememberModel() {
++		web.evaluateJavascript("window.__jq ? __jq.model() : ''", r -> {
++			String m = null;
++			try {
++				Object v = new JSONTokener(r).nextValue();
++				if (v instanceof String) m = ((String) v).trim();
++			} catch (Exception ignore) {
++			}
++			if ((m == null) || m.isEmpty()) return;
++			web.getContext().getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++					.edit().putString(KEY_MODEL, m).apply();
++			Log.i("[QWEN] model remembered: ", m);
++		});
++	}
++
++	private static final String PREFS = "jarvis_qwen";
++	private static final String KEY_MODEL = "model";
 +
 +	void cancel() {
 +		pending = null;
@@ -18036,6 +18155,64 @@ index 0000000..1981d8e
 +		} catch (x) { }
 +	}, true);
 +})();
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/AutoFullScreen.java b/modules/web/src/main/java/me/aap/fermata/addon/web/AutoFullScreen.java
+new file mode 100644
+index 0000000..0e679ae
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/AutoFullScreen.java
+@@ -0,0 +1,52 @@
++package me.aap.fermata.addon.web;
++
++import static me.aap.fermata.util.Utils.dynCtx;
++
++import android.content.Context;
++import android.webkit.WebView;
++
++import androidx.annotation.Nullable;
++import androidx.webkit.WebViewCompat;
++import androidx.webkit.WebViewFeature;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++import java.util.Collections;
++
++import me.aap.utils.log.Log;
++
++/**
++ * Видео, запущенное человеком, — сразу во весь экран (assets/video_fullscreen.js,
++ * во всех кадрах страницы). Вкладки «Видео» и «Кинопоиск».
++ */
++final class AutoFullScreen {
++	@Nullable
++	private static String script;
++
++	private AutoFullScreen() {
++	}
++
++	static void install(WebView webView, String tab) {
++		String js = script(webView.getContext());
++		if ((js == null) || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
++			Log.i(tab, ": auto full screen script not available");
++			return;
++		}
++		WebViewCompat.addDocumentStartJavaScript(webView, js, Collections.singleton("*"));
++	}
++
++	@Nullable
++	private static String script(Context ctx) {
++		if (script != null) return script;
++		try (InputStream in = dynCtx(ctx).getAssets().open("video_fullscreen.js")) {
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			byte[] buf = new byte[4096];
++			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++			return script = out.toString(StandardCharsets.UTF_8.name());
++		} catch (Exception ex) {
++			Log.e(ex, "failed to load video_fullscreen.js");
++			return null;
++		}
++	}
++}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
 index b0f03df..6b29028 100644
 --- a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
@@ -18220,26 +18397,33 @@ index 0000000..b8fa725
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java
 new file mode 100644
-index 0000000..cc8a3fd
+index 0000000..9ff78d8
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,54 @@
 +package me.aap.fermata.addon.web;
++
++import android.content.Context;
++import android.os.Bundle;
++import android.view.View;
++import android.view.ViewGroup;
 +
 +import androidx.annotation.Keep;
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
 +
 +import me.aap.fermata.addon.AddonManager;
++import me.aap.fermata.ui.activity.MainActivityDelegate;
 +
 +/**
-+ * Экран вкладки «Кинопоиск»: как у TikTok — в машине версия для компьютера и
-+ * вкладка на весь экран (значок в углу возвращает панели); фильм — во весь
-+ * экран плеером сайта.
++ * Экран вкладки «Кинопоиск» — как вкладка YouTube (пожелание 22.10.2026:
++ * «режимы взаимодействия… смены размеров изображений постоянно подтупливали»):
++ * обычная страница под размер экрана, без версии для компьютера и без
++ * скрытия панелей, как было у TikTok; фильм при запуске сразу во весь экран.
 + */
 +@Keep
 +@SuppressWarnings("unused")
-+public class KinopoiskFragment extends TikTokFragment {
++public class KinopoiskFragment extends WebBrowserFragment {
 +
 +	@Override
 +	public int getFragmentId() {
@@ -18247,14 +18431,17 @@ index 0000000..cc8a3fd
 +	}
 +
 +	@Override
-+	protected FermataWebClient createWebClient() {
-+		return new KinopoiskWebClient();
-+	}
-+
-+	@NonNull
-+	@Override
-+	protected String tabName() {
-+		return "Kinopoisk";
++	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
++		WebBrowserAddon addon = getAddon();
++		if (addon == null) return;
++		Context ctx = view.getContext();
++		FermataWebView webView = view.findViewById(R.id.browserWebView);
++		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
++		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
++		webView.init(addon, new KinopoiskWebClient(), chromeClient);
++		AutoFullScreen.install(webView, "Kinopoisk");
++		webView.loadUrl(addon.getLastUrl());
++		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 +	}
 +
 +	@Nullable
@@ -18860,10 +19047,10 @@ index 0000000..a52d3da
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java
 new file mode 100644
-index 0000000..49bd049
+index 0000000..4cfcb56
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,75 @@
 +package me.aap.fermata.addon.web;
 +
 +import static me.aap.fermata.util.Utils.dynCtx;
@@ -18875,16 +19062,9 @@ index 0000000..49bd049
 +import androidx.annotation.NonNull;
 +import androidx.annotation.Nullable;
 +import androidx.core.content.res.ResourcesCompat;
-+import androidx.webkit.WebViewCompat;
-+import androidx.webkit.WebViewFeature;
 +
-+import java.io.ByteArrayOutputStream;
-+import java.io.InputStream;
-+import java.nio.charset.StandardCharsets;
-+import java.util.Collections;
 +
 +import me.aap.fermata.addon.AddonManager;
-+import me.aap.utils.log.Log;
 +import me.aap.utils.ui.menu.OverlayMenu;
 +import me.aap.utils.ui.menu.OverlayMenuItem;
 +
@@ -18916,12 +19096,7 @@ index 0000000..49bd049
 +
 +	@Override
 +	protected void onWebViewReady(FermataWebView webView) {
-+		String js = script(webView.getContext());
-+		if ((js == null) || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-+			Log.i("Video: auto full screen script not available");
-+			return;
-+		}
-+		WebViewCompat.addDocumentStartJavaScript(webView, js, Collections.singleton("*"));
++		AutoFullScreen.install(webView, "Video");
 +	}
 +
 +	@NonNull
@@ -18949,19 +19124,6 @@ index 0000000..49bd049
 +	private boolean home(OverlayMenuItem item) {
 +		loadUrl(VideoSitesPage.HOME);
 +		return true;
-+	}
-+
-+	@Nullable
-+	private static String script(Context ctx) {
-+		try (InputStream in = dynCtx(ctx).getAssets().open("video_fullscreen.js")) {
-+			ByteArrayOutputStream out = new ByteArrayOutputStream();
-+			byte[] buf = new byte[4096];
-+			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-+			return out.toString(StandardCharsets.UTF_8.name());
-+		} catch (Exception ex) {
-+			Log.e(ex, "Video: failed to load video_fullscreen.js");
-+			return null;
-+		}
 +	}
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesPage.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesPage.java

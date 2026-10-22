@@ -1,19 +1,26 @@
 package me.aap.fermata.addon.web;
 
+import android.content.Context;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import me.aap.fermata.addon.AddonManager;
+import me.aap.fermata.ui.activity.MainActivityDelegate;
 
 /**
- * Экран вкладки «Кинопоиск»: как у TikTok — в машине версия для компьютера и
- * вкладка на весь экран (значок в углу возвращает панели); фильм — во весь
- * экран плеером сайта.
+ * Экран вкладки «Кинопоиск» — как вкладка YouTube (пожелание 22.10.2026:
+ * «режимы взаимодействия… смены размеров изображений постоянно подтупливали»):
+ * обычная страница под размер экрана, без версии для компьютера и без
+ * скрытия панелей, как было у TikTok; фильм при запуске сразу во весь экран.
  */
 @Keep
 @SuppressWarnings("unused")
-public class KinopoiskFragment extends TikTokFragment {
+public class KinopoiskFragment extends WebBrowserFragment {
 
 	@Override
 	public int getFragmentId() {
@@ -21,14 +28,17 @@ public class KinopoiskFragment extends TikTokFragment {
 	}
 
 	@Override
-	protected FermataWebClient createWebClient() {
-		return new KinopoiskWebClient();
-	}
-
-	@NonNull
-	@Override
-	protected String tabName() {
-		return "Kinopoisk";
+	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+		WebBrowserAddon addon = getAddon();
+		if (addon == null) return;
+		Context ctx = view.getContext();
+		FermataWebView webView = view.findViewById(R.id.browserWebView);
+		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
+		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
+		webView.init(addon, new KinopoiskWebClient(), chromeClient);
+		AutoFullScreen.install(webView, "Kinopoisk");
+		webView.loadUrl(addon.getLastUrl());
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 
 	@Nullable

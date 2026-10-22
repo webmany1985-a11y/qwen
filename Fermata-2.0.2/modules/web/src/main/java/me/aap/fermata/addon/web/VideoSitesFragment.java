@@ -9,16 +9,9 @@ import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
-import androidx.webkit.WebViewCompat;
-import androidx.webkit.WebViewFeature;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 
 import me.aap.fermata.addon.AddonManager;
-import me.aap.utils.log.Log;
 import me.aap.utils.ui.menu.OverlayMenu;
 import me.aap.utils.ui.menu.OverlayMenuItem;
 
@@ -50,12 +43,7 @@ public class VideoSitesFragment extends TikTokFragment {
 
 	@Override
 	protected void onWebViewReady(FermataWebView webView) {
-		String js = script(webView.getContext());
-		if ((js == null) || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-			Log.i("Video: auto full screen script not available");
-			return;
-		}
-		WebViewCompat.addDocumentStartJavaScript(webView, js, Collections.singleton("*"));
+		AutoFullScreen.install(webView, "Video");
 	}
 
 	@NonNull
@@ -83,18 +71,5 @@ public class VideoSitesFragment extends TikTokFragment {
 	private boolean home(OverlayMenuItem item) {
 		loadUrl(VideoSitesPage.HOME);
 		return true;
-	}
-
-	@Nullable
-	private static String script(Context ctx) {
-		try (InputStream in = dynCtx(ctx).getAssets().open("video_fullscreen.js")) {
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
-			byte[] buf = new byte[4096];
-			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-			return out.toString(StandardCharsets.UTF_8.name());
-		} catch (Exception ex) {
-			Log.e(ex, "Video: failed to load video_fullscreen.js");
-			return null;
-		}
 	}
 }

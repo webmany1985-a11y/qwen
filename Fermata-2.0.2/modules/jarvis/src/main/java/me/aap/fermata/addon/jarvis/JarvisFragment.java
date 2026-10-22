@@ -128,6 +128,10 @@ public class JarvisFragment extends MainActivityFragment
 		Context ctx = requireContext();
 		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
 		QwenChat q = new QwenChat(ctx);
+		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
+		main.postDelayed(() -> {
+			if ((qwen == q) && !busy) q.load();
+		}, QWEN_LOAD_DELAY_MS);
 		View web = q.getView();
 		web.setAlpha(0f);
 		web.setFocusable(false);
@@ -179,6 +183,7 @@ public class JarvisFragment extends MainActivityFragment
 	private void showQwenPage() {
 		QwenChat q = qwen;
 		if ((q == null) || (hud == null) || (qwenDone == null)) return;
+		q.load();
 		Log.i("[QWEN] page shown");
 		restoreBars();
 		View web = q.getView();
@@ -193,6 +198,7 @@ public class JarvisFragment extends MainActivityFragment
 		QwenChat q = qwen;
 		if ((q == null) || (hud == null) || (qwenDone == null)) return;
 		Log.i("[QWEN] page hidden");
+		q.rememberModel();
 		View web = q.getView();
 		web.clearFocus();
 		web.setFocusable(false);
@@ -843,6 +849,8 @@ public class JarvisFragment extends MainActivityFragment
 		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
 	}
 
+	/** Через сколько после открытия вкладки загружать страницу Qwen, мс. */
+	private static final long QWEN_LOAD_DELAY_MS = 3000;
 	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
 	private static final long LONG_PRESS_MS = 700;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */

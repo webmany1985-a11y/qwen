@@ -93,7 +93,48 @@
 
 	function replies() {
 		return Array.from(document.querySelectorAll('.response-message-content'))
-			.filter(e => !/think/i.test(String(e.className)));
+			.filter(e => !/think/i.test(String(e.className)) && !e.closest('.smrm'));
+	}
+
+	/**
+	 * Сравнение двух ответов (.smrm, «Какой ответ вы предпочитаете?»): берётся
+	 * первый, и он же выбирается — иначе сайт дальше не пускает
+	 * (журнал JARVIS 22.10.2026, 12:53).
+	 */
+	function compareCards() {
+		const all = Array.from(document.querySelectorAll('.smrm')).filter(e => beforeCompare.indexOf(e) < 0);
+		if (!all.length) return null;
+		return Array.from(all[all.length - 1].querySelectorAll('.smrm-card'));
+	}
+
+	/** Модель, выбранная сейчас на сайте. */
+	function currentModel() {
+		const n = document.querySelector('.mms-trigger__name');
+		return n ? (n.innerText || '').trim() : '';
+	}
+
+	/** Выбрать модель по названию; then — после выбора (или если не вышло). */
+	function pickModel(want, then) {
+		const cur = currentModel();
+		if (!want || !cur || (cur === want)) {
+			then();
+			return;
+		}
+		const t = document.querySelector('.mms-trigger');
+		if (!t) {
+			then();
+			return;
+		}
+		t.click();
+		setTimeout(() => {
+			const it = Array.from(document.querySelectorAll('.mms-list__item')).find(e => {
+				const n = e.querySelector('.mms-list__name-text');
+				return n && ((n.innerText || '').trim() === want);
+			});
+			if (it) it.click();
+			log('model ' + cur + ' -> ' + want + (it ? '' : ': not in the list'));
+			setTimeout(then, 800);
+		}, 800);
 	}
 
 	function replyText(e) {
@@ -110,6 +151,8 @@
 	}
 
 	let before = [];
+	let beforeCompare = [];
+	let compareChosen = false;
 	let question = '';
 	let last = '';
 	let lastChange = 0;
@@ -131,18 +174,27 @@
 			});
 		},
 
-		send: function (text) {
+		model: function () {
+			return currentModel();
+		},
+
+		send: function (text, want) {
 			const ta = input();
 			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
 			before = replies();
+			beforeCompare = Array.from(document.querySelectorAll('.smrm'));
+			compareChosen = false;
 			question = text;
 			last = '';
 			how = '';
 			sentAt = lastChange = Date.now();
+			pickModel(want, () => {
+			sentAt = lastChange = Date.now();
+			const ta2 = input() || ta;
 			// Поле под React: значение — через родной сеттер, затем событие input
 			const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-			set.call(ta, text);
-			ta.dispatchEvent(new Event('input', { bubbles: true }));
+			set.call(ta2, text);
+			ta2.dispatchEvent(new Event('input', { bubbles: true }));
 			setTimeout(() => {
 				const b = sendButton();
 				if (b) {
@@ -150,10 +202,11 @@
 					log('sent, button ' + path(b));
 				} else {
 					// Без кнопки — Enter (на телефоне сайт его может не принять)
-					ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+					ta2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
 					log('sent by Enter: no send button');
 				}
 			}, 300);
+			});
 			return JSON.stringify({ ok: true });
 		},
 
@@ -162,7 +215,13 @@
 			const all = replies();
 			const fresh = all.filter(e => before.indexOf(e) < 0);
 			let text = '';
-			if (fresh.length) {
+			const cards = compareCards();
+			if (cards && cards.length) {
+				const c = cards[0].querySelector('.smrm-card__content') || cards[0];
+				const md = c.querySelector('.qwen-markdown');
+				text = ((md || c).innerText || '').trim();
+				how = 'compare: first of ' + cards.length;
+			} else if (fresh.length) {
 				const e = fresh[fresh.length - 1];
 				text = replyText(e);
 				if (!how) how = 'reply ' + path(e);
@@ -179,9 +238,16 @@
 			const gen = generating();
 			const quiet = now - lastChange;
 			// Блок ответа найден — 1,5 с тишины; ответ «после вопроса» — 3 с: он ловит и надписи сайта
-			const wait = fresh.length ? 1500 : 3000;
+			const wait = (fresh.length || cards) ? 1500 : 3000;
 			const done = !!text && ((!gen && (quiet >= wait)) || (quiet >= 8000));
-			if (done && !fresh.length && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
+			if (done && !fresh.length && !cards && how.indexOf(' at ') < 0) how += ' at ' + locate(text);
+			if (done && cards && cards.length && !compareChosen) {
+				// Выбрать первый ответ — сайт продолжит разговор
+				compareChosen = true;
+				const btn = cards[0].querySelector('.smrm-card__prefer-btn');
+				if (btn) btn.click();
+				log('compare: first answer chosen' + (btn ? '' : ' — no button'));
+			}
 			return JSON.stringify({
 				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
 				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)
