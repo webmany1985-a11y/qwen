@@ -17,6 +17,9 @@ public class QwenChatTest {
 		assertTrue(QwenChat.isPhoneCommand("сделай громче"));
 		assertTrue(QwenChat.isPhoneCommand("проложи маршрут до Минска"));
 		assertTrue(QwenChat.isPhoneCommand("напиши смс Ивану"));
+		assertTrue(QwenChat.isPhoneCommand("что с домашкой у Софии"));
+		assertTrue(QwenChat.isPhoneCommand("Марк сделал уроки?"));
+		assertTrue(QwenChat.isPhoneCommand("что задали Софии"));
 	}
 
 	@Test

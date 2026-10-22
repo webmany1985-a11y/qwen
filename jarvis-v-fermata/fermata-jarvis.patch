@@ -4714,10 +4714,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
 new file mode 100644
-index 0000000..23c46b8
+index 0000000..d2e850a
 --- /dev/null
 +++ b/modules/jarvis/src/main/assets/qwen_chat.js
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,192 @@
 +// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 +// Страница открыта в невидимом WebView под кругом JARVIS.
 +// Имена классов — из кода сайта (21.10.2026): поле ввода
@@ -4787,7 +4787,9 @@ index 0000000..23c46b8
 +	}
 +
 +	/** Надписи сайта, а не ответ: «Поиск в Интернете», «Пропустить» и т. п. */
-+	const NOISE = /^(Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
++	// «Oops! There was an issue connecting to …» — английская строка сообщения об
++	// ошибке сайта; русская следом остаётся (журнал 22.10.2026, 09:55)
++	const NOISE = /^(Oops!.*|Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
 +
 +	function clean(t) {
 +		return t.split('\n').map(l => l.trim()).filter(l => l && !NOISE.test(l)).join('\n').trim();
@@ -6938,10 +6940,10 @@ index 0000000..0769310
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 new file mode 100644
-index 0000000..5ade58f
+index 0000000..199449f
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,307 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -7235,9 +7237,18 @@ index 0000000..5ade58f
 +					"прочитай\\s+(смс|сообщени)|разбуди|будильник|напомни|таймер|проложи|маршрут|" +
 +					"поехали|навигаци|едем|найди\\s+на\\s+карте|wi-?fi|вай-?фай|блютуз|bluetooth|фонарик)");
 +
++	/**
++	 * Домашнее задание детей — тоже JARVIS: дневник читает он, Qwen к нему
++	 * доступа нет (журнал 22.10.2026, 09:22 и 09:58: «что с домашкой у Софии»).
++	 */
++	private static final Pattern HOMEWORK = Pattern.compile(
++			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк)");
++
 +	@VisibleForTesting
 +	static boolean isPhoneCommand(@Nullable String phrase) {
-+		return (phrase != null) && PHONE_COMMAND.matcher(phrase.trim().toLowerCase(Locale.ROOT)).find();
++		if (phrase == null) return false;
++		String p = phrase.trim().toLowerCase(Locale.ROOT);
++		return PHONE_COMMAND.matcher(p).find() || HOMEWORK.matcher(p).find();
 +	}
 +}
 diff --git a/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp b/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp
@@ -17420,10 +17431,10 @@ index 0000000..265234a
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
 new file mode 100644
-index 0000000..28ecca9
+index 0000000..1014a9f
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,52 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -17443,6 +17454,9 @@ index 0000000..28ecca9
 +		assertTrue(QwenChat.isPhoneCommand("сделай громче"));
 +		assertTrue(QwenChat.isPhoneCommand("проложи маршрут до Минска"));
 +		assertTrue(QwenChat.isPhoneCommand("напиши смс Ивану"));
++		assertTrue(QwenChat.isPhoneCommand("что с домашкой у Софии"));
++		assertTrue(QwenChat.isPhoneCommand("Марк сделал уроки?"));
++		assertTrue(QwenChat.isPhoneCommand("что задали Софии"));
 +	}
 +
 +	@Test

@@ -291,8 +291,17 @@ final class QwenChat {
 					"прочитай\\s+(смс|сообщени)|разбуди|будильник|напомни|таймер|проложи|маршрут|" +
 					"поехали|навигаци|едем|найди\\s+на\\s+карте|wi-?fi|вай-?фай|блютуз|bluetooth|фонарик)");
 
+	/**
+	 * Домашнее задание детей — тоже JARVIS: дневник читает он, Qwen к нему
+	 * доступа нет (журнал 22.10.2026, 09:22 и 09:58: «что с домашкой у Софии»).
+	 */
+	private static final Pattern HOMEWORK = Pattern.compile(
+			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк)");
+
 	@VisibleForTesting
 	static boolean isPhoneCommand(@Nullable String phrase) {
-		return (phrase != null) && PHONE_COMMAND.matcher(phrase.trim().toLowerCase(Locale.ROOT)).find();
+		if (phrase == null) return false;
+		String p = phrase.trim().toLowerCase(Locale.ROOT);
+		return PHONE_COMMAND.matcher(p).find() || HOMEWORK.matcher(p).find();
 	}
 }

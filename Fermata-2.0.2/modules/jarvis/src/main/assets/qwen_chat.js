@@ -67,7 +67,9 @@
 	}
 
 	/** Надписи сайта, а не ответ: «Поиск в Интернете», «Пропустить» и т. п. */
-	const NOISE = /^(Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
+	// «Oops! There was an issue connecting to …» — английская строка сообщения об
+	// ошибке сайта; русская следом остаётся (журнал 22.10.2026, 09:55)
+	const NOISE = /^(Oops!.*|Пропустить|Skip|Поиск в Интернете.*|Ищу.*|Searching.*|Думаю.*|Размышля.*|Thinking.*|Копировать|Copy|Поделиться|Share)$/i;
 
 	function clean(t) {
 		return t.split('\n').map(l => l.trim()).filter(l => l && !NOISE.test(l)).join('\n').trim();
