@@ -310,7 +310,12 @@
   function closePopups() {
     var c = document.querySelector(
       '[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="modal-close-inner-button"]');
-    if (c && c.offsetParent !== null) { c.click(); return; }
+    if (c && c.offsetParent !== null) {
+      c.click();
+      log('popup closed: ' + (c.getAttribute('data-e2e') || '?'));
+      return;
+    }
+    unblockFeed();
     var m = document.querySelector('[data-e2e="middle-cta-container"]');
     // Уже спрятанное окно повторно не разбирать: полный обход страницы каждые
     // полсекунды тормозил ленту
@@ -343,14 +348,46 @@
     document.body.style.overflow = '';
   }
 
+  /**
+   * Окно закрыто, а затемнение осталось и лента не листается (замечание
+   * 22.10.2026). Если в центре экрана поверх ленты лежит слой без видео на
+   * весь экран — спрятать его и записать в журнал, что это было.
+   */
+  var unblockedAt = 0;
+  function unblockFeed() {
+    if (isDesktop() || !document.querySelector('video')) return;
+    var now = Date.now();
+    if (now - unblockedAt < 2000) return;
+    unblockedAt = now;
+    var stack = document.elementsFromPoint(innerWidth / 2, innerHeight / 2);
+    for (var i = 0; i < stack.length; i++) {
+      var e = stack[i];
+      if (e.tagName === 'VIDEO' || e.closest('[data-e2e="video-slide-active"],.swiper-slide-active')) return;
+      if (e === document.body || e === document.documentElement) return;
+      var st = getComputedStyle(e), r = e.getBoundingClientRect();
+      if ((st.position !== 'fixed' && st.position !== 'absolute') ||
+          r.width < innerWidth * 0.9 || r.height < innerHeight * 0.6) continue;
+      if (e.querySelector('video,nav,input,textarea')) continue;
+      e.style.setProperty('display', 'none', 'important');
+      log('overlay over the feed hidden: ' + e.tagName + '.' +
+        String(e.className).replace(/css-[a-z0-9]+-[a-z0-9]+--/g, '').slice(0, 60) +
+        (e.getAttribute('data-e2e') ? ' [' + e.getAttribute('data-e2e') + ']' : '') +
+        ' bg ' + st.backgroundColor);
+      return;
+    }
+  }
+
   function swipe() {
     // Лента на Swiper: если его объект доступен — листать им, без касаний
     // (искусственное касание TikTok мог принять за нажатие на видео)
     var sw = document.querySelector('.swiper');
     if (sw && sw.swiper && typeof sw.swiper.slideNext === 'function') {
       sw.swiper.slideNext();
+      log('swipe: swiper');
       return;
     }
+    log('swipe: touch on ' + (document.querySelector('[data-e2e="video-slide-active"]') ? 'active slide' :
+      (sw ? 'swiper' : 'page')));
     var el = document.querySelector('[data-e2e="video-slide-active"]') ||
       document.querySelector('.swiper') || document.body;
     var r = el.getBoundingClientRect();
