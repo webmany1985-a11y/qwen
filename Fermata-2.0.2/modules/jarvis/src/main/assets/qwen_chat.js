@@ -191,6 +191,13 @@
 		setTimeout(() => then(true), 700);
 	}
 
+	/** Страница дорисована (есть выбор модели) — или прошло 5 с. */
+	function whenReady(then, started) {
+		const t0 = started || Date.now();
+		if (document.querySelector('.mms-trigger') || (Date.now() - t0 > 5000)) then();
+		else setTimeout(() => whenReady(then, t0), 300);
+	}
+
 	/** Выставить мышление и поиск, как запомнено; then — после. */
 	function applyModes(want, then) {
 		const wantThink = want && want.thinking;
@@ -248,6 +255,15 @@
 		});
 	}
 
+	/**
+	 * Вопрос ещё вписывается: модель, мышление, поиск, нажатие — несколько
+	 * секунд. Пока так, опрос ответа «вход» не объявляет: окно режимов на только
+	 * что загруженной странице показывало «Войдите…», и JARVIS говорил «войдите
+	 * в Qwen», хотя вход выполнен (журнал JARVIS Auto 22.10.2026, 19:50:49).
+	 */
+	let sending = false;
+	let loadedAt = Date.now();
+
 	let before = [];
 	let beforeCompare = [];
 	let compareChosen = false;
@@ -288,7 +304,10 @@
 			const wantObj = (wantArg && typeof wantArg === 'object') ? wantArg : { model: wantArg };
 			const want = wantObj.model;
 			const ta = input();
-			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
+			// Страница только загрузилась — вход ещё подтягивается: «Войти» на ней не довод
+			if (!ta) return JSON.stringify({ ok: false, why: 'no-input',
+				login: (Date.now() - loadedAt > 6000) && needLogin() });
+			sending = true;
 			before = replies();
 			beforeCompare = Array.from(document.querySelectorAll('.smrm'));
 			compareChosen = false;
@@ -296,7 +315,7 @@
 			last = '';
 			how = '';
 			sentAt = lastChange = Date.now();
-			pickModel(want, () => applyModes(wantObj, () => {
+			whenReady(() => pickModel(want, () => applyModes(wantObj, () => {
 			sentAt = lastChange = Date.now();
 			const ta2 = input() || ta;
 			// Поле под React: значение — через родной сеттер, затем событие input
@@ -307,18 +326,21 @@
 				const b = sendButton();
 				if (b) {
 					b.click();
+					sending = false;
 					log('sent, button ' + path(b));
 				} else {
 					// Без кнопки — Enter (на телефоне сайт его может не принять)
 					ta2.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+					sending = false;
 					log('sent by Enter: no send button');
 				}
 			}, 300);
-			}));
+			})));
 			return JSON.stringify({ ok: true });
 		},
 
 		poll: function () {
+			if (sending) return JSON.stringify({ state: 'wait', text: '', sending: true });
 			if (needLogin()) return JSON.stringify({ state: 'login' });
 			const all = replies();
 			const fresh = all.filter(e => before.indexOf(e) < 0);
