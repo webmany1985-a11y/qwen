@@ -4,27 +4,30 @@ import static me.aap.fermata.util.Utils.dynCtx;
 
 import android.content.Context;
 import android.content.res.Resources;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.res.ResourcesCompat;
 
-
 import me.aap.fermata.addon.AddonManager;
+import me.aap.fermata.ui.activity.MainActivityDelegate;
 import me.aap.utils.ui.menu.OverlayMenu;
 import me.aap.utils.ui.menu.OverlayMenuItem;
 
 /**
  * Вкладка «Видео» — общий встроенный проигрыватель (пожелание 22.10.2026):
  * открывается со страницы «Мои сайты» (адреса вписывает пользователь),
- * видео при запуске само разворачивается во весь экран
- * (assets/video_fullscreen.js — во всех кадрах страницы, и во встроенных
- * плеерах тоже). В машине — как TikTok: версия для компьютера, на весь экран.
+ * видео при запуске само разворачивается во весь экран ({@link AutoFullScreen}).
+ * Как вкладки YouTube и «Кинопоиск»: страница под размер экрана, без версии
+ * для компьютера и без скрытия панелей — от них изображение меняло размер.
  */
 @Keep
 @SuppressWarnings("unused")
-public class VideoSitesFragment extends TikTokFragment {
+public class VideoSitesFragment extends WebBrowserFragment {
 
 	@Override
 	public int getFragmentId() {
@@ -32,24 +35,17 @@ public class VideoSitesFragment extends TikTokFragment {
 	}
 
 	@Override
-	protected FermataWebClient createWebClient() {
-		return new VideoSitesWebClient(AddonManager.get().getAddon(VideoSitesAddon.class));
-	}
-
-	@Override
-	protected String startUrl(WebBrowserAddon addon) {
-		return VideoSitesPage.HOME;
-	}
-
-	@Override
-	protected void onWebViewReady(FermataWebView webView) {
+	public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+		VideoSitesAddon addon = AddonManager.get().getAddon(VideoSitesAddon.class);
+		if (addon == null) return;
+		Context ctx = view.getContext();
+		FermataWebView webView = view.findViewById(R.id.browserWebView);
+		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
+		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
+		webView.init(addon, new VideoSitesWebClient(addon), chromeClient);
 		AutoFullScreen.install(webView, "Video");
-	}
-
-	@NonNull
-	@Override
-	protected String tabName() {
-		return "Video";
+		webView.loadUrl(VideoSitesPage.HOME);
+		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 
 	@Nullable
