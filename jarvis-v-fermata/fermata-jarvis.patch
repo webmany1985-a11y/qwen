@@ -4270,6 +4270,21 @@ index 0000000..9174478
 +        android:strokeAlpha="0.5"
 +        android:pathData="M54,74 A26,26 0 0,1 28,48" />
 +</vector>
+diff --git a/fermata/src/main/res/drawable/kinopoisk.xml b/fermata/src/main/res/drawable/kinopoisk.xml
+new file mode 100644
+index 0000000..8bbc460
+--- /dev/null
++++ b/fermata/src/main/res/drawable/kinopoisk.xml
+@@ -0,0 +1,9 @@
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++  <path
++      android:pathData="M21,4L3,4C1.89,4 1,4.89 1,6v12c0,1.1 0.89,2 2,2 9.9049,0.0019 9.9062,0 18,0 1.1,0 1.99,-0.9 1.99,-2L23,6C23,4.89 22.1,4 21,4ZM21,18L3,18L3,6L21,6ZM16,12 L9,16L9,8Z"
++      android:fillColor="#000000"/>
++</vector>
 diff --git a/fermata/src/main/res/drawable/launcher.xml b/fermata/src/main/res/drawable/launcher.xml
 index 4ec9226..769ac7f 100644
 --- a/fermata/src/main/res/drawable/launcher.xml
@@ -4324,14 +4339,15 @@ index 97bd633..2f76dd0 100644
          с простым и интуитивным интерфейсом.</p>
          <p><b>Автор:</b> Андрей Павленко</p>
 diff --git a/fermata/src/main/res/values/ids.xml b/fermata/src/main/res/values/ids.xml
-index 346317f..ed8337f 100644
+index 346317f..1ffd36e 100644
 --- a/fermata/src/main/res/values/ids.xml
 +++ b/fermata/src/main/res/values/ids.xml
-@@ -32,10 +32,12 @@
+@@ -32,10 +32,13 @@
      <item name="subtitles_fragment" type="id" />
      <item name="tv_fragment" type="id" />
      <item name="youtube_fragment" type="id" />
 +    <item name="tiktok_fragment" type="id" />
++    <item name="kinopoisk_fragment" type="id" />
      <item name="web_browser_fragment" type="id" />
      <item name="felex_fragment" type="id" />
      <item name="cast_addon" type="id" />
@@ -4341,7 +4357,7 @@ index 346317f..ed8337f 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..95f06e6 100644
+index 77a9b17..ed14fed 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
 @@ -1,15 +1,15 @@
@@ -4364,11 +4380,12 @@ index 77a9b17..95f06e6 100644
      <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
      <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
      <string name="engine_mp_name" translatable="false">MediaPlayer</string>
-@@ -26,9 +26,12 @@
+@@ -26,9 +26,13 @@
      <string name="addon_name_tv">TV</string>
      <string name="addon_name_web_browser">Web browser</string>
      <string name="addon_name_youtube" translatable="false">Youtube</string>
 +    <string name="addon_name_tiktok" translatable="false">TikTok</string>
++    <string name="addon_name_kinopoisk" translatable="false">Кинопоиск</string>
      <string name="addon_name_felex" translatable="false">Felex</string>
      <string name="addon_name_cast" translatable="false">Google Cast</string>
      <string name="addon_name_chat" translatable="false">ChatGPT</string>
@@ -4377,7 +4394,7 @@ index 77a9b17..95f06e6 100644
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
-@@ -364,14 +367,17 @@
+@@ -364,14 +368,17 @@
      <string name="import_prefs_ok">Preferences have been successfully imported.\nPlease, restart the application.</string>
      <string name="import_prefs_failed">Failed to import preferences: %1$s</string>
      <string name="prefs_not_found">No preferences found</string>
@@ -17526,10 +17543,10 @@ index 0000000..db60d0a
 +	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle
-index 7b574fe..adb25e2 100644
+index 7b574fe..adfe3d4 100644
 --- a/modules/web/build.gradle
 +++ b/modules/web/build.gradle
-@@ -14,6 +14,12 @@ ext {
+@@ -14,6 +14,18 @@ ext {
                      class: 'me.aap.fermata.addon.web.yt.YoutubeAddon',
                      order: 2
              ],
@@ -17537,6 +17554,12 @@ index 7b574fe..adb25e2 100644
 +                    name : 'tiktok',
 +                    icon : 'tiktok',
 +                    class: 'me.aap.fermata.addon.web.TikTokAddon',
++                    order: 3
++            ],
++            [
++                    name : 'kinopoisk',
++                    icon : 'kinopoisk',
++                    class: 'me.aap.fermata.addon.web.KinopoiskAddon',
 +                    order: 3
 +            ],
              [
@@ -18045,6 +18068,236 @@ index 36bb68d..2c09403 100644
  	}
  
  	public WebBrowserAddon getAddon() {
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskAddon.java b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskAddon.java
+new file mode 100644
+index 0000000..b8fa725
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskAddon.java
+@@ -0,0 +1,110 @@
++package me.aap.fermata.addon.web;
++
++import android.content.Context;
++
++import androidx.annotation.IdRes;
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.util.List;
++
++import me.aap.fermata.addon.AddonInfo;
++import me.aap.fermata.addon.FermataAddon;
++import me.aap.utils.function.BooleanSupplier;
++import me.aap.utils.function.IntSupplier;
++import me.aap.utils.function.Supplier;
++import me.aap.utils.misc.ChangeableCondition;
++import me.aap.utils.pref.PreferenceSet;
++import me.aap.utils.pref.PreferenceStore;
++import me.aap.utils.ui.fragment.ActivityFragment;
++
++/**
++ * Вкладка «Кинопоиск» (hd.kinopoisk.ru) вместо ChatGPT (пожелание 22.10.2026,
++ * подписка у пользователя есть). Встроенный браузер, как TikTok: вход в
++ * аккаунт Яндекса сохраняется, фильм — во весь экран плеером сайта
++ * (полноэкранный режим страницы показывается на месте вкладки, как у YouTube).
++ * Свои настройки (последняя страница, тёмная тема, закладки).
++ */
++@Keep
++@SuppressWarnings("unused")
++public class KinopoiskAddon extends WebBrowserAddon {
++	static final String DEFAULT_URL = "https://hd.kinopoisk.ru/";
++	@NonNull
++	private static final AddonInfo info = FermataAddon.findAddonInfo(KinopoiskAddon.class.getName());
++	private static final Pref<Supplier<String>> KP_LAST_URL = Pref.s("KP_LAST_URL", DEFAULT_URL);
++	private static final Pref<IntSupplier> KP_DARK_MODE = Pref.i("KP_DARK_MODE", DARK_MODE_AUTO);
++	private static final Pref<BooleanSupplier> KP_DESKTOP_VERSION = Pref.b("KP_DESKTOP_VERSION", false);
++	private static final Pref<Supplier<String[]>> KP_BOOKMARKS = Pref.sa("KP_BOOKMARKS");
++
++	@IdRes
++	@Override
++	public int getAddonId() {
++		return me.aap.fermata.R.id.kinopoisk_fragment;
++	}
++
++	@NonNull
++	@Override
++	public AddonInfo getInfo() {
++		return info;
++	}
++
++	@NonNull
++	@Override
++	public ActivityFragment createFragment() {
++		return new KinopoiskFragment();
++	}
++
++	@Override
++	public void contributeSettings(Context ctx, PreferenceStore store, PreferenceSet set,
++																 ChangeableCondition visibility) {
++		set.addListPref(o -> {
++			o.store = getPreferenceStore();
++			o.pref = getForceDarkPref();
++			o.title = R.string.force_dark;
++			o.subtitle = R.string.force_dark_sub;
++			o.visibility = visibility;
++			o.formatSubtitle = true;
++			o.values = new int[]{R.string.force_dark_disabled, R.string.force_dark_enabled,
++					R.string.force_dark_auto};
++		});
++	}
++
++	@Override
++	public void onPreferenceChanged(PreferenceStore store, List<Pref<?>> prefs) {
++		// Настройка «открывать при запуске» принадлежит «Браузеру» — не трогаем
++	}
++
++	@Override
++	public Pref<IntSupplier> getForceDarkPref() {
++		return KP_DARK_MODE;
++	}
++
++	@Override
++	public Pref<BooleanSupplier> getDesktopVersionPref() {
++		return KP_DESKTOP_VERSION;
++	}
++
++	@Override
++	public Pref<Supplier<String[]>> getBookmarksPref() {
++		return KP_BOOKMARKS;
++	}
++
++	@Override
++	String getLastUrl() {
++		String u = getPreferenceStore().getStringPref(KP_LAST_URL);
++		return isKinopoiskPage(u) ? u : DEFAULT_URL;
++	}
++
++	@Override
++	void setLastUrl(String url) {
++		// Страницы входа Яндекса не запоминаем: после входа — снова Кинопоиск
++		if (isKinopoiskPage(url)) getPreferenceStore().applyStringPref(KP_LAST_URL, url);
++	}
++
++	static boolean isKinopoiskPage(@Nullable String url) {
++		if (url == null) return false;
++		android.net.Uri u = android.net.Uri.parse(url);
++		return "https".equals(u.getScheme()) && KinopoiskWebClient.isKinopoisk(u);
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java
+new file mode 100644
+index 0000000..cc8a3fd
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskFragment.java
+@@ -0,0 +1,44 @@
++package me.aap.fermata.addon.web;
++
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import me.aap.fermata.addon.AddonManager;
++
++/**
++ * Экран вкладки «Кинопоиск»: как у TikTok — в машине версия для компьютера и
++ * вкладка на весь экран (значок в углу возвращает панели); фильм — во весь
++ * экран плеером сайта.
++ */
++@Keep
++@SuppressWarnings("unused")
++public class KinopoiskFragment extends TikTokFragment {
++
++	@Override
++	public int getFragmentId() {
++		return me.aap.fermata.R.id.kinopoisk_fragment;
++	}
++
++	@Override
++	protected FermataWebClient createWebClient() {
++		return new KinopoiskWebClient();
++	}
++
++	@NonNull
++	@Override
++	protected String tabName() {
++		return "Kinopoisk";
++	}
++
++	@Nullable
++	@Override
++	protected WebBrowserAddon getAddon() {
++		return AddonManager.get().getAddon(KinopoiskAddon.class);
++	}
++
++	@Override
++	protected String getSearchUrl() {
++		return "https://hd.kinopoisk.ru/search?text=";
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskWebClient.java
+new file mode 100644
+index 0000000..6da8d04
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/KinopoiskWebClient.java
+@@ -0,0 +1,58 @@
++package me.aap.fermata.addon.web;
++
++import android.net.Uri;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebView;
++import android.widget.Toast;
++
++import androidx.annotation.NonNull;
++import androidx.webkit.WebResourceErrorCompat;
++import androidx.webkit.WebViewFeature;
++
++import me.aap.utils.log.Log;
++
++/**
++ * Кинопоиск во вкладке: ссылки «открыть в приложении» и в магазин не
++ * открываются (во вкладке это белая страница — так было у TikTok), вход в
++ * Яндекс (passport.yandex.*) — обычными страницами внутри вкладки.
++ */
++public class KinopoiskWebClient extends FermataWebClient {
++
++	@Override
++	public void onPageFinished(WebView view, String url) {
++		super.onPageFinished(view, url);
++		Log.i("Kinopoisk: page finished ", url, ", view ", view.getWidth(), "x", view.getHeight());
++	}
++
++	@Override
++	public void onReceivedError(@NonNull WebView view, @NonNull WebResourceRequest request,
++															@NonNull WebResourceErrorCompat error) {
++		super.onReceivedError(view, request, error);
++		if (!request.isForMainFrame()) return;
++		String d = WebViewFeature.isFeatureSupported(
++				WebViewFeature.WEB_RESOURCE_ERROR_GET_DESCRIPTION) ? String.valueOf(error.getDescription()) : "";
++		Log.i("Kinopoisk: main frame error ", d, " for ", request.getUrl());
++		Toast.makeText(view.getContext(), "Кинопоиск не загрузился " + d, Toast.LENGTH_LONG).show();
++	}
++
++	@Override
++	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
++																					@NonNull WebResourceRequest request) {
++		Uri u = request.getUrl();
++		String scheme = u.getScheme();
++		if (!"http".equals(scheme) && !"https".equals(scheme)) {
++			Log.i("Kinopoisk: app link blocked ", u);
++			return true;
++		}
++		if (TikTokWebClient.isAppLink(u)) {
++			Log.i("Kinopoisk: store link blocked ", u);
++			return true;
++		}
++		return super.shouldOverrideUrlLoading(view, request);
++	}
++
++	static boolean isKinopoisk(Uri uri) {
++		String host = uri.getHost();
++		return (host != null) && (host.equals("kinopoisk.ru") || host.endsWith(".kinopoisk.ru"));
++	}
++}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokAddon.java
 new file mode 100644
 index 0000000..06b8585
@@ -18164,10 +18417,10 @@ index 0000000..06b8585
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
 new file mode 100644
-index 0000000..e6e6105
+index 0000000..a4564b2
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
-@@ -0,0 +1,155 @@
+@@ -0,0 +1,166 @@
 +package me.aap.fermata.addon.web;
 +
 +import android.content.Context;
@@ -18203,7 +18456,7 @@ index 0000000..e6e6105
 +		FermataWebView webView = view.findViewById(R.id.browserWebView);
 +		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 +		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
-+		webView.init(addon, new TikTokWebClient(), chromeClient);
++		webView.init(addon, createWebClient(), chromeClient);
 +		if (isCarScreen(ctx)) {
 +			// В машине — версия TikTok для компьютера: под широкий экран, без окна
 +			// «Открыть TikTok», которое в мобильной версии затемняло экран и
@@ -18215,7 +18468,7 @@ index 0000000..e6e6105
 +			// fitCarScreen), браузер её примет и впишет в экран
 +			ws.setUseWideViewPort(true);
 +			ws.setLoadWithOverviewMode(true);
-+			me.aap.utils.log.Log.i("TikTok: car screen, desktop version: ", ua);
++			me.aap.utils.log.Log.i(tabName(), ": car screen, desktop version: ", ua);
 +		}
 +		webView.loadUrl(addon.getLastUrl());
 +		addToggle(view);
@@ -18239,9 +18492,9 @@ index 0000000..e6e6105
 +			carFullScreen = on;
 +			a.setBarsHidden(on);
 +			if (toggle != null) toggle.setAlpha(on ? 0.35f : 0.8f);
-+			me.aap.utils.log.Log.i("TikTok: car full screen ", on);
++			me.aap.utils.log.Log.i(tabName(), ": car full screen ", on);
 +		} catch (RuntimeException ex) {
-+			me.aap.utils.log.Log.e(ex, "TikTok: car full screen failed");
++			me.aap.utils.log.Log.e(ex, tabName(), ": car full screen failed");
 +		}
 +	}
 +
@@ -18304,7 +18557,18 @@ index 0000000..e6e6105
 +		super.onDestroyView();
 +	}
 +
-+	private static boolean isCarScreen(Context ctx) {
++	/** Веб-клиент вкладки: у TikTok — со скриптом ленты. */
++	protected FermataWebClient createWebClient() {
++		return new TikTokWebClient();
++	}
++
++	/** Имя вкладки для журнала. */
++	@NonNull
++	protected String tabName() {
++		return "TikTok";
++	}
++
++	static boolean isCarScreen(Context ctx) {
 +		try {
 +			return MainActivityDelegate.get(ctx).isCarActivityNotMirror();
 +		} catch (RuntimeException ex) {
@@ -18448,3 +18712,16 @@ index 0000000..0a528e1
 +		}
 +	}
 +}
+diff --git a/settings.gradle b/settings.gradle
+index e93b2ef..34ce457 100644
+--- a/settings.gradle
++++ b/settings.gradle
+@@ -32,6 +32,8 @@ project(':utils').projectDir = file('depends/utils')
+ file('modules').eachDir {
+     def name = ':' + it.name
+     if ((':gdrive' == name) && !gradle.ext.enableGoogleServices) return
++    // Вкладка ChatGPT не нужна (пожелание 22.10.2026): разговор ведёт Qwen во вкладке JARVIS
++    if (':chat' == name) return
+     gradle.ext.modules.add(name)
+     include name
+     project(name).projectDir = it

@@ -33,7 +33,7 @@ public class TikTokFragment extends WebBrowserFragment {
 		FermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
-		webView.init(addon, new TikTokWebClient(), chromeClient);
+		webView.init(addon, createWebClient(), chromeClient);
 		if (isCarScreen(ctx)) {
 			// В машине — версия TikTok для компьютера: под широкий экран, без окна
 			// «Открыть TikTok», которое в мобильной версии затемняло экран и
@@ -45,7 +45,7 @@ public class TikTokFragment extends WebBrowserFragment {
 			// fitCarScreen), браузер её примет и впишет в экран
 			ws.setUseWideViewPort(true);
 			ws.setLoadWithOverviewMode(true);
-			me.aap.utils.log.Log.i("TikTok: car screen, desktop version: ", ua);
+			me.aap.utils.log.Log.i(tabName(), ": car screen, desktop version: ", ua);
 		}
 		webView.loadUrl(addon.getLastUrl());
 		addToggle(view);
@@ -69,9 +69,9 @@ public class TikTokFragment extends WebBrowserFragment {
 			carFullScreen = on;
 			a.setBarsHidden(on);
 			if (toggle != null) toggle.setAlpha(on ? 0.35f : 0.8f);
-			me.aap.utils.log.Log.i("TikTok: car full screen ", on);
+			me.aap.utils.log.Log.i(tabName(), ": car full screen ", on);
 		} catch (RuntimeException ex) {
-			me.aap.utils.log.Log.e(ex, "TikTok: car full screen failed");
+			me.aap.utils.log.Log.e(ex, tabName(), ": car full screen failed");
 		}
 	}
 
@@ -134,7 +134,18 @@ public class TikTokFragment extends WebBrowserFragment {
 		super.onDestroyView();
 	}
 
-	private static boolean isCarScreen(Context ctx) {
+	/** Веб-клиент вкладки: у TikTok — со скриптом ленты. */
+	protected FermataWebClient createWebClient() {
+		return new TikTokWebClient();
+	}
+
+	/** Имя вкладки для журнала. */
+	@NonNull
+	protected String tabName() {
+		return "TikTok";
+	}
+
+	static boolean isCarScreen(Context ctx) {
 		try {
 			return MainActivityDelegate.get(ctx).isCarActivityNotMirror();
 		} catch (RuntimeException ex) {

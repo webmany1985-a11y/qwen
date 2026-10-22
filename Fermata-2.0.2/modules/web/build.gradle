@@ -21,6 +21,12 @@ ext {
                     order: 3
             ],
             [
+                    name : 'kinopoisk',
+                    icon : 'kinopoisk',
+                    class: 'me.aap.fermata.addon.web.KinopoiskAddon',
+                    order: 3
+            ],
+            [
                     name : 'web_browser',
                     icon : 'web',
                     class: 'me.aap.fermata.addon.web.WebBrowserAddon',

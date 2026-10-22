@@ -32,6 +32,8 @@ project(':utils').projectDir = file('depends/utils')
 file('modules').eachDir {
     def name = ':' + it.name
     if ((':gdrive' == name) && !gradle.ext.enableGoogleServices) return
+    // Вкладка ChatGPT не нужна (пожелание 22.10.2026): разговор ведёт Qwen во вкладке JARVIS
+    if (':chat' == name) return
     gradle.ext.modules.add(name)
     include name
     project(name).projectDir = it
