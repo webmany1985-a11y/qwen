@@ -47,7 +47,8 @@ public class TikTokFragment extends WebBrowserFragment {
 			ws.setLoadWithOverviewMode(true);
 			me.aap.utils.log.Log.i(tabName(), ": car screen, desktop version: ", ua);
 		}
-		webView.loadUrl(addon.getLastUrl());
+		onWebViewReady(webView);
+		webView.loadUrl(startUrl(addon));
 		addToggle(view);
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
@@ -132,6 +133,15 @@ public class TikTokFragment extends WebBrowserFragment {
 		setCarFullScreen(false);
 		toggle = null;
 		super.onDestroyView();
+	}
+
+	/** С какой страницы открыть вкладку. */
+	protected String startUrl(WebBrowserAddon addon) {
+		return addon.getLastUrl();
+	}
+
+	/** Браузер вкладки настроен, страница ещё не загружена. */
+	protected void onWebViewReady(FermataWebView webView) {
 	}
 
 	/** Веб-клиент вкладки: у TikTok — со скриптом ленты. */

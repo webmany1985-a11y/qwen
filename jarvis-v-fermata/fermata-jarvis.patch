@@ -4339,15 +4339,17 @@ index 97bd633..2f76dd0 100644
          с простым и интуитивным интерфейсом.</p>
          <p><b>Автор:</b> Андрей Павленко</p>
 diff --git a/fermata/src/main/res/values/ids.xml b/fermata/src/main/res/values/ids.xml
-index 346317f..1ffd36e 100644
+index 346317f..2e91124 100644
 --- a/fermata/src/main/res/values/ids.xml
 +++ b/fermata/src/main/res/values/ids.xml
-@@ -32,10 +32,13 @@
+@@ -32,10 +32,15 @@
      <item name="subtitles_fragment" type="id" />
      <item name="tv_fragment" type="id" />
      <item name="youtube_fragment" type="id" />
 +    <item name="tiktok_fragment" type="id" />
 +    <item name="kinopoisk_fragment" type="id" />
++    <item name="video_sites_fragment" type="id" />
++    <item name="video_sites_home" type="id" />
      <item name="web_browser_fragment" type="id" />
      <item name="felex_fragment" type="id" />
      <item name="cast_addon" type="id" />
@@ -4357,7 +4359,7 @@ index 346317f..1ffd36e 100644
      <item name="whisper_addon" type="id" />
      <item name="translate_addon" type="id" />
 diff --git a/fermata/src/main/res/values/strings.xml b/fermata/src/main/res/values/strings.xml
-index 77a9b17..ed14fed 100644
+index 77a9b17..e6bbfbe 100644
 --- a/fermata/src/main/res/values/strings.xml
 +++ b/fermata/src/main/res/values/strings.xml
 @@ -1,15 +1,15 @@
@@ -4380,12 +4382,13 @@ index 77a9b17..ed14fed 100644
      <string name="media_service_name_mobile_debug" translatable="false">@string/app_name_mobile_debug</string>
      <string name="media_service_name_auto_debug" translatable="false">Debug Fermata Media Service</string>
      <string name="engine_mp_name" translatable="false">MediaPlayer</string>
-@@ -26,9 +26,13 @@
+@@ -26,9 +26,14 @@
      <string name="addon_name_tv">TV</string>
      <string name="addon_name_web_browser">Web browser</string>
      <string name="addon_name_youtube" translatable="false">Youtube</string>
 +    <string name="addon_name_tiktok" translatable="false">TikTok</string>
 +    <string name="addon_name_kinopoisk" translatable="false">Кинопоиск</string>
++    <string name="addon_name_video_sites" translatable="false">Видео</string>
      <string name="addon_name_felex" translatable="false">Felex</string>
      <string name="addon_name_cast" translatable="false">Google Cast</string>
      <string name="addon_name_chat" translatable="false">ChatGPT</string>
@@ -4394,7 +4397,7 @@ index 77a9b17..ed14fed 100644
      <string name="addon_name_translate" translatable="false">Language translator</string>
      <string name="addon_name_subgen" translatable="false">Subtitles generator</string>
      <string name="addon_name_whisper" translatable="false">Whisper</string>
-@@ -364,14 +368,17 @@
+@@ -364,14 +369,17 @@
      <string name="import_prefs_ok">Preferences have been successfully imported.\nPlease, restart the application.</string>
      <string name="import_prefs_failed">Failed to import preferences: %1$s</string>
      <string name="prefs_not_found">No preferences found</string>
@@ -17543,10 +17546,10 @@ index 0000000..db60d0a
 +	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle
-index 7b574fe..adfe3d4 100644
+index 7b574fe..9537519 100644
 --- a/modules/web/build.gradle
 +++ b/modules/web/build.gradle
-@@ -14,6 +14,18 @@ ext {
+@@ -14,6 +14,24 @@ ext {
                      class: 'me.aap.fermata.addon.web.yt.YoutubeAddon',
                      order: 2
              ],
@@ -17560,6 +17563,12 @@ index 7b574fe..adfe3d4 100644
 +                    name : 'kinopoisk',
 +                    icon : 'kinopoisk',
 +                    class: 'me.aap.fermata.addon.web.KinopoiskAddon',
++                    order: 3
++            ],
++            [
++                    name : 'video_sites',
++                    icon : 'video',
++                    class: 'me.aap.fermata.addon.web.VideoSitesAddon',
 +                    order: 3
 +            ],
              [
@@ -18002,6 +18011,31 @@ index 0000000..653cd8c
 +
 +  window.__jarvisTt = { next: next };
 +})();
+diff --git a/modules/web/src/main/assets/video_fullscreen.js b/modules/web/src/main/assets/video_fullscreen.js
+new file mode 100644
+index 0000000..1981d8e
+--- /dev/null
++++ b/modules/web/src/main/assets/video_fullscreen.js
+@@ -0,0 +1,19 @@
++// Вкладка «Видео»: видео, запущенное человеком, — сразу во весь экран
++// (во всех кадрах страницы, и во встроенных плеерах тоже). Беззвучные
++// превью и автозапуск без касания не трогаем.
++(function () {
++	if (window.__jarvisVideoFs) return;
++	window.__jarvisVideoFs = true;
++	document.addEventListener('play', function (e) {
++		var v = e.target;
++		if (!(v instanceof HTMLVideoElement) || v.muted) return;
++		if (document.fullscreenElement || document.webkitFullscreenElement) return;
++		if (navigator.userActivation && !navigator.userActivation.isActive) return;
++		var fs = v.requestFullscreen || v.webkitRequestFullscreen || v.webkitEnterFullscreen;
++		if (!fs) return;
++		try {
++			var r = fs.call(v);
++			if (r && r.catch) r.catch(function () { });
++		} catch (x) { }
++	}, true);
++})();
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
 index b0f03df..6b29028 100644
 --- a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
@@ -18417,10 +18451,10 @@ index 0000000..06b8585
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
 new file mode 100644
-index 0000000..a4564b2
+index 0000000..93c3885
 --- /dev/null
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/TikTokFragment.java
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,176 @@
 +package me.aap.fermata.addon.web;
 +
 +import android.content.Context;
@@ -18470,7 +18504,8 @@ index 0000000..a4564b2
 +			ws.setLoadWithOverviewMode(true);
 +			me.aap.utils.log.Log.i(tabName(), ": car screen, desktop version: ", ua);
 +		}
-+		webView.loadUrl(addon.getLastUrl());
++		onWebViewReady(webView);
++		webView.loadUrl(startUrl(addon));
 +		addToggle(view);
 +		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 +	}
@@ -18555,6 +18590,15 @@ index 0000000..a4564b2
 +		setCarFullScreen(false);
 +		toggle = null;
 +		super.onDestroyView();
++	}
++
++	/** С какой страницы открыть вкладку. */
++	protected String startUrl(WebBrowserAddon addon) {
++		return addon.getLastUrl();
++	}
++
++	/** Браузер вкладки настроен, страница ещё не загружена. */
++	protected void onWebViewReady(FermataWebView webView) {
 +	}
 +
 +	/** Веб-клиент вкладки: у TikTok — со скриптом ленты. */
@@ -18710,6 +18754,498 @@ index 0000000..0a528e1
 +			Log.e(ex, "TikTok: failed to load tiktok_autonext.js");
 +			return null;
 +		}
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesAddon.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesAddon.java
+new file mode 100644
+index 0000000..a52d3da
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesAddon.java
+@@ -0,0 +1,96 @@
++package me.aap.fermata.addon.web;
++
++import android.content.Context;
++
++import androidx.annotation.IdRes;
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++
++import java.util.List;
++
++import me.aap.fermata.addon.AddonInfo;
++import me.aap.fermata.addon.FermataAddon;
++import me.aap.utils.function.BooleanSupplier;
++import me.aap.utils.function.IntSupplier;
++import me.aap.utils.function.Supplier;
++import me.aap.utils.misc.ChangeableCondition;
++import me.aap.utils.pref.PreferenceSet;
++import me.aap.utils.pref.PreferenceStore;
++import me.aap.utils.ui.fragment.ActivityFragment;
++
++/**
++ * Вкладка «Видео»: общий встроенный проигрыватель с сайтами пользователя
++ * (см. {@link VideoSitesFragment}). Список сайтов — закладки этой вкладки,
++ * отдельные от «Браузера».
++ */
++@Keep
++@SuppressWarnings("unused")
++public class VideoSitesAddon extends WebBrowserAddon {
++	@NonNull
++	private static final AddonInfo info = FermataAddon.findAddonInfo(VideoSitesAddon.class.getName());
++	private static final Pref<IntSupplier> VS_DARK_MODE = Pref.i("VS_DARK_MODE", DARK_MODE_AUTO);
++	private static final Pref<BooleanSupplier> VS_DESKTOP_VERSION = Pref.b("VS_DESKTOP_VERSION", false);
++	private static final Pref<Supplier<String[]>> VS_SITES = Pref.sa("VS_SITES");
++
++	@IdRes
++	@Override
++	public int getAddonId() {
++		return me.aap.fermata.R.id.video_sites_fragment;
++	}
++
++	@NonNull
++	@Override
++	public AddonInfo getInfo() {
++		return info;
++	}
++
++	@NonNull
++	@Override
++	public ActivityFragment createFragment() {
++		return new VideoSitesFragment();
++	}
++
++	@Override
++	public void contributeSettings(Context ctx, PreferenceStore store, PreferenceSet set,
++																 ChangeableCondition visibility) {
++		set.addListPref(o -> {
++			o.store = getPreferenceStore();
++			o.pref = getForceDarkPref();
++			o.title = R.string.force_dark;
++			o.subtitle = R.string.force_dark_sub;
++			o.visibility = visibility;
++			o.formatSubtitle = true;
++			o.values = new int[]{R.string.force_dark_disabled, R.string.force_dark_enabled,
++					R.string.force_dark_auto};
++		});
++	}
++
++	@Override
++	public void onPreferenceChanged(PreferenceStore store, List<Pref<?>> prefs) {
++	}
++
++	@Override
++	public Pref<IntSupplier> getForceDarkPref() {
++		return VS_DARK_MODE;
++	}
++
++	@Override
++	public Pref<BooleanSupplier> getDesktopVersionPref() {
++		return VS_DESKTOP_VERSION;
++	}
++
++	@Override
++	public Pref<Supplier<String[]>> getBookmarksPref() {
++		return VS_SITES;
++	}
++
++	@Override
++	String getLastUrl() {
++		return VideoSitesPage.HOME;
++	}
++
++	@Override
++	void setLastUrl(String url) {
++		// Вкладка всегда открывается со страницы «Мои сайты»
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java
+new file mode 100644
+index 0000000..49bd049
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesFragment.java
+@@ -0,0 +1,100 @@
++package me.aap.fermata.addon.web;
++
++import static me.aap.fermata.util.Utils.dynCtx;
++
++import android.content.Context;
++import android.content.res.Resources;
++
++import androidx.annotation.Keep;
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++import androidx.core.content.res.ResourcesCompat;
++import androidx.webkit.WebViewCompat;
++import androidx.webkit.WebViewFeature;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++import java.util.Collections;
++
++import me.aap.fermata.addon.AddonManager;
++import me.aap.utils.log.Log;
++import me.aap.utils.ui.menu.OverlayMenu;
++import me.aap.utils.ui.menu.OverlayMenuItem;
++
++/**
++ * Вкладка «Видео» — общий встроенный проигрыватель (пожелание 22.10.2026):
++ * открывается со страницы «Мои сайты» (адреса вписывает пользователь),
++ * видео при запуске само разворачивается во весь экран
++ * (assets/video_fullscreen.js — во всех кадрах страницы, и во встроенных
++ * плеерах тоже). В машине — как TikTok: версия для компьютера, на весь экран.
++ */
++@Keep
++@SuppressWarnings("unused")
++public class VideoSitesFragment extends TikTokFragment {
++
++	@Override
++	public int getFragmentId() {
++		return me.aap.fermata.R.id.video_sites_fragment;
++	}
++
++	@Override
++	protected FermataWebClient createWebClient() {
++		return new VideoSitesWebClient(AddonManager.get().getAddon(VideoSitesAddon.class));
++	}
++
++	@Override
++	protected String startUrl(WebBrowserAddon addon) {
++		return VideoSitesPage.HOME;
++	}
++
++	@Override
++	protected void onWebViewReady(FermataWebView webView) {
++		String js = script(webView.getContext());
++		if ((js == null) || !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
++			Log.i("Video: auto full screen script not available");
++			return;
++		}
++		WebViewCompat.addDocumentStartJavaScript(webView, js, Collections.singleton("*"));
++	}
++
++	@NonNull
++	@Override
++	protected String tabName() {
++		return "Video";
++	}
++
++	@Nullable
++	@Override
++	protected WebBrowserAddon getAddon() {
++		return AddonManager.get().getAddon(VideoSitesAddon.class);
++	}
++
++	@Override
++	public void contributeToNavBarMenu(OverlayMenu.Builder b) {
++		Context ctx = dynCtx(requireContext());
++		Resources res = ctx.getResources();
++		b.addItem(me.aap.fermata.R.id.video_sites_home,
++				ResourcesCompat.getDrawable(res, me.aap.fermata.R.drawable.bookmark_filled, ctx.getTheme()),
++				"Мои сайты").setHandler(this::home);
++		super.contributeToNavBarMenu(b);
++	}
++
++	private boolean home(OverlayMenuItem item) {
++		loadUrl(VideoSitesPage.HOME);
++		return true;
++	}
++
++	@Nullable
++	private static String script(Context ctx) {
++		try (InputStream in = dynCtx(ctx).getAssets().open("video_fullscreen.js")) {
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			byte[] buf = new byte[4096];
++			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
++			return out.toString(StandardCharsets.UTF_8.name());
++		} catch (Exception ex) {
++			Log.e(ex, "Video: failed to load video_fullscreen.js");
++			return null;
++		}
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesPage.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesPage.java
+new file mode 100644
+index 0000000..fa29e7d
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesPage.java
+@@ -0,0 +1,116 @@
++package me.aap.fermata.addon.web;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.util.Locale;
++import java.util.Map;
++
++/**
++ * Стартовая страница вкладки «Видео»: сайты пользователя крупными кнопками,
++ * «Добавить», «Изменить», «Удалить». Страница своя (адрес {@link #HOME}),
++ * её отдаёт {@link VideoSitesWebClient}; действия — переходы на
++ * {@link #ACTION}?do=…, которые клиент выполняет, только если они пришли
++ * с этой страницы. Чистая логика без Android — проверяется тестом.
++ */
++final class VideoSitesPage {
++	static final String HOME = "https://jarvis-video.local/";
++	static final String ACTION = HOME + "act";
++
++	private VideoSitesPage() {
++	}
++
++	/** Адрес, как его ввёл человек, — в полный: «rutube.ru» → «https://rutube.ru». Пусто — null. */
++	@Nullable
++	static String normalizeUrl(@Nullable String url) {
++		if (url == null) return null;
++		String u = url.trim();
++		if (u.isEmpty()) return null;
++		String l = u.toLowerCase(Locale.ROOT);
++		if (l.startsWith("http://") || l.startsWith("https://")) return u;
++		if (l.contains("://") || l.startsWith("javascript:") || l.startsWith("data:")) return null;
++		return "https://" + u;
++	}
++
++	/** Название по умолчанию — имя сайта из адреса. */
++	@NonNull
++	static String defaultName(@NonNull String url) {
++		String h = url.replaceFirst("(?i)^https?://", "");
++		int i = h.indexOf('/');
++		if (i > 0) h = h.substring(0, i);
++		return h.replaceFirst("(?i)^www\\.", "");
++	}
++
++	/** HTML стартовой страницы. sites — адрес → название, по порядку добавления. */
++	@NonNull
++	static String html(@NonNull Map<String, String> sites, @Nullable String editUrl) {
++		StringBuilder b = new StringBuilder(4096);
++		b.append("<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">")
++				.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
++				.append("<title>Мои сайты</title><style>")
++				.append("body{margin:0;padding:16px;background:#0b0f14;color:#f2e6c9;font:18px sans-serif}")
++				.append("h1{font-size:22px;color:#ffb23a;margin:0 0 12px}")
++				.append(".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}")
++				.append(".site{background:#1b222c;border:1px solid #3a2f1a;border-radius:14px;padding:14px}")
++				.append(".open{display:block;color:#fff;text-decoration:none;font-size:22px;padding:10px 0}")
++				.append(".url{color:#9aa4b1;font-size:13px;word-break:break-all}")
++				.append(".acts a{color:#ffb23a;font-size:15px;margin-right:18px;text-decoration:none}")
++				.append("form{background:#1b222c;border-radius:14px;padding:14px;margin-top:16px}")
++				.append("input{width:100%;box-sizing:border-box;font-size:18px;padding:10px;margin:6px 0;")
++				.append("border-radius:8px;border:1px solid #444;background:#0b0f14;color:#fff}")
++				.append("button{font-size:18px;padding:10px 18px;border-radius:8px;border:0;background:#ffb23a;color:#000}")
++				.append(".empty{color:#9aa4b1}</style></head><body><h1>Мои сайты</h1>");
++
++		if (sites.isEmpty()) {
++			b.append("<p class=\"empty\">Пока пусто. Впишите адрес сайта ниже и нажмите «Сохранить».</p>");
++		} else {
++			b.append("<div class=\"grid\">");
++			for (Map.Entry<String, String> e : sites.entrySet()) {
++				String url = e.getKey();
++				b.append("<div class=\"site\"><a class=\"open\" href=\"").append(attr(url)).append("\">")
++						.append(text(e.getValue())).append("</a><div class=\"url\">").append(text(url))
++						.append("</div><div class=\"acts\"><a href=\"").append(attr(action("edit", url)))
++						.append("\">Изменить</a><a href=\"").append(attr(action("remove", url)))
++						.append("\">Удалить</a></div></div>");
++			}
++			b.append("</div>");
++		}
++
++		String name = "";
++		String url = "";
++		if ((editUrl != null) && sites.containsKey(editUrl)) {
++			url = editUrl;
++			name = sites.get(editUrl);
++		}
++		boolean edit = !url.isEmpty();
++		b.append("<form method=\"get\" action=\"").append(attr(ACTION)).append("\">")
++				.append("<input type=\"hidden\" name=\"do\" value=\"").append(edit ? "save" : "add").append("\">")
++				.append("<input type=\"hidden\" name=\"old\" value=\"").append(attr(url)).append("\">")
++				.append("<div>").append(edit ? "Изменить сайт" : "Добавить сайт").append("</div>")
++				.append("<input name=\"name\" placeholder=\"Название\" value=\"").append(attr(name)).append("\">")
++				.append("<input name=\"url\" placeholder=\"Адрес сайта\" inputmode=\"url\" value=\"")
++				.append(attr(url)).append("\">")
++				.append("<button type=\"submit\">Сохранить</button></form></body></html>");
++		return b.toString();
++	}
++
++	static String action(String what, String url) {
++		return ACTION + "?do=" + what + "&old=" + encode(url);
++	}
++
++	private static String encode(String s) {
++		try {
++			return java.net.URLEncoder.encode(s, "UTF-8");
++		} catch (java.io.UnsupportedEncodingException ex) {
++			throw new IllegalStateException(ex);
++		}
++	}
++
++	private static String text(String s) {
++		return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
++	}
++
++	private static String attr(String s) {
++		return text(s).replace("\"", "&quot;").replace("'", "&#39;");
++	}
++}
+diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesWebClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesWebClient.java
+new file mode 100644
+index 0000000..b2a288c
+--- /dev/null
++++ b/modules/web/src/main/java/me/aap/fermata/addon/web/VideoSitesWebClient.java
+@@ -0,0 +1,92 @@
++package me.aap.fermata.addon.web;
++
++import android.net.Uri;
++import android.webkit.WebResourceRequest;
++import android.webkit.WebResourceResponse;
++import android.webkit.WebView;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import java.io.ByteArrayInputStream;
++import java.nio.charset.StandardCharsets;
++
++import me.aap.utils.log.Log;
++
++/**
++ * Вкладка «Видео»: отдаёт свою стартовую страницу ({@link VideoSitesPage})
++ * и выполняет её действия — добавить, изменить, удалить сайт. Действия
++ * принимаются только со стартовой страницы: чужой сайт список не изменит.
++ */
++public class VideoSitesWebClient extends FermataWebClient {
++	private final VideoSitesAddon addon;
++
++	VideoSitesWebClient(VideoSitesAddon addon) {
++		this.addon = addon;
++	}
++
++	@Nullable
++	@Override
++	public WebResourceResponse shouldInterceptRequest(@NonNull WebView view,
++																										@NonNull WebResourceRequest request) {
++		Uri u = request.getUrl();
++		if (isHome(u) && request.isForMainFrame()) {
++			String html = VideoSitesPage.html(addon.getBookmarks(), u.getQueryParameter("edit"));
++			return new WebResourceResponse("text/html", "utf-8",
++					new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
++		}
++		return super.shouldInterceptRequest(view, request);
++	}
++
++	@Override
++	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
++																					@NonNull WebResourceRequest request) {
++		Uri u = request.getUrl();
++		String scheme = u.getScheme();
++		if (!"http".equals(scheme) && !"https".equals(scheme)) {
++			Log.i("Video: app link blocked ", u);
++			return true;
++		}
++		if (u.toString().startsWith(VideoSitesPage.ACTION)) {
++			String from = view.getUrl();
++			if ((from == null) || !from.startsWith(VideoSitesPage.HOME)) {
++				Log.i("Video: action not from the start page — ignored");
++				return true;
++			}
++			view.loadUrl(perform(u));
++			return true;
++		}
++		if (TikTokWebClient.isAppLink(u)) {
++			Log.i("Video: store link blocked ", u);
++			return true;
++		}
++		return super.shouldOverrideUrlLoading(view, request);
++	}
++
++	/** Выполнить действие стартовой страницы; вернуть, какую страницу показать. */
++	private String perform(Uri u) {
++		String what = u.getQueryParameter("do");
++		String old = u.getQueryParameter("old");
++		if ("remove".equals(what) && (old != null)) {
++			addon.removeBookmark(old);
++			Log.i("Video: site removed");
++		} else if ("edit".equals(what) && (old != null)) {
++			return VideoSitesPage.HOME + "?edit=" + Uri.encode(old);
++		} else if ("add".equals(what) || "save".equals(what)) {
++			String url = VideoSitesPage.normalizeUrl(u.getQueryParameter("url"));
++			if (url != null) {
++				String name = u.getQueryParameter("name");
++				if ((name == null) || name.trim().isEmpty()) name = VideoSitesPage.defaultName(url);
++				if ("save".equals(what) && (old != null) && !old.equals(url)) addon.removeBookmark(old);
++				addon.addBookmark(name.trim(), url);
++				Log.i("Video: site saved");
++			}
++		}
++		return VideoSitesPage.HOME;
++	}
++
++	static boolean isHome(Uri u) {
++		return "jarvis-video.local".equals(u.getHost()) && ((u.getPath() == null) ||
++				u.getPath().isEmpty() || "/".equals(u.getPath()));
++	}
++}
+diff --git a/modules/web/src/test/java/me/aap/fermata/addon/web/VideoSitesPageTest.java b/modules/web/src/test/java/me/aap/fermata/addon/web/VideoSitesPageTest.java
+new file mode 100644
+index 0000000..b652092
+--- /dev/null
++++ b/modules/web/src/test/java/me/aap/fermata/addon/web/VideoSitesPageTest.java
+@@ -0,0 +1,58 @@
++package me.aap.fermata.addon.web;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertTrue;
++
++import org.junit.Test;
++
++import java.util.Collections;
++import java.util.LinkedHashMap;
++import java.util.Map;
++
++/** Страница «Мои сайты»: адреса, названия, экранирование, правка. */
++public class VideoSitesPageTest {
++
++	@Test
++	public void addressCompleted() {
++		assertEquals("https://rutube.ru", VideoSitesPage.normalizeUrl(" rutube.ru "));
++		assertEquals("http://192.168.1.10:8096", VideoSitesPage.normalizeUrl("http://192.168.1.10:8096"));
++		assertNull(VideoSitesPage.normalizeUrl(""));
++		assertNull(VideoSitesPage.normalizeUrl("javascript:alert(1)"));
++		assertNull(VideoSitesPage.normalizeUrl("intent://x"));
++	}
++
++	@Test
++	public void defaultNameFromHost() {
++		assertEquals("vkvideo.ru", VideoSitesPage.defaultName("https://www.vkvideo.ru/video/123"));
++	}
++
++	@Test
++	public void emptyListInvitesToAdd() {
++		String h = VideoSitesPage.html(Collections.emptyMap(), null);
++		assertTrue(h.contains("Пока пусто"));
++		assertTrue(h.contains("value=\"add\""));
++	}
++
++	@Test
++	public void sitesShownAndEscaped() {
++		Map<String, String> m = new LinkedHashMap<>();
++		m.put("https://rutube.ru", "Rutube <тест>");
++		String h = VideoSitesPage.html(m, null);
++		assertTrue(h.contains("href=\"https://rutube.ru\""));
++		assertTrue(h.contains("Rutube &lt;тест&gt;"));
++		assertFalse(h.contains("<тест>"));
++		assertTrue(h.contains(VideoSitesPage.action("remove", "https://rutube.ru").replace("&", "&amp;")));
++	}
++
++	@Test
++	public void editFormFilled() {
++		Map<String, String> m = new LinkedHashMap<>();
++		m.put("https://rutube.ru", "Rutube");
++		String h = VideoSitesPage.html(m, "https://rutube.ru");
++		assertTrue(h.contains("value=\"save\""));
++		assertTrue(h.contains("Изменить сайт"));
++		assertTrue(h.contains("name=\"name\" placeholder=\"Название\" value=\"Rutube\""));
 +	}
 +}
 diff --git a/settings.gradle b/settings.gradle
