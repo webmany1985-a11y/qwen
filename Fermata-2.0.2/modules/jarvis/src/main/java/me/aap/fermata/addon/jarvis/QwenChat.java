@@ -43,7 +43,7 @@ final class QwenChat {
 	static final String URL = "https://chat.qwen.ai/";
 	/** Сколько ждать загрузки страницы и ответа Qwen, мс. */
 	private static final long LOAD_WAIT_MS = 25_000;
-	private static final long REPLY_WAIT_MS = 90_000;
+	private static final long REPLY_WAIT_MS = 60_000;
 	private static final long POLL_MS = 700;
 	/** Длина ответа для озвучивания: синтезатор берёт ~4000 знаков, слушать длинное в машине тяжело. */
 	static final int MAX_SPEECH = 1200;

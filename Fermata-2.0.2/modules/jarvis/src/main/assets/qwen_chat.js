@@ -1,7 +1,7 @@
 // Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 // Страница открыта в невидимом WebView под кругом JARVIS.
 // Имена классов — из кода сайта (21.10.2026): поле ввода
-// textarea.message-input-textarea, кнопка .message-input-right-button-send,
+// textarea.message-input-textarea, кнопка button.send-button,
 // ответ .response-message-content (текст в .qwen-markdown), пока Qwen пишет —
 // есть .stop-button. Сайт меняется — поэтому запасные пути и запись в журнал.
 (function () {
@@ -21,10 +21,14 @@
 			document.querySelector('textarea');
 	}
 
+	// Нажимать надо на саму кнопку: .message-input-right-button-send — только
+	// рамка, клик по ней вопрос не отправлял (журнал 22.10.2026, 08:04–08:21)
 	function sendButton() {
-		return document.querySelector('.message-input-right-button-send') ||
-			document.querySelector('button[class*="send"]') ||
-			document.querySelector('[class*="send-button"]');
+		return document.querySelector('.message-input-right-button-send button.send-button') ||
+			document.querySelector('button.send-button') ||
+			document.querySelector('button[aria-label="Отправить"], button[aria-label="Send"]') ||
+			document.querySelector('.message-input-right-button-send button') ||
+			document.querySelector('button[class*="send"]');
 	}
 
 	/** Гость: видна кнопка «Войти», либо окно «Войдите…» после отправки. */
@@ -36,6 +40,18 @@
 		}
 		const modal = document.querySelector('[class*="modal"], [role="dialog"]');
 		return !!(modal && visible(modal) && /Войдите|Log in|Sign in/i.test(modal.innerText || ''));
+	}
+
+	/** Видимое окно поверх чата (подтверждение возраста и т. п.) — в журнал. */
+	function dialogText() {
+		for (const e of document.querySelectorAll('[role="dialog"], [class*="modal"]')) {
+			const r = e.getBoundingClientRect();
+			if ((r.width > 0) && (r.height > 0)) {
+				const t = (e.innerText || '').trim();
+				if (t) return t.slice(0, 120);
+			}
+		}
+		return '';
 	}
 
 	function generating() {
@@ -131,7 +147,8 @@
 			const quiet = now - lastChange;
 			const done = !!text && ((!gen && (quiet >= 1500)) || (quiet >= 6000));
 			return JSON.stringify({
-				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length
+				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
+				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)
 			});
 		}
 	};

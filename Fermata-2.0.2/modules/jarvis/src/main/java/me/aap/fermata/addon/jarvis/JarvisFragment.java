@@ -322,6 +322,9 @@ public class JarvisFragment extends MainActivityFragment
 
 	private void startRecognizer(MainActivityDelegate a) {
 		interrupt = a.interruptPlayback();
+		// После паузы своей музыки: иначе Fermata сочла бы себя прерванной и
+		// после разговора сама включила бы музыку, даже после команды «пауза»
+		requestFocus(requireContext());
 		retries = RETRIES;
 		continuations = CONTINUATIONS;
 		phrase = null;
@@ -461,6 +464,7 @@ public class JarvisFragment extends MainActivityFragment
 	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 	private void done() {
 		Log.i("JARVIS tab: done");
+		abandonFocus();
 		Cancellable i = interrupt;
 		interrupt = Cancellable.CANCELED;
 		i.cancel();
@@ -468,6 +472,43 @@ public class JarvisFragment extends MainActivityFragment
 		phrase = null;
 		firstAlternatives = null;
 		setPhase(HudMath.Phase.IDLE);
+	}
+
+	/**
+	 * Звук на время разговора — у JARVIS: другая музыка (не Fermata) встаёт
+	 * на паузу, а не только приглушается (замечание 22.10.2026: «музыка толком
+	 * не затихает»). Музыку Fermata ставит на паузу interruptPlayback.
+	 */
+	@Nullable
+	private android.media.AudioFocusRequest focus;
+
+	private void requestFocus(Context ctx) {
+		if ((focus != null) || (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O)) return;
+		android.media.AudioManager am = (android.media.AudioManager)
+				ctx.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+		if (am == null) return;
+		android.media.AudioFocusRequest r = new android.media.AudioFocusRequest.Builder(
+				android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+				.setAudioAttributes(new android.media.AudioAttributes.Builder()
+						.setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
+						.setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+				.setOnAudioFocusChangeListener(c -> {
+				}).build();
+		int res = am.requestAudioFocus(r);
+		Log.i("JARVIS tab: audio focus ", (res == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ?
+				"granted" : "refused " + res);
+		focus = r;
+	}
+
+	private void abandonFocus() {
+		android.media.AudioFocusRequest r = focus;
+		focus = null;
+		if ((r == null) || (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O)) return;
+		Context ctx = getContext();
+		if (ctx == null) ctx = me.aap.fermata.FermataApplication.get();
+		android.media.AudioManager am = (android.media.AudioManager)
+				ctx.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
+		if (am != null) am.abandonAudioFocusRequest(r);
 	}
 
 	@Override
@@ -733,7 +774,7 @@ public class JarvisFragment extends MainActivityFragment
 	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
 	private static final long LONG_PRESS_MS = 700;
 	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
-	private static final int RETRIES = 2;
+	private static final int RETRIES = 1;
 	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
 	private static final long AFTER_GREETING_MS = 300;
 	private static final long AFTER_GREETING_CAR_MS = 800;

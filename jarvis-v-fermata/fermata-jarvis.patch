@@ -4664,14 +4664,14 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
 new file mode 100644
-index 0000000..17a7358
+index 0000000..50517af
 --- /dev/null
 +++ b/modules/jarvis/src/main/assets/qwen_chat.js
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,156 @@
 +// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 +// Страница открыта в невидимом WebView под кругом JARVIS.
 +// Имена классов — из кода сайта (21.10.2026): поле ввода
-+// textarea.message-input-textarea, кнопка .message-input-right-button-send,
++// textarea.message-input-textarea, кнопка button.send-button,
 +// ответ .response-message-content (текст в .qwen-markdown), пока Qwen пишет —
 +// есть .stop-button. Сайт меняется — поэтому запасные пути и запись в журнал.
 +(function () {
@@ -4691,10 +4691,14 @@ index 0000000..17a7358
 +			document.querySelector('textarea');
 +	}
 +
++	// Нажимать надо на саму кнопку: .message-input-right-button-send — только
++	// рамка, клик по ней вопрос не отправлял (журнал 22.10.2026, 08:04–08:21)
 +	function sendButton() {
-+		return document.querySelector('.message-input-right-button-send') ||
-+			document.querySelector('button[class*="send"]') ||
-+			document.querySelector('[class*="send-button"]');
++		return document.querySelector('.message-input-right-button-send button.send-button') ||
++			document.querySelector('button.send-button') ||
++			document.querySelector('button[aria-label="Отправить"], button[aria-label="Send"]') ||
++			document.querySelector('.message-input-right-button-send button') ||
++			document.querySelector('button[class*="send"]');
 +	}
 +
 +	/** Гость: видна кнопка «Войти», либо окно «Войдите…» после отправки. */
@@ -4706,6 +4710,18 @@ index 0000000..17a7358
 +		}
 +		const modal = document.querySelector('[class*="modal"], [role="dialog"]');
 +		return !!(modal && visible(modal) && /Войдите|Log in|Sign in/i.test(modal.innerText || ''));
++	}
++
++	/** Видимое окно поверх чата (подтверждение возраста и т. п.) — в журнал. */
++	function dialogText() {
++		for (const e of document.querySelectorAll('[role="dialog"], [class*="modal"]')) {
++			const r = e.getBoundingClientRect();
++			if ((r.width > 0) && (r.height > 0)) {
++				const t = (e.innerText || '').trim();
++				if (t) return t.slice(0, 120);
++			}
++		}
++		return '';
 +	}
 +
 +	function generating() {
@@ -4801,7 +4817,8 @@ index 0000000..17a7358
 +			const quiet = now - lastChange;
 +			const done = !!text && ((!gen && (quiet >= 1500)) || (quiet >= 6000));
 +			return JSON.stringify({
-+				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length
++				state: done ? 'done' : 'wait', text: text, gen: gen, how: how, replies: all.length,
++				dialog: dialogText(), input: ((input() || {}).value || '').slice(0, 40)
 +			});
 +		}
 +	};
@@ -5271,10 +5288,10 @@ index 0000000..6ed15ad
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..d10a158
+index 0000000..6e9ee20
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,763 @@
+@@ -0,0 +1,804 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5599,6 +5616,9 @@ index 0000000..d10a158
 +
 +	private void startRecognizer(MainActivityDelegate a) {
 +		interrupt = a.interruptPlayback();
++		// После паузы своей музыки: иначе Fermata сочла бы себя прерванной и
++		// после разговора сама включила бы музыку, даже после команды «пауза»
++		requestFocus(requireContext());
 +		retries = RETRIES;
 +		continuations = CONTINUATIONS;
 +		phrase = null;
@@ -5738,6 +5758,7 @@ index 0000000..d10a158
 +	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 +	private void done() {
 +		Log.i("JARVIS tab: done");
++		abandonFocus();
 +		Cancellable i = interrupt;
 +		interrupt = Cancellable.CANCELED;
 +		i.cancel();
@@ -5745,6 +5766,43 @@ index 0000000..d10a158
 +		phrase = null;
 +		firstAlternatives = null;
 +		setPhase(HudMath.Phase.IDLE);
++	}
++
++	/**
++	 * Звук на время разговора — у JARVIS: другая музыка (не Fermata) встаёт
++	 * на паузу, а не только приглушается (замечание 22.10.2026: «музыка толком
++	 * не затихает»). Музыку Fermata ставит на паузу interruptPlayback.
++	 */
++	@Nullable
++	private android.media.AudioFocusRequest focus;
++
++	private void requestFocus(Context ctx) {
++		if ((focus != null) || (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O)) return;
++		android.media.AudioManager am = (android.media.AudioManager)
++				ctx.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
++		if (am == null) return;
++		android.media.AudioFocusRequest r = new android.media.AudioFocusRequest.Builder(
++				android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
++				.setAudioAttributes(new android.media.AudioAttributes.Builder()
++						.setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
++						.setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
++				.setOnAudioFocusChangeListener(c -> {
++				}).build();
++		int res = am.requestAudioFocus(r);
++		Log.i("JARVIS tab: audio focus ", (res == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) ?
++				"granted" : "refused " + res);
++		focus = r;
++	}
++
++	private void abandonFocus() {
++		android.media.AudioFocusRequest r = focus;
++		focus = null;
++		if ((r == null) || (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O)) return;
++		Context ctx = getContext();
++		if (ctx == null) ctx = me.aap.fermata.FermataApplication.get();
++		android.media.AudioManager am = (android.media.AudioManager)
++				ctx.getApplicationContext().getSystemService(Context.AUDIO_SERVICE);
++		if (am != null) am.abandonAudioFocusRequest(r);
 +	}
 +
 +	@Override
@@ -6010,7 +6068,7 @@ index 0000000..d10a158
 +	/** Касание шара дольше этого, мс, — открыть сайт Qwen. */
 +	private static final long LONG_PRESS_MS = 700;
 +	/** Сколько раз начать запись заново, если вы ещё не начали говорить. */
-+	private static final int RETRIES = 2;
++	private static final int RETRIES = 1;
 +	/** Пауза после «Слушаю» до включения микрофона, мс: на телефоне и в машине. */
 +	private static final long AFTER_GREETING_MS = 300;
 +	private static final long AFTER_GREETING_CAR_MS = 800;
@@ -6527,7 +6585,7 @@ index 0000000..0769310
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 new file mode 100644
-index 0000000..c1c73e3
+index 0000000..5ade58f
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 @@ -0,0 +1,298 @@
@@ -6576,7 +6634,7 @@ index 0000000..c1c73e3
 +	static final String URL = "https://chat.qwen.ai/";
 +	/** Сколько ждать загрузки страницы и ответа Qwen, мс. */
 +	private static final long LOAD_WAIT_MS = 25_000;
-+	private static final long REPLY_WAIT_MS = 90_000;
++	private static final long REPLY_WAIT_MS = 60_000;
 +	private static final long POLL_MS = 700;
 +	/** Длина ответа для озвучивания: синтезатор берёт ~4000 знаков, слушать длинное в машине тяжело. */
 +	static final int MAX_SPEECH = 1200;
