@@ -4313,9 +4313,20 @@ index 0000000..b743042
 +      android:pathData="M14,3h2.6c0.3,2 1.6,3.5 3.9,3.8v2.7c-1.5,0 -2.9,-0.4 -3.9,-1.1v6.6c0,3.1 -2.5,5.5 -5.6,5.5S5.5,18 5.5,14.9s2.5,-5.5 5.6,-5.5c0.3,0 0.6,0 0.9,0.1v2.8c-0.3,-0.1 -0.6,-0.2 -0.9,-0.2c-1.5,0 -2.8,1.2 -2.8,2.8s1.2,2.8 2.8,2.8s2.8,-1.2 2.8,-2.8V3z"/>
 +</vector>
 diff --git a/fermata/src/main/res/values-ru/strings.xml b/fermata/src/main/res/values-ru/strings.xml
-index 97bd633..2f76dd0 100644
+index 97bd633..8c3fbac 100644
 --- a/fermata/src/main/res/values-ru/strings.xml
 +++ b/fermata/src/main/res/values-ru/strings.xml
+@@ -72,8 +72,8 @@
+ 
+     <string name="key_bindings">Привязки клавиш</string>
+     <string name="key_on_click">При нажатии</string>
+-    <string name="key_on_long_click">При двойном нажатии</string>
+-    <string name="key_on_dbl_click">При долгом нажатии</string>
++    <string name="key_on_long_click">При долгом нажатии</string>
++    <string name="key_on_dbl_click">При двойном нажатии</string>
+     <string name="action_stop">Стоп</string>
+     <string name="action_play">Воспроизведение</string>
+     <string name="action_pause">Пауза</string>
 @@ -355,14 +355,18 @@
      <string name="import_prefs_ok">Настройки успешно импортированы.\nПожалуйста, перезапустите приложение.</string>
      <string name="import_prefs_failed">Не удалось импортировать настройки: %1$s</string>

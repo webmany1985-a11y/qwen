@@ -72,8 +72,8 @@
 
     <string name="key_bindings">Привязки клавиш</string>
     <string name="key_on_click">При нажатии</string>
-    <string name="key_on_long_click">При двойном нажатии</string>
-    <string name="key_on_dbl_click">При долгом нажатии</string>
+    <string name="key_on_long_click">При долгом нажатии</string>
+    <string name="key_on_dbl_click">При двойном нажатии</string>
     <string name="action_stop">Стоп</string>
     <string name="action_play">Воспроизведение</string>
     <string name="action_pause">Пауза</string>
