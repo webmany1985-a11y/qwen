@@ -18251,10 +18251,91 @@ index 0000000..0e679ae
 +	}
 +}
 diff --git a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java b/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
-index b0f03df..6b29028 100644
+index b0f03df..44bf6dc 100644
 --- a/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
 +++ b/modules/web/src/main/java/me/aap/fermata/addon/web/FermataChromeClient.java
-@@ -312,7 +312,9 @@ public class FermataChromeClient extends WebChromeClient {
+@@ -23,6 +23,8 @@ import android.webkit.WebView;
+ import android.widget.EditText;
+ import android.widget.FrameLayout;
+ 
++import androidx.annotation.Nullable;
++
+ import java.util.ArrayList;
+ import java.util.Arrays;
+ import java.util.HashMap;
+@@ -161,14 +163,63 @@ public class FermataChromeClient extends WebChromeClient {
+ 		ViewGroup fs = getFullScreenView();
+ 		fs.addView(view, new ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT));
+ 		fs.setVisibility(VISIBLE);
++		showExitButton();
+ 	}
+ 
+ 	protected void removeCustomView(View view) {
+ 		ViewGroup fs = getFullScreenView();
+ 		fs.removeView(view);
++		if (exitButton != null) {
++			fs.removeView(exitButton);
++			exitButton = null;
++		}
+ 		fs.setVisibility(GONE);
+ 	}
+ 
++	/**
++	 * Кнопка «выйти из полного экрана» поверх видео, на 3 с после касания.
++	 * В полном экране панели приложения спрятаны, а в машине нет кнопки
++	 * «Назад» — из фильма во вкладке «Кинопоиск» было не выйти (22.10.2026).
++	 */
++	@Nullable
++	private android.widget.ImageView exitButton;
++	private long exitShownAt;
++
++	private void showExitButton() {
++		ViewGroup fs = getFullScreenView();
++		if (!(fs instanceof FrameLayout)) return;
++		android.widget.ImageView b = exitButton;
++		if (b == null) {
++			Context c = me.aap.fermata.util.Utils.dynCtx(fs.getContext());
++			float dp = c.getResources().getDisplayMetrics().density;
++			b = new android.widget.ImageView(c);
++			b.setImageDrawable(androidx.core.content.res.ResourcesCompat.getDrawable(c.getResources(),
++					R.drawable.fullscreen_exit, c.getTheme()));
++			b.setColorFilter(0xFFFFFFFF);
++			android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
++			bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
++			bg.setColor(0x99000000);
++			b.setBackground(bg);
++			int pad = (int) (12 * dp);
++			b.setPadding(pad, pad, pad, pad);
++			b.setContentDescription(c.getString(R.string.full_screen_exit));
++			int size = (int) (56 * dp);
++			FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(size, size);
++			lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
++			lp.leftMargin = lp.topMargin = (int) (12 * dp);
++			b.setOnClickListener(v -> exitFullScreen());
++			fs.addView(b, lp);
++			exitButton = b;
++		}
++		b.bringToFront();
++		b.setVisibility(VISIBLE);
++		long st = exitShownAt = System.currentTimeMillis();
++		App.get().getHandler().postDelayed(() -> {
++			android.widget.ImageView e = exitButton;
++			if ((e != null) && (st == exitShownAt)) e.setVisibility(GONE);
++		}, 3000);
++	}
++
+ 	protected void setFullScreen(MainActivityDelegate a, boolean fullScreen) {
+ 		a.setVideoMode(fullScreen, null);
+ 		a.getFloatingButton().setVisibility(fullScreen ? GONE : VISIBLE);
+@@ -223,6 +274,7 @@ public class FermataChromeClient extends WebChromeClient {
+ 		long st = touchStamp = System.currentTimeMillis();
+ 
+ 		fb.setVisibility(VISIBLE);
++		showExitButton();
+ 		App.get().getHandler().postDelayed(() -> {
+ 			if (st == touchStamp) fb.setVisibility(GONE);
+ 		}, 3000);
+@@ -312,7 +364,9 @@ public class FermataChromeClient extends WebChromeClient {
  
  	@Override
  	public boolean onConsoleMessage(ConsoleMessage m) {
