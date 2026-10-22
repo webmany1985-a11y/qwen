@@ -31,6 +31,19 @@ index f81db3c..5d315ea 100644
  	public Set<Locale> getAvailableLanguages() {
  		return (tts == null) ? Collections.emptySet() : tts.getAvailableLanguages();
  	}
+diff --git a/fermata/src/auto/AndroidManifest.xml b/fermata/src/auto/AndroidManifest.xml
+index 1ab7e90..3af2f91 100644
+--- a/fermata/src/auto/AndroidManifest.xml
++++ b/fermata/src/auto/AndroidManifest.xml
+@@ -10,6 +10,8 @@
+     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+     <uses-permission android:name="android.permission.BLUETOOTH" />
++    <!-- Микрофон машины по Bluetooth (SCO) во вкладке JARVIS: setBluetoothScoOn -->
++    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+ 
 diff --git a/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java b/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java
 index d015253..9c3c328 100644
 --- a/fermata/src/auto/java/me/aap/fermata/auto/MirrorDisplay.java
@@ -4591,7 +4604,7 @@ index b0e10c9..0000000
 -}
 diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
 new file mode 100644
-index 0000000..7e46197
+index 0000000..571274b
 --- /dev/null
 +++ b/modules/jarvis/build.gradle
 @@ -0,0 +1,28 @@
@@ -4611,7 +4624,7 @@ index 0000000..7e46197
 +                    icon   : 'record_voice',
 +                    class  : 'me.aap.fermata.addon.jarvis.JarvisAddon',
 +                    order  : 1,
-+                    hasSettings: false,
++                    hasSettings: true,
 +                    enabled: true
 +            ]
 +    ]
@@ -4824,6 +4837,183 @@ index 0000000..50517af
 +	};
 +	log('ready, ' + window.__jq.state());
 +})();
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/CarMic.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/CarMic.java
+new file mode 100644
+index 0000000..3c4aabe
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/CarMic.java
+@@ -0,0 +1,171 @@
++package me.aap.fermata.addon.jarvis;
++
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.media.AudioManager;
++import android.os.Handler;
++import android.os.Looper;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++
++import me.aap.utils.log.Log;
++
++/**
++ * Микрофон машины по Bluetooth (SCO) на время фразы во вкладке JARVIS —
++ * пробно, выключателем в настройках (пожелание 22.10.2026).
++ *
++ * Пока SCO подключён, магнитола в режиме звонка: так было и в JARVIS
++ * (задача android-team 2026-10-14-mashina-bez-zvonka — музыка «через звонок»,
++ * узкая полоса, распознавание хуже). Поэтому SCO берётся только на запись
++ * фразы и отпускается сразу после неё.
++ *
++ * Как в JARVIS (core/CarMicLink.kt): взят — только по
++ * ACTION_SCO_AUDIO_STATE_UPDATED = CONNECTED; рассылка «липкая», и
++ * DISCONNECTED до CONNECTING — прежнее состояние, а не ответ на запрос.
++ */
++final class CarMic {
++	/** Сколько ждать подключения SCO, мс. */
++	private static final long CONNECT_WAIT_MS = 5000;
++
++	interface Result {
++		void onResult(boolean taken);
++	}
++
++	private final Context ctx;
++	private final AudioManager am;
++	private final Handler main = new Handler(Looper.getMainLooper());
++	@Nullable
++	private BroadcastReceiver receiver;
++	@Nullable
++	private Result pending;
++	private boolean requested;
++	private boolean connected;
++	private boolean connectingSeen;
++
++	CarMic(@NonNull Context ctx) {
++		this.ctx = ctx.getApplicationContext();
++		am = (AudioManager) this.ctx.getSystemService(Context.AUDIO_SERVICE);
++	}
++
++	boolean isTaken() {
++		return requested && connected;
++	}
++
++	/** Взять микрофон машины; result — в главном потоке, ровно один раз. */
++	@SuppressWarnings("deprecation")
++	void take(@NonNull Result result) {
++		if (isTaken()) {
++			result.onResult(true);
++			return;
++		}
++		release();
++		if ((am == null) || !am.isBluetoothScoAvailableOffCall()) {
++			Log.i("JARVIS tab: car mic — SCO off call not supported");
++			result.onResult(false);
++			return;
++		}
++		if (am.getMode() == AudioManager.MODE_IN_CALL) {
++			// Идёт звонок — SCO его, не трогаем
++			Log.i("JARVIS tab: car mic — phone call in progress, not taken");
++			result.onResult(false);
++			return;
++		}
++		pending = result;
++		connectingSeen = false;
++		connected = false;
++		receiver = new BroadcastReceiver() {
++			@Override
++			public void onReceive(Context c, Intent i) {
++				int s = i.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_ERROR);
++				onState(s);
++			}
++		};
++		ctx.registerReceiver(receiver, new IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED));
++		try {
++			am.startBluetoothSco();
++			am.setBluetoothScoOn(true);
++			requested = true;
++			Log.i("JARVIS tab: car mic — SCO requested");
++		} catch (Exception ex) {
++			Log.e(ex, "JARVIS tab: car mic — startBluetoothSco failed");
++			finish(false);
++			return;
++		}
++		main.postDelayed(timeout, CONNECT_WAIT_MS);
++	}
++
++	private final Runnable timeout = () -> {
++		if (pending == null) return;
++		Log.i("JARVIS tab: car mic — SCO not connected in ", CONNECT_WAIT_MS, " ms, phone mic");
++		finish(false);
++	};
++
++	private void onState(int s) {
++		switch (s) {
++			case AudioManager.SCO_AUDIO_STATE_CONNECTING -> connectingSeen = true;
++			case AudioManager.SCO_AUDIO_STATE_CONNECTED -> {
++				connected = true;
++				if (pending != null) {
++					Log.i("JARVIS tab: car mic — SCO connected, recording from car");
++					main.removeCallbacks(timeout);
++					Result r = pending;
++					pending = null;
++					r.onResult(true);
++				}
++			}
++			case AudioManager.SCO_AUDIO_STATE_DISCONNECTED -> {
++				boolean was = connected;
++				connected = false;
++				if (pending != null && connectingSeen) {
++					Log.i("JARVIS tab: car mic — SCO refused, phone mic");
++					finish(false);
++				} else if (was) {
++					Log.i("JARVIS tab: car mic — SCO lost");
++				}
++			}
++			default -> {
++				if (pending != null) {
++					Log.i("JARVIS tab: car mic — SCO error, phone mic");
++					finish(false);
++				}
++			}
++		}
++	}
++
++	private void finish(boolean taken) {
++		Result r = pending;
++		pending = null;
++		main.removeCallbacks(timeout);
++		if (!taken) release();
++		if (r != null) r.onResult(taken);
++	}
++
++	/** Отпустить: магнитола выходит из режима звонка. */
++	@SuppressWarnings("deprecation")
++	void release() {
++		main.removeCallbacks(timeout);
++		pending = null;
++		BroadcastReceiver rcv = receiver;
++		receiver = null;
++		if (rcv != null) {
++			try {
++				ctx.unregisterReceiver(rcv);
++			} catch (IllegalArgumentException ignore) {
++			}
++		}
++		if (!requested) return;
++		requested = false;
++		connected = false;
++		if ((am == null) || (am.getMode() == AudioManager.MODE_IN_CALL)) return;
++		try {
++			am.setBluetoothScoOn(false);
++			am.stopBluetoothSco();
++			Log.i("JARVIS tab: car mic — SCO released");
++		} catch (Exception ex) {
++			Log.e(ex, "JARVIS tab: car mic — stopBluetoothSco failed");
++		}
++	}
++}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/HudMath.java
 new file mode 100644
 index 0000000..7872521
@@ -5246,11 +5436,13 @@ index 0000000..7872521
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
 new file mode 100644
-index 0000000..6ed15ad
+index 0000000..1d0c7f6
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,56 @@
 +package me.aap.fermata.addon.jarvis;
++
++import android.content.Context;
 +
 +import androidx.annotation.Keep;
 +import androidx.annotation.NonNull;
@@ -5258,6 +5450,10 @@ index 0000000..6ed15ad
 +import me.aap.fermata.addon.AddonInfo;
 +import me.aap.fermata.addon.FermataAddon;
 +import me.aap.fermata.addon.FermataFragmentAddon;
++import me.aap.utils.function.BooleanSupplier;
++import me.aap.utils.misc.ChangeableCondition;
++import me.aap.utils.pref.PreferenceSet;
++import me.aap.utils.pref.PreferenceStore;
 +import me.aap.utils.ui.fragment.ActivityFragment;
 +
 +/**
@@ -5268,6 +5464,8 @@ index 0000000..6ed15ad
 +@SuppressWarnings("unused")
 +public class JarvisAddon implements FermataFragmentAddon {
 +	private static final AddonInfo info = FermataAddon.findAddonInfo(JarvisAddon.class.getName());
++	/** Микрофон машины по Bluetooth на время фразы (пробно, 22.10.2026). Только в машине. */
++	static final PreferenceStore.Pref<BooleanSupplier> CAR_MIC = PreferenceStore.Pref.b("JARVIS_CAR_MIC", false);
 +
 +	@Override
 +	public int getAddonId() {
@@ -5285,13 +5483,25 @@ index 0000000..6ed15ad
 +	public ActivityFragment createFragment() {
 +		return new JarvisFragment();
 +	}
++
++	@Override
++	public void contributeSettings(Context ctx, PreferenceStore store, PreferenceSet set,
++																 ChangeableCondition visibility) {
++		set.addBooleanPref(o -> {
++			o.store = store;
++			o.pref = CAR_MIC;
++			o.title = R.string.jarvis_car_mic;
++			o.subtitle = R.string.jarvis_car_mic_sub;
++			o.visibility = visibility;
++		});
++	}
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..6e9ee20
+index 0000000..98cf8de
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,804 @@
+@@ -0,0 +1,832 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5361,6 +5571,8 @@ index 0000000..6e9ee20
 +	private JarvisHudView hud;
 +	@Nullable
 +	private QwenChat qwen;
++	@Nullable
++	private CarMic carMic;
 +	@Nullable
 +	private View qwenDone;
 +	/** Когда коснулись шара — долгое касание открывает сайт Qwen. */
@@ -5633,8 +5845,31 @@ index 0000000..6e9ee20
 +	private void promptAndListen(MainActivityDelegate a, int textRes) {
 +		long pause = a.isCarActivityNotMirror() ? AFTER_GREETING_CAR_MS : AFTER_GREETING_MS;
 +		sayPrompt(a, textRes, () -> main.postDelayed(() -> {
-+			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) createRecognizer(a);
++			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) withMic(a, () -> createRecognizer(a));
 +		}, pause));
++	}
++
++	/**
++	 * Включён «Микрофон машины» и мы в машине — сначала взять микрофон
++	 * магнитолы (CarMic), затем then. Не вышло — микрофон телефона.
++	 */
++	private void withMic(MainActivityDelegate a, Runnable then) {
++		boolean on = a.isCarActivityNotMirror() &&
++				me.aap.fermata.FermataApplication.get().getPreferenceStore().getBooleanPref(JarvisAddon.CAR_MIC);
++		if (!on) {
++			then.run();
++			return;
++		}
++		CarMic m = carMic;
++		if (m == null) carMic = m = new CarMic(requireContext());
++		m.take(taken -> {
++			if (busy && (hud != null) && (recognizer == null)) then.run();
++		});
++	}
++
++	private void releaseMic() {
++		CarMic m = carMic;
++		if (m != null) m.release();
 +	}
 +
 +	/** Произнести подсказку и затем, в главном потоке, выполнить then. */
@@ -5758,6 +5993,7 @@ index 0000000..6e9ee20
 +	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 +	private void done() {
 +		Log.i("JARVIS tab: done");
++		releaseMic();
 +		abandonFocus();
 +		Cancellable i = interrupt;
 +		interrupt = Cancellable.CANCELED;
@@ -5933,6 +6169,8 @@ index 0000000..6e9ee20
 +		phrase = null;
 +		firstAlternatives = null;
 +		if ((p == null) || !busy) return;
++		// Фраза записана — магнитолу из режима звонка, ответ звучит обычным звуком
++		releaseMic();
 +		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
 +		Log.i("JARVIS tab: phrase «", q.get(0), "»");
 +
@@ -16801,10 +17039,10 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..321de0f
+index 0000000..246ef86
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,19 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
@@ -16821,6 +17059,8 @@ index 0000000..321de0f
 +    <string name="jarvis_qwen_login_car">Нужно войти в Qwen. На телефоне откройте вкладку JARVIS и задержите палец на круге</string>
 +    <string name="jarvis_qwen_error">Qwen недоступен: </string>
 +    <string name="jarvis_qwen_empty">Qwen ответил без текста</string>
++    <string name="jarvis_car_mic">Микрофон машины</string>
++    <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/GreetingEchoTest.java
 new file mode 100644

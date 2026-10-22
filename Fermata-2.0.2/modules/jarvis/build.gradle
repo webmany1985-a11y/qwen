@@ -14,7 +14,7 @@ ext {
                     icon   : 'record_voice',
                     class  : 'me.aap.fermata.addon.jarvis.JarvisAddon',
                     order  : 1,
-                    hasSettings: false,
+                    hasSettings: true,
                     enabled: true
             ]
     ]

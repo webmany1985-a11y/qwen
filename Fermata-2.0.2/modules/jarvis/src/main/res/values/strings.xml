@@ -14,4 +14,6 @@
     <string name="jarvis_qwen_login_car">Нужно войти в Qwen. На телефоне откройте вкладку JARVIS и задержите палец на круге</string>
     <string name="jarvis_qwen_error">Qwen недоступен: </string>
     <string name="jarvis_qwen_empty">Qwen ответил без текста</string>
+    <string name="jarvis_car_mic">Микрофон машины</string>
+    <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
 </resources>

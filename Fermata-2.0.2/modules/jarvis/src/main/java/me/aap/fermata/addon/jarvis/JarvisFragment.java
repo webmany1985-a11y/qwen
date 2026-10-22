@@ -68,6 +68,8 @@ public class JarvisFragment extends MainActivityFragment
 	@Nullable
 	private QwenChat qwen;
 	@Nullable
+	private CarMic carMic;
+	@Nullable
 	private View qwenDone;
 	/** Когда коснулись шара — долгое касание открывает сайт Qwen. */
 	private long downAt;
@@ -339,8 +341,31 @@ public class JarvisFragment extends MainActivityFragment
 	private void promptAndListen(MainActivityDelegate a, int textRes) {
 		long pause = a.isCarActivityNotMirror() ? AFTER_GREETING_CAR_MS : AFTER_GREETING_MS;
 		sayPrompt(a, textRes, () -> main.postDelayed(() -> {
-			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) createRecognizer(a);
+			if (busy && (hud != null) && (recognizer == null) && (greeting == null)) withMic(a, () -> createRecognizer(a));
 		}, pause));
+	}
+
+	/**
+	 * Включён «Микрофон машины» и мы в машине — сначала взять микрофон
+	 * магнитолы (CarMic), затем then. Не вышло — микрофон телефона.
+	 */
+	private void withMic(MainActivityDelegate a, Runnable then) {
+		boolean on = a.isCarActivityNotMirror() &&
+				me.aap.fermata.FermataApplication.get().getPreferenceStore().getBooleanPref(JarvisAddon.CAR_MIC);
+		if (!on) {
+			then.run();
+			return;
+		}
+		CarMic m = carMic;
+		if (m == null) carMic = m = new CarMic(requireContext());
+		m.take(taken -> {
+			if (busy && (hud != null) && (recognizer == null)) then.run();
+		});
+	}
+
+	private void releaseMic() {
+		CarMic m = carMic;
+		if (m != null) m.release();
 	}
 
 	/** Произнести подсказку и затем, в главном потоке, выполнить then. */
@@ -464,6 +489,7 @@ public class JarvisFragment extends MainActivityFragment
 	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 	private void done() {
 		Log.i("JARVIS tab: done");
+		releaseMic();
 		abandonFocus();
 		Cancellable i = interrupt;
 		interrupt = Cancellable.CANCELED;
@@ -639,6 +665,8 @@ public class JarvisFragment extends MainActivityFragment
 		phrase = null;
 		firstAlternatives = null;
 		if ((p == null) || !busy) return;
+		// Фраза записана — магнитолу из режима звонка, ответ звучит обычным звуком
+		releaseMic();
 		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
 		Log.i("JARVIS tab: phrase «", q.get(0), "»");
 
