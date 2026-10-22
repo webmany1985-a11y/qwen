@@ -153,9 +153,8 @@ final class QwenChat {
 			return;
 		}
 		inject();
-		String want = wantedModel();
-		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " +
-				((want == null) ? "null" : JSONObject.quote(want)) + ") : null", r -> {
+		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " + wanted() +
+				") : null", r -> {
 			if (pending != cb) return;
 			JSONObject o = parse(r);
 			if (o == null) {
@@ -222,34 +221,48 @@ final class QwenChat {
 	}
 
 	/**
-	 * Модель, которую пользователь выбрал на странице Qwen (пожелание 22.10.2026:
-	 * «каждый раз сбрасывается на модель по умолчанию»). Новый разговор сайт
-	 * начинает с модели по умолчанию — перед вопросом скрипт выбирает эту.
+	 * Что пользователь выбрал на странице Qwen: модель, режим мышления, поиск в
+	 * сети (пожелание 22.10.2026: «каждый раз сбрасывается на модель по
+	 * умолчанию», «мышление быстрое, поиск в интернете — не сохраняет»). Новый
+	 * разговор сайт начинает по умолчанию — перед вопросом скрипт ставит это.
+	 *
+	 * @return объект для __jq.send: {model, thinking, search}
 	 */
-	@Nullable
-	private String wantedModel() {
-		return web.getContext().getApplicationContext()
-				.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODEL, null);
+	private String wanted() {
+		android.content.SharedPreferences sp = web.getContext().getApplicationContext()
+				.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+		JSONObject o = new JSONObject();
+		try {
+			o.put("model", sp.getString(KEY_MODEL, null));
+			o.put("thinking", sp.getString(KEY_THINKING, null));
+			if (sp.contains(KEY_SEARCH)) o.put("search", sp.getBoolean(KEY_SEARCH, false));
+		} catch (Exception ignore) {
+		}
+		return o.toString();
 	}
 
-	/** Запомнить модель, выбранную сейчас на странице (после того как страницу спрятали). */
+	/** Запомнить выбранное сейчас на странице (после того как страницу спрятали). */
 	void rememberModel() {
-		web.evaluateJavascript("window.__jq ? __jq.model() : ''", r -> {
-			String m = null;
-			try {
-				Object v = new JSONTokener(r).nextValue();
-				if (v instanceof String) m = ((String) v).trim();
-			} catch (Exception ignore) {
-			}
-			if ((m == null) || m.isEmpty()) return;
-			web.getContext().getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-					.edit().putString(KEY_MODEL, m).apply();
-			Log.i("[QWEN] model remembered: ", m);
+		web.evaluateJavascript("window.__jq ? __jq.settings() : null", r -> {
+			JSONObject o = parse(r);
+			if (o == null) return;
+			android.content.SharedPreferences.Editor e = web.getContext().getApplicationContext()
+					.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+			String m = o.optString("model").trim();
+			if (!m.isEmpty()) e.putString(KEY_MODEL, m);
+			String t = o.isNull("thinking") ? "" : o.optString("thinking").trim();
+			if (!t.isEmpty()) e.putString(KEY_THINKING, t);
+			if (!o.isNull("search")) e.putBoolean(KEY_SEARCH, o.optBoolean("search"));
+			e.apply();
+			Log.i("[QWEN] remembered: model ", m, ", thinking ", t.isEmpty() ? "(unchanged)" : t,
+					", web search ", o.isNull("search") ? "(unchanged)" : o.optBoolean("search"));
 		});
 	}
 
 	private static final String PREFS = "jarvis_qwen";
 	private static final String KEY_MODEL = "model";
+	private static final String KEY_THINKING = "thinking";
+	private static final String KEY_SEARCH = "search";
 
 	void cancel() {
 		pending = null;

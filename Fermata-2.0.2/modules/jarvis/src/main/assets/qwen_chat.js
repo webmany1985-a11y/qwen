@@ -150,6 +150,104 @@
 		return p.join(' < ');
 	}
 
+	/**
+	 * Режим мышления и поиск в сети: сайт в каждом новом разговоре ставит их
+	 * по умолчанию (журнал JARVIS 22.10.2026, 19:13 — «нет доступа к погоде»:
+	 * поиск был выключен). Выбор пользователя на странице запоминается
+	 * ({@link settings}), перед вопросом выставляется снова ({@link applyModes}).
+	 * Кнопка «Выбрать режим» — .mode-select-open; мышление — список
+	 * «Авто / Мышление / Быстрый»; поиск включён — значок #appicon-online у поля.
+	 */
+	let chosenThinking = null;
+	let chosenSearch = null;
+	let thinkingApplied = false;
+	document.addEventListener('click', function (e) {
+		const it = e.target.closest && e.target.closest('.qwen-chat-v2-dropdown-menu-item');
+		if (it && it.closest('.mode-selector-drawer-item, .ant-drawer, [class*="dropdown-menu"]')) {
+			chosenThinking = (it.innerText || '').trim() || chosenThinking;
+		}
+		const li = e.target.closest && e.target.closest('.mode-selector-drawer-list-item');
+		if (li && /Поиск в сети|Web search/i.test((li.innerText || '').trim())) chosenSearch = true;
+		if (e.target.closest && e.target.closest('.mode-select-current-mode-close') && searchOn()) chosenSearch = false;
+	}, true);
+
+	function searchOn() {
+		return !!document.querySelector('.mode-select-current-mode use[href="#appicon-online"], ' +
+			'.mode-select-current-mode use[*|href="#appicon-online"]');
+	}
+
+	function closeDrawer() {
+		const m = document.querySelector('.ant-drawer-open .ant-drawer-mask, .ant-drawer-mask');
+		if (m) m.click();
+	}
+
+	function openModes(then) {
+		const o = document.querySelector('.mode-select-open');
+		if (!o) {
+			then(false);
+			return;
+		}
+		o.click();
+		setTimeout(() => then(true), 700);
+	}
+
+	/** Выставить мышление и поиск, как запомнено; then — после. */
+	function applyModes(want, then) {
+		const wantThink = want && want.thinking;
+		const wantSearch = want && (typeof want.search === 'boolean') ? want.search : null;
+		const needThink = wantThink && !thinkingApplied;
+		const needSearch = (wantSearch !== null) && (wantSearch !== searchOn());
+		if (!needThink && !needSearch) {
+			then();
+			return;
+		}
+		openModes(ok => {
+			if (!ok) {
+				then();
+				return;
+			}
+			const steps = [];
+			if (needThink) steps.push(next => {
+				const t = document.querySelector('.mode-selector-drawer-item .qwen-chat-v2-dropdown-menu-trigger');
+				const cur = t ? (t.innerText || '').trim() : '';
+				thinkingApplied = true;
+				if (!t || (cur === wantThink)) {
+					next();
+					return;
+				}
+				t.click();
+				setTimeout(() => {
+					const it = Array.from(document.querySelectorAll('.qwen-chat-v2-dropdown-menu-item'))
+						.find(e => (e.innerText || '').trim() === wantThink);
+					if (it) it.click();
+					log('thinking ' + cur + ' -> ' + wantThink + (it ? '' : ': not in the list'));
+					setTimeout(next, 500);
+				}, 500);
+			});
+			if (needSearch && wantSearch) steps.push(next => {
+				const it = Array.from(document.querySelectorAll('.mode-selector-drawer-list-item'))
+					.find(e => /Поиск в сети|Web search|Search/i.test((e.innerText || '').trim()));
+				if (it) it.click();
+				log('web search on' + (it ? '' : ': no item'));
+				setTimeout(next, 600);
+			});
+			let i = 0;
+			const run = () => {
+				if (i < steps.length) steps[i++](run);
+				else {
+					if (document.querySelector('.ant-drawer-open')) closeDrawer();
+					if (needSearch && !wantSearch) {
+						const c = document.querySelector('.mode-select-current-mode-close');
+						if (c) c.click();
+						log('web search off');
+					}
+					setTimeout(then, 500);
+				}
+			};
+			run();
+		});
+	}
+
 	let before = [];
 	let beforeCompare = [];
 	let compareChosen = false;
@@ -178,7 +276,17 @@
 			return currentModel();
 		},
 
-		send: function (text, want) {
+		/** Что выбрано на странице: модель, мышление (если меняли), поиск. */
+		settings: function () {
+			// Мышление и поиск — только если их переключали: иначе открыть и закрыть
+			// страницу значило бы затереть запомненное
+			return JSON.stringify({ model: currentModel(), thinking: chosenThinking, search: chosenSearch });
+		},
+
+		send: function (text, wantArg) {
+			// want — название модели (как раньше) или {model, thinking, search}
+			const wantObj = (wantArg && typeof wantArg === 'object') ? wantArg : { model: wantArg };
+			const want = wantObj.model;
 			const ta = input();
 			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
 			before = replies();
@@ -188,7 +296,7 @@
 			last = '';
 			how = '';
 			sentAt = lastChange = Date.now();
-			pickModel(want, () => {
+			pickModel(want, () => applyModes(wantObj, () => {
 			sentAt = lastChange = Date.now();
 			const ta2 = input() || ta;
 			// Поле под React: значение — через родной сеттер, затем событие input
@@ -206,7 +314,7 @@
 					log('sent by Enter: no send button');
 				}
 			}, 300);
-			});
+			}));
 			return JSON.stringify({ ok: true });
 		},
 

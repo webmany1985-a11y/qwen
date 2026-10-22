@@ -4734,10 +4734,10 @@ index 0000000..b3f8131
 +</manifest>
 diff --git a/modules/jarvis/src/main/assets/qwen_chat.js b/modules/jarvis/src/main/assets/qwen_chat.js
 new file mode 100644
-index 0000000..2e709b9
+index 0000000..9dda5ee
 --- /dev/null
 +++ b/modules/jarvis/src/main/assets/qwen_chat.js
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,366 @@
 +// Вкладка JARVIS: вопросы — на chat.qwen.ai, ответ читается со страницы.
 +// Страница открыта в невидимом WebView под кругом JARVIS.
 +// Имена классов — из кода сайта (21.10.2026): поле ввода
@@ -4890,6 +4890,104 @@ index 0000000..2e709b9
 +		return p.join(' < ');
 +	}
 +
++	/**
++	 * Режим мышления и поиск в сети: сайт в каждом новом разговоре ставит их
++	 * по умолчанию (журнал JARVIS 22.10.2026, 19:13 — «нет доступа к погоде»:
++	 * поиск был выключен). Выбор пользователя на странице запоминается
++	 * ({@link settings}), перед вопросом выставляется снова ({@link applyModes}).
++	 * Кнопка «Выбрать режим» — .mode-select-open; мышление — список
++	 * «Авто / Мышление / Быстрый»; поиск включён — значок #appicon-online у поля.
++	 */
++	let chosenThinking = null;
++	let chosenSearch = null;
++	let thinkingApplied = false;
++	document.addEventListener('click', function (e) {
++		const it = e.target.closest && e.target.closest('.qwen-chat-v2-dropdown-menu-item');
++		if (it && it.closest('.mode-selector-drawer-item, .ant-drawer, [class*="dropdown-menu"]')) {
++			chosenThinking = (it.innerText || '').trim() || chosenThinking;
++		}
++		const li = e.target.closest && e.target.closest('.mode-selector-drawer-list-item');
++		if (li && /Поиск в сети|Web search/i.test((li.innerText || '').trim())) chosenSearch = true;
++		if (e.target.closest && e.target.closest('.mode-select-current-mode-close') && searchOn()) chosenSearch = false;
++	}, true);
++
++	function searchOn() {
++		return !!document.querySelector('.mode-select-current-mode use[href="#appicon-online"], ' +
++			'.mode-select-current-mode use[*|href="#appicon-online"]');
++	}
++
++	function closeDrawer() {
++		const m = document.querySelector('.ant-drawer-open .ant-drawer-mask, .ant-drawer-mask');
++		if (m) m.click();
++	}
++
++	function openModes(then) {
++		const o = document.querySelector('.mode-select-open');
++		if (!o) {
++			then(false);
++			return;
++		}
++		o.click();
++		setTimeout(() => then(true), 700);
++	}
++
++	/** Выставить мышление и поиск, как запомнено; then — после. */
++	function applyModes(want, then) {
++		const wantThink = want && want.thinking;
++		const wantSearch = want && (typeof want.search === 'boolean') ? want.search : null;
++		const needThink = wantThink && !thinkingApplied;
++		const needSearch = (wantSearch !== null) && (wantSearch !== searchOn());
++		if (!needThink && !needSearch) {
++			then();
++			return;
++		}
++		openModes(ok => {
++			if (!ok) {
++				then();
++				return;
++			}
++			const steps = [];
++			if (needThink) steps.push(next => {
++				const t = document.querySelector('.mode-selector-drawer-item .qwen-chat-v2-dropdown-menu-trigger');
++				const cur = t ? (t.innerText || '').trim() : '';
++				thinkingApplied = true;
++				if (!t || (cur === wantThink)) {
++					next();
++					return;
++				}
++				t.click();
++				setTimeout(() => {
++					const it = Array.from(document.querySelectorAll('.qwen-chat-v2-dropdown-menu-item'))
++						.find(e => (e.innerText || '').trim() === wantThink);
++					if (it) it.click();
++					log('thinking ' + cur + ' -> ' + wantThink + (it ? '' : ': not in the list'));
++					setTimeout(next, 500);
++				}, 500);
++			});
++			if (needSearch && wantSearch) steps.push(next => {
++				const it = Array.from(document.querySelectorAll('.mode-selector-drawer-list-item'))
++					.find(e => /Поиск в сети|Web search|Search/i.test((e.innerText || '').trim()));
++				if (it) it.click();
++				log('web search on' + (it ? '' : ': no item'));
++				setTimeout(next, 600);
++			});
++			let i = 0;
++			const run = () => {
++				if (i < steps.length) steps[i++](run);
++				else {
++					if (document.querySelector('.ant-drawer-open')) closeDrawer();
++					if (needSearch && !wantSearch) {
++						const c = document.querySelector('.mode-select-current-mode-close');
++						if (c) c.click();
++						log('web search off');
++					}
++					setTimeout(then, 500);
++				}
++			};
++			run();
++		});
++	}
++
 +	let before = [];
 +	let beforeCompare = [];
 +	let compareChosen = false;
@@ -4918,7 +5016,17 @@ index 0000000..2e709b9
 +			return currentModel();
 +		},
 +
-+		send: function (text, want) {
++		/** Что выбрано на странице: модель, мышление (если меняли), поиск. */
++		settings: function () {
++			// Мышление и поиск — только если их переключали: иначе открыть и закрыть
++			// страницу значило бы затереть запомненное
++			return JSON.stringify({ model: currentModel(), thinking: chosenThinking, search: chosenSearch });
++		},
++
++		send: function (text, wantArg) {
++			// want — название модели (как раньше) или {model, thinking, search}
++			const wantObj = (wantArg && typeof wantArg === 'object') ? wantArg : { model: wantArg };
++			const want = wantObj.model;
 +			const ta = input();
 +			if (!ta) return JSON.stringify({ ok: false, why: 'no-input', login: needLogin() });
 +			before = replies();
@@ -4928,7 +5036,7 @@ index 0000000..2e709b9
 +			last = '';
 +			how = '';
 +			sentAt = lastChange = Date.now();
-+			pickModel(want, () => {
++			pickModel(want, () => applyModes(wantObj, () => {
 +			sentAt = lastChange = Date.now();
 +			const ta2 = input() || ta;
 +			// Поле под React: значение — через родной сеттер, затем событие input
@@ -4946,7 +5054,7 @@ index 0000000..2e709b9
 +					log('sent by Enter: no send button');
 +				}
 +			}, 300);
-+			});
++			}));
 +			return JSON.stringify({ ok: true });
 +		},
 +
@@ -7034,10 +7142,10 @@ index 0000000..0769310
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 new file mode 100644
-index 0000000..43abf4d
+index 0000000..6eb1812
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
-@@ -0,0 +1,352 @@
+@@ -0,0 +1,365 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -7193,9 +7301,8 @@ index 0000000..43abf4d
 +			return;
 +		}
 +		inject();
-+		String want = wantedModel();
-+		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " +
-+				((want == null) ? "null" : JSONObject.quote(want)) + ") : null", r -> {
++		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " + wanted() +
++				") : null", r -> {
 +			if (pending != cb) return;
 +			JSONObject o = parse(r);
 +			if (o == null) {
@@ -7262,34 +7369,48 @@ index 0000000..43abf4d
 +	}
 +
 +	/**
-+	 * Модель, которую пользователь выбрал на странице Qwen (пожелание 22.10.2026:
-+	 * «каждый раз сбрасывается на модель по умолчанию»). Новый разговор сайт
-+	 * начинает с модели по умолчанию — перед вопросом скрипт выбирает эту.
++	 * Что пользователь выбрал на странице Qwen: модель, режим мышления, поиск в
++	 * сети (пожелание 22.10.2026: «каждый раз сбрасывается на модель по
++	 * умолчанию», «мышление быстрое, поиск в интернете — не сохраняет»). Новый
++	 * разговор сайт начинает по умолчанию — перед вопросом скрипт ставит это.
++	 *
++	 * @return объект для __jq.send: {model, thinking, search}
 +	 */
-+	@Nullable
-+	private String wantedModel() {
-+		return web.getContext().getApplicationContext()
-+				.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODEL, null);
++	private String wanted() {
++		android.content.SharedPreferences sp = web.getContext().getApplicationContext()
++				.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
++		JSONObject o = new JSONObject();
++		try {
++			o.put("model", sp.getString(KEY_MODEL, null));
++			o.put("thinking", sp.getString(KEY_THINKING, null));
++			if (sp.contains(KEY_SEARCH)) o.put("search", sp.getBoolean(KEY_SEARCH, false));
++		} catch (Exception ignore) {
++		}
++		return o.toString();
 +	}
 +
-+	/** Запомнить модель, выбранную сейчас на странице (после того как страницу спрятали). */
++	/** Запомнить выбранное сейчас на странице (после того как страницу спрятали). */
 +	void rememberModel() {
-+		web.evaluateJavascript("window.__jq ? __jq.model() : ''", r -> {
-+			String m = null;
-+			try {
-+				Object v = new JSONTokener(r).nextValue();
-+				if (v instanceof String) m = ((String) v).trim();
-+			} catch (Exception ignore) {
-+			}
-+			if ((m == null) || m.isEmpty()) return;
-+			web.getContext().getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-+					.edit().putString(KEY_MODEL, m).apply();
-+			Log.i("[QWEN] model remembered: ", m);
++		web.evaluateJavascript("window.__jq ? __jq.settings() : null", r -> {
++			JSONObject o = parse(r);
++			if (o == null) return;
++			android.content.SharedPreferences.Editor e = web.getContext().getApplicationContext()
++					.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
++			String m = o.optString("model").trim();
++			if (!m.isEmpty()) e.putString(KEY_MODEL, m);
++			String t = o.isNull("thinking") ? "" : o.optString("thinking").trim();
++			if (!t.isEmpty()) e.putString(KEY_THINKING, t);
++			if (!o.isNull("search")) e.putBoolean(KEY_SEARCH, o.optBoolean("search"));
++			e.apply();
++			Log.i("[QWEN] remembered: model ", m, ", thinking ", t.isEmpty() ? "(unchanged)" : t,
++					", web search ", o.isNull("search") ? "(unchanged)" : o.optBoolean("search"));
 +		});
 +	}
 +
 +	private static final String PREFS = "jarvis_qwen";
 +	private static final String KEY_MODEL = "model";
++	private static final String KEY_THINKING = "thinking";
++	private static final String KEY_SEARCH = "search";
 +
 +	void cancel() {
 +		pending = null;
