@@ -938,7 +938,7 @@ public class JarvisFragment extends MainActivityFragment
 		if (homeInfoFresh(token)) {
 			YandexHome.Action m = homeMatch(q, homeInfo);
 			if (m == null) {
-				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
+				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "» — ", YandexHome.names(homeInfo));
 				return false;
 			}
 			runHome(a, token, m);
@@ -971,7 +971,7 @@ public class JarvisFragment extends MainActivityFragment
 				Log.i("JARVIS home: user/info failed: ", ex.getMessage());
 			}
 			YandexHome.Action found = m;
-			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
+			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "» — ", YandexHome.names(homeInfo));
 			main.post(() -> {
 				if (!busy) return;
 				if (found != null) runHome(a, token, found);

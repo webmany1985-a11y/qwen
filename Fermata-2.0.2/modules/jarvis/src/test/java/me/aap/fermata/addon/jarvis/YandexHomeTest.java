@@ -119,4 +119,26 @@ public class YandexHomeTest {
 				"{\"id\":\"d\",\"name\":\"Ворота\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}");
 		assertEquals("d", YandexHome.pick(i, true).id);
 	}
+
+	@Test
+	public void scenarioByDeviceWords() throws Exception {
+		JSONObject i = info("{\"scenarios\":[{\"id\":\"s1\",\"name\":\"Свет на террасе\"}," +
+				"{\"id\":\"s2\",\"name\":\"Выключить свет на террасе\"},{\"id\":\"s3\",\"name\":\"Свет в саду\"}],\"devices\":[]}");
+		YandexHome.Action a = YandexHome.match("Включи свет на террасе", i);
+		assertTrue(a.target.scenario);
+		assertEquals("s1", a.target.id);
+		assertEquals("s2", YandexHome.match("выключи свет на террасе", i).target.id);
+		assertNull(YandexHome.match("включи свет", i));
+		assertNull(YandexHome.match("включи музыку", i));
+	}
+
+	@Test
+	public void groups() throws Exception {
+		JSONObject i = info("{\"devices\":[],\"groups\":[{\"id\":\"g1\",\"name\":\"Свет на террасе\"," +
+				"\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}");
+		YandexHome.Action a = YandexHome.match("включи свет на террасе", i);
+		assertTrue(a.target.group);
+		assertEquals("g1", a.target.id);
+		assertTrue(YandexHome.names(i).contains("«Свет на террасе»"));
+	}
 }

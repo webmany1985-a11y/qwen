@@ -54,11 +54,18 @@ final class YandexHome {
 	/** Что запустить: сценарий или устройство. */
 	static final class Target {
 		final boolean scenario;
+		/** Группа устройств Яндекса («Свет на террасе» из нескольких ламп). */
+		final boolean group;
 		final String id;
 		final String name;
 
 		Target(boolean scenario, String id, String name) {
+			this(scenario, false, id, name);
+		}
+
+		Target(boolean scenario, boolean group, String id, String name) {
 			this.scenario = scenario;
+			this.group = group;
 			this.id = id;
 			this.name = name;
 		}
@@ -144,7 +151,77 @@ final class YandexHome {
 			return null;
 		}
 		Target d = deviceByName(info, rest);
-		return (d == null) ? null : new Action(d, on);
+		if (d != null) return new Action(d, on);
+		// «Включи свет на террасе» — сценарий «Свет на террасе» / «Выключить свет на террасе»
+		Target sc = scenarioForRest(info, rest, on);
+		return (sc == null) ? null : new Action(sc, on);
+	}
+
+	private static final Pattern VERB = Pattern.compile(
+			"^(включи(ть)?|выключи(ть)?|отключи(ть)?|запусти(ть)?|погаси(ть)?|зажги|вкл|выкл)$");
+	private static final Pattern OFF_NAME = Pattern.compile("(^|\\s)(выкл|отключ|погас)");
+
+	/** Значимые слова: без глаголов и предлогов («на», «в»). */
+	private static String content(String s) {
+		StringBuilder b = new StringBuilder();
+		for (String w : norm(s).split(" ")) {
+			if ((w.length() <= 2) || VERB.matcher(w).matches()) continue;
+			if (b.length() > 0) b.append(' ');
+			b.append(w);
+		}
+		return b.toString();
+	}
+
+	/**
+	 * Сценарий, чьё название без глаголов и предлогов — те же слова, что во
+	 * фразе после «включи/выключи». «Выключи …» — только сценарий с «выкл»/
+	 * «отключ» в названии; «включи …» — только без них.
+	 */
+	@Nullable
+	private static Target scenarioForRest(JSONObject info, String rest, boolean on) {
+		JSONArray sc = info.optJSONArray("scenarios");
+		if (sc == null) return null;
+		String r = content(rest);
+		if (r.isEmpty()) return null;
+		Target hit = null;
+		for (int i = 0; i < sc.length(); i++) {
+			JSONObject s = sc.optJSONObject(i);
+			if ((s == null) || !s.optBoolean("is_active", true)) continue;
+			String raw = norm(s.optString("name"));
+			if (OFF_NAME.matcher(raw).find() == on) continue;
+			String n = content(raw);
+			if (n.isEmpty() || !covers(r, n) || !covers(n, r)) continue;
+			if (hit != null) return null; // два подходящих — не угадывать
+			hit = new Target(true, s.optString("id"), s.optString("name"));
+		}
+		return hit;
+	}
+
+	/** Названия устройств (с комнатами), групп и сценариев — в журнал, когда фраза не нашлась. */
+	static String names(@Nullable JSONObject info) {
+		if (info == null) return "-";
+		java.util.Map<String, String> rooms = new java.util.HashMap<>();
+		JSONArray rs = info.optJSONArray("rooms");
+		if (rs != null) for (int i = 0; i < rs.length(); i++) {
+			JSONObject r = rs.optJSONObject(i);
+			if (r != null) rooms.put(r.optString("id"), r.optString("name"));
+		}
+		StringBuilder b = new StringBuilder();
+		for (String key : new String[]{"devices", "groups", "scenarios"}) {
+			JSONArray a = info.optJSONArray(key);
+			b.append(key).append(": ");
+			if (a != null) for (int i = 0; i < a.length(); i++) {
+				JSONObject o = a.optJSONObject(i);
+				if (o == null) continue;
+				b.append('«').append(o.optString("name")).append('»');
+				String room = rooms.get(o.optString("room"));
+				if ((room != null) && !room.isEmpty()) b.append(" (").append(room).append(')');
+				if (!key.equals("scenarios") && !hasOnOff(o)) b.append(" [нет вкл/выкл]");
+				b.append(i + 1 < a.length() ? ", " : "");
+			}
+			b.append("; ");
+		}
+		return b.toString();
 	}
 
 	/** Похоже ли на команду Умному дому — стоит ли спросить его состав, если он ещё не загружен. */
@@ -217,6 +294,17 @@ final class YandexHome {
 			if ((d == null) || !hasOnOff(d)) continue;
 			if (covers(p, d.optString("name"))) hits.add(d);
 		}
+		// Группы («Свет на террасе» из нескольких ламп) — как устройства
+		java.util.Set<JSONObject> groups = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		JSONArray gs = info.optJSONArray("groups");
+		if (gs != null) for (int i = 0; i < gs.length(); i++) {
+			JSONObject g = gs.optJSONObject(i);
+			if ((g == null) || !hasOnOff(g)) continue;
+			if (covers(p, g.optString("name"))) {
+				hits.add(g);
+				groups.add(g);
+			}
+		}
 		if (hits.size() > 1) {
 			// Несколько «Свет» — выбрать по комнате из фразы
 			java.util.List<JSONObject> inRoom = new java.util.ArrayList<>();
@@ -236,7 +324,7 @@ final class YandexHome {
 		}
 		if (hits.size() != 1) return null;
 		JSONObject d = hits.get(0);
-		return new Target(false, d.optString("id"), d.optString("name"));
+		return new Target(false, groups.contains(d), d.optString("id"), d.optString("name"));
 	}
 
 	private static boolean hasOnOff(JSONObject d) {
@@ -257,11 +345,17 @@ final class YandexHome {
 	/** Выполнить команду; результат — что сказать. Не в главном потоке. */
 	static String run(@NonNull String token, @NonNull Action a) throws Exception {
 		Target t = a.target;
-		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : "device «", t.name, "» ",
+		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : t.group ? "group «" : "device «", t.name, "» ",
 				t.scenario ? "" : (a.on ? "on" : "off"));
 		JSONObject r;
 		if (t.scenario) {
 			r = new JSONObject(request("POST", "scenarios/" + t.id + "/actions", token, null));
+		} else if (t.group) {
+			// v1.0/groups/{id}/actions — включение группы целиком
+			JSONObject state = new JSONObject().put("instance", "on").put("value", a.on);
+			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);
+			JSONObject body = new JSONObject().put("actions", new JSONArray().put(action));
+			r = new JSONObject(request("POST", "groups/" + t.id + "/actions", token, body.toString()));
 		} else {
 			JSONObject state = new JSONObject().put("instance", "on").put("value", a.on);
 			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);

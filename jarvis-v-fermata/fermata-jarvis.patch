@@ -5827,7 +5827,7 @@ index 0000000..c7ffad8
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..5415000
+index 0000000..9cc0336
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 @@ -0,0 +1,1330 @@
@@ -6771,7 +6771,7 @@ index 0000000..5415000
 +		if (homeInfoFresh(token)) {
 +			YandexHome.Action m = homeMatch(q, homeInfo);
 +			if (m == null) {
-+				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
++				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "» — ", YandexHome.names(homeInfo));
 +				return false;
 +			}
 +			runHome(a, token, m);
@@ -6804,7 +6804,7 @@ index 0000000..5415000
 +				Log.i("JARVIS home: user/info failed: ", ex.getMessage());
 +			}
 +			YandexHome.Action found = m;
-+			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
++			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "» — ", YandexHome.names(homeInfo));
 +			main.post(() -> {
 +				if (!busy) return;
 +				if (found != null) runHome(a, token, found);
@@ -8080,10 +8080,10 @@ index 0000000..c0aace1
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
 new file mode 100644
-index 0000000..bba43c7
+index 0000000..94b99ae
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
-@@ -0,0 +1,413 @@
+@@ -0,0 +1,507 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -8140,11 +8140,18 @@ index 0000000..bba43c7
 +	/** Что запустить: сценарий или устройство. */
 +	static final class Target {
 +		final boolean scenario;
++		/** Группа устройств Яндекса («Свет на террасе» из нескольких ламп). */
++		final boolean group;
 +		final String id;
 +		final String name;
 +
 +		Target(boolean scenario, String id, String name) {
++			this(scenario, false, id, name);
++		}
++
++		Target(boolean scenario, boolean group, String id, String name) {
 +			this.scenario = scenario;
++			this.group = group;
 +			this.id = id;
 +			this.name = name;
 +		}
@@ -8230,7 +8237,77 @@ index 0000000..bba43c7
 +			return null;
 +		}
 +		Target d = deviceByName(info, rest);
-+		return (d == null) ? null : new Action(d, on);
++		if (d != null) return new Action(d, on);
++		// «Включи свет на террасе» — сценарий «Свет на террасе» / «Выключить свет на террасе»
++		Target sc = scenarioForRest(info, rest, on);
++		return (sc == null) ? null : new Action(sc, on);
++	}
++
++	private static final Pattern VERB = Pattern.compile(
++			"^(включи(ть)?|выключи(ть)?|отключи(ть)?|запусти(ть)?|погаси(ть)?|зажги|вкл|выкл)$");
++	private static final Pattern OFF_NAME = Pattern.compile("(^|\\s)(выкл|отключ|погас)");
++
++	/** Значимые слова: без глаголов и предлогов («на», «в»). */
++	private static String content(String s) {
++		StringBuilder b = new StringBuilder();
++		for (String w : norm(s).split(" ")) {
++			if ((w.length() <= 2) || VERB.matcher(w).matches()) continue;
++			if (b.length() > 0) b.append(' ');
++			b.append(w);
++		}
++		return b.toString();
++	}
++
++	/**
++	 * Сценарий, чьё название без глаголов и предлогов — те же слова, что во
++	 * фразе после «включи/выключи». «Выключи …» — только сценарий с «выкл»/
++	 * «отключ» в названии; «включи …» — только без них.
++	 */
++	@Nullable
++	private static Target scenarioForRest(JSONObject info, String rest, boolean on) {
++		JSONArray sc = info.optJSONArray("scenarios");
++		if (sc == null) return null;
++		String r = content(rest);
++		if (r.isEmpty()) return null;
++		Target hit = null;
++		for (int i = 0; i < sc.length(); i++) {
++			JSONObject s = sc.optJSONObject(i);
++			if ((s == null) || !s.optBoolean("is_active", true)) continue;
++			String raw = norm(s.optString("name"));
++			if (OFF_NAME.matcher(raw).find() == on) continue;
++			String n = content(raw);
++			if (n.isEmpty() || !covers(r, n) || !covers(n, r)) continue;
++			if (hit != null) return null; // два подходящих — не угадывать
++			hit = new Target(true, s.optString("id"), s.optString("name"));
++		}
++		return hit;
++	}
++
++	/** Названия устройств (с комнатами), групп и сценариев — в журнал, когда фраза не нашлась. */
++	static String names(@Nullable JSONObject info) {
++		if (info == null) return "-";
++		java.util.Map<String, String> rooms = new java.util.HashMap<>();
++		JSONArray rs = info.optJSONArray("rooms");
++		if (rs != null) for (int i = 0; i < rs.length(); i++) {
++			JSONObject r = rs.optJSONObject(i);
++			if (r != null) rooms.put(r.optString("id"), r.optString("name"));
++		}
++		StringBuilder b = new StringBuilder();
++		for (String key : new String[]{"devices", "groups", "scenarios"}) {
++			JSONArray a = info.optJSONArray(key);
++			b.append(key).append(": ");
++			if (a != null) for (int i = 0; i < a.length(); i++) {
++				JSONObject o = a.optJSONObject(i);
++				if (o == null) continue;
++				b.append('«').append(o.optString("name")).append('»');
++				String room = rooms.get(o.optString("room"));
++				if ((room != null) && !room.isEmpty()) b.append(" (").append(room).append(')');
++				if (!key.equals("scenarios") && !hasOnOff(o)) b.append(" [нет вкл/выкл]");
++				b.append(i + 1 < a.length() ? ", " : "");
++			}
++			b.append("; ");
++		}
++		return b.toString();
 +	}
 +
 +	/** Похоже ли на команду Умному дому — стоит ли спросить его состав, если он ещё не загружен. */
@@ -8303,6 +8380,17 @@ index 0000000..bba43c7
 +			if ((d == null) || !hasOnOff(d)) continue;
 +			if (covers(p, d.optString("name"))) hits.add(d);
 +		}
++		// Группы («Свет на террасе» из нескольких ламп) — как устройства
++		java.util.Set<JSONObject> groups = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
++		JSONArray gs = info.optJSONArray("groups");
++		if (gs != null) for (int i = 0; i < gs.length(); i++) {
++			JSONObject g = gs.optJSONObject(i);
++			if ((g == null) || !hasOnOff(g)) continue;
++			if (covers(p, g.optString("name"))) {
++				hits.add(g);
++				groups.add(g);
++			}
++		}
 +		if (hits.size() > 1) {
 +			// Несколько «Свет» — выбрать по комнате из фразы
 +			java.util.List<JSONObject> inRoom = new java.util.ArrayList<>();
@@ -8322,7 +8410,7 @@ index 0000000..bba43c7
 +		}
 +		if (hits.size() != 1) return null;
 +		JSONObject d = hits.get(0);
-+		return new Target(false, d.optString("id"), d.optString("name"));
++		return new Target(false, groups.contains(d), d.optString("id"), d.optString("name"));
 +	}
 +
 +	private static boolean hasOnOff(JSONObject d) {
@@ -8343,11 +8431,17 @@ index 0000000..bba43c7
 +	/** Выполнить команду; результат — что сказать. Не в главном потоке. */
 +	static String run(@NonNull String token, @NonNull Action a) throws Exception {
 +		Target t = a.target;
-+		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : "device «", t.name, "» ",
++		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : t.group ? "group «" : "device «", t.name, "» ",
 +				t.scenario ? "" : (a.on ? "on" : "off"));
 +		JSONObject r;
 +		if (t.scenario) {
 +			r = new JSONObject(request("POST", "scenarios/" + t.id + "/actions", token, null));
++		} else if (t.group) {
++			// v1.0/groups/{id}/actions — включение группы целиком
++			JSONObject state = new JSONObject().put("instance", "on").put("value", a.on);
++			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);
++			JSONObject body = new JSONObject().put("actions", new JSONArray().put(action));
++			r = new JSONObject(request("POST", "groups/" + t.id + "/actions", token, body.toString()));
 +		} else {
 +			JSONObject state = new JSONObject().put("instance", "on").put("value", a.on);
 +			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);
@@ -18817,10 +18911,10 @@ index 0000000..fdb0596
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
 new file mode 100644
-index 0000000..a49e049
+index 0000000..3dc58ac
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,144 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -18941,6 +19035,28 @@ index 0000000..a49e049
 +		JSONObject i = info("{\"scenarios\":[],\"devices\":[{\"id\":\"x\",\"name\":\"Датчик ворот\",\"capabilities\":[]}," +
 +				"{\"id\":\"d\",\"name\":\"Ворота\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}");
 +		assertEquals("d", YandexHome.pick(i, true).id);
++	}
++
++	@Test
++	public void scenarioByDeviceWords() throws Exception {
++		JSONObject i = info("{\"scenarios\":[{\"id\":\"s1\",\"name\":\"Свет на террасе\"}," +
++				"{\"id\":\"s2\",\"name\":\"Выключить свет на террасе\"},{\"id\":\"s3\",\"name\":\"Свет в саду\"}],\"devices\":[]}");
++		YandexHome.Action a = YandexHome.match("Включи свет на террасе", i);
++		assertTrue(a.target.scenario);
++		assertEquals("s1", a.target.id);
++		assertEquals("s2", YandexHome.match("выключи свет на террасе", i).target.id);
++		assertNull(YandexHome.match("включи свет", i));
++		assertNull(YandexHome.match("включи музыку", i));
++	}
++
++	@Test
++	public void groups() throws Exception {
++		JSONObject i = info("{\"devices\":[],\"groups\":[{\"id\":\"g1\",\"name\":\"Свет на террасе\"," +
++				"\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}");
++		YandexHome.Action a = YandexHome.match("включи свет на террасе", i);
++		assertTrue(a.target.group);
++		assertEquals("g1", a.target.id);
++		assertTrue(YandexHome.names(i).contains("«Свет на террасе»"));
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
