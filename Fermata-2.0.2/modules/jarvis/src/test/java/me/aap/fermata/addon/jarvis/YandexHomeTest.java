@@ -52,4 +52,54 @@ public class YandexHomeTest {
 				"https://oauth.yandex.ru/verification_code#access_token=y0_AgAAA&token_type=bearer&expires_in=31536000"));
 		assertNull(YandexHome.tokenFromRedirect("https://oauth.yandex.ru/verification_code?error=access_denied"));
 	}
+
+	private static final String HOME = "{\"rooms\":[{\"id\":\"r1\",\"name\":\"Гараж\"},{\"id\":\"r2\",\"name\":\"Кухня\"}]," +
+			"\"scenarios\":[{\"id\":\"s1\",\"name\":\"Утро\"},{\"id\":\"s2\",\"name\":\"Я ухожу\"}," +
+			"{\"id\":\"s3\",\"name\":\"Ночь\",\"is_active\":false}]," +
+			"\"devices\":[" +
+			"{\"id\":\"d1\",\"name\":\"Свет\",\"room\":\"r1\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}," +
+			"{\"id\":\"d2\",\"name\":\"Свет\",\"room\":\"r2\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}," +
+			"{\"id\":\"d3\",\"name\":\"Телевизор\",\"room\":\"r2\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}," +
+			"{\"id\":\"d4\",\"name\":\"Светильник\",\"room\":\"r2\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}," +
+			"{\"id\":\"d5\",\"name\":\"Датчик\",\"room\":\"r1\",\"capabilities\":[]}]}";
+
+	@Test
+	public void scenarios() throws Exception {
+		JSONObject i = info(HOME);
+		YandexHome.Action a = YandexHome.match("запусти сценарий утро", i);
+		assertTrue(a.target.scenario);
+		assertEquals("s1", a.target.id);
+		assertEquals("s2", YandexHome.match("Я ухожу", i).target.id);
+		assertEquals("s2", YandexHome.match("Джарвис, я ухожу!", i).target.id);
+		assertNull(YandexHome.match("запусти сценарий ночь", i)); // выключен в Яндексе
+		assertNull(YandexHome.match("запусти сценарий обед", i));
+	}
+
+	@Test
+	public void devicesByNameAndRoom() throws Exception {
+		JSONObject i = info(HOME);
+		YandexHome.Action a = YandexHome.match("включи свет в гараже", i);
+		assertFalse(a.target.scenario);
+		assertEquals("d1", a.target.id);
+		assertTrue(a.on);
+		a = YandexHome.match("выключи свет на кухне", i);
+		assertEquals("d2", a.target.id);
+		assertFalse(a.on);
+		assertNull(YandexHome.match("включи свет", i)); // два «Свет» — без комнаты не угадывать
+		assertEquals("d3", YandexHome.match("выключи телевизор", i).target.id);
+		assertEquals("d4", YandexHome.match("включи светильник", i).target.id);
+		assertNull(YandexHome.match("включи датчик", i)); // нечего включать
+	}
+
+	@Test
+	public void notHome() throws Exception {
+		JSONObject i = info(HOME);
+		assertNull(YandexHome.match("включи музыку", i));
+		assertNull(YandexHome.match("включи песню утро", i));
+		assertNull(YandexHome.match("какая погода", i));
+		assertNull(YandexHome.match("включи свет", null));
+		assertTrue(YandexHome.looksLike("включи музыку"));
+		assertTrue(YandexHome.looksLike("Джарвис, запусти сценарий утро"));
+		assertFalse(YandexHome.looksLike("какая погода"));
+	}
 }

@@ -97,6 +97,186 @@ final class YandexHome {
 		return null;
 	}
 
+	/** Что сделать в Умном доме по фразе. */
+	static final class Action {
+		final Target target;
+		/** Для устройства: включить (true) или выключить; для сценария не важно. */
+		final boolean on;
+
+		Action(Target target, boolean on) {
+			this.target = target;
+			this.on = on;
+		}
+	}
+
+	private static final Pattern ON = Pattern.compile("^(включи(ть)?|зажги|запусти(ть)?|активируй)\\s+(.+)$");
+	private static final Pattern OFF = Pattern.compile("^(выключи(ть)?|отключи(ть)?|погаси(ть)?)\\s+(.+)$");
+	private static final Pattern SCENARIO = Pattern.compile("^(запусти(ть)?|включи(ть)?|выполни(ть)?)\\s+сценари[йя]\\s+(.+)$");
+
+	/**
+	 * Команда Умному дому по фразе и ответу v1.0/user/info, или null (тогда
+	 * фраза идёт дальше: плеер, команды телефона, Qwen). Сценарий — по названию
+	 * («запусти сценарий Утро» или само название); устройство — «включи/выключи»
+	 * и его название, можно с комнатой («включи свет в гараже»). Только при
+	 * однозначном совпадении: «включи музыку» не трогает чужого.
+	 */
+	@VisibleForTesting
+	@Nullable
+	static Action match(@Nullable String phrase, @Nullable JSONObject info) {
+		if ((phrase == null) || (info == null)) return null;
+		String p = norm(phrase).replaceFirst("^джарвис\\s*,?\\s*", "");
+		java.util.regex.Matcher m = SCENARIO.matcher(p);
+		if (m.matches()) {
+			Target t = scenarioByName(info, m.group(5));
+			return (t == null) ? null : new Action(t, true);
+		}
+		Target exact = scenarioByName(info, p);
+		if (exact != null) return new Action(exact, true);
+		boolean on;
+		String rest;
+		if ((m = ON.matcher(p)).matches()) {
+			on = true;
+			rest = m.group(4);
+		} else if ((m = OFF.matcher(p)).matches()) {
+			on = false;
+			rest = m.group(5);
+		} else {
+			return null;
+		}
+		Target d = deviceByName(info, rest);
+		return (d == null) ? null : new Action(d, on);
+	}
+
+	/** Похоже ли на команду Умному дому — стоит ли спросить его состав, если он ещё не загружен. */
+	static boolean looksLike(@Nullable String phrase) {
+		if (phrase == null) return false;
+		String p = norm(phrase).replaceFirst("^джарвис\\s*,?\\s*", "");
+		return SCENARIO.matcher(p).matches() || ON.matcher(p).matches() || OFF.matcher(p).matches();
+	}
+
+	private static String norm(String s) {
+		return s.trim().toLowerCase(Locale.ROOT).replace('ё', 'е').replaceAll("[.!?,]+$", "")
+				.replaceAll("\\s+", " ");
+	}
+
+	/** Основа слова для сравнения падежей: «гараже» ~ «гараж», «лампу» ~ «лампа». */
+	private static String stem(String w) {
+		return (w.length() > 4) ? w.substring(0, w.length() - 2) : (w.length() > 3) ? w.substring(0, 3) : w;
+	}
+
+	/** Все ли слова названия есть во фразе (с точностью до окончаний). */
+	private static boolean covers(String phrase, String name) {
+		String[] pw = phrase.split(" ");
+		for (String nw : norm(name).split(" ")) {
+			if (nw.isEmpty()) continue;
+			String ns = stem(nw);
+			boolean found = false;
+			for (String w : pw) {
+				// Короткие слова фразы («в», «на») не считать началом названия
+				if (w.startsWith(ns) || ((w.length() > 3) && nw.startsWith(stem(w)))) {
+					found = true;
+					break;
+				}
+			}
+			if (!found) return false;
+		}
+		return true;
+	}
+
+	@Nullable
+	private static Target scenarioByName(JSONObject info, String phrase) {
+		JSONArray sc = info.optJSONArray("scenarios");
+		if (sc == null) return null;
+		String p = norm(phrase);
+		for (int i = 0; i < sc.length(); i++) {
+			JSONObject s = sc.optJSONObject(i);
+			if ((s == null) || !s.optBoolean("is_active", true)) continue;
+			String n = norm(s.optString("name"));
+			if (!n.isEmpty() && (n.equals(p) || (covers(p, n) && covers(n, p)))) {
+				return new Target(true, s.optString("id"), s.optString("name"));
+			}
+		}
+		return null;
+	}
+
+	/** Устройство с переключателем, чьё название (и комната, если сказана) есть во фразе. */
+	@Nullable
+	private static Target deviceByName(JSONObject info, String rest) {
+		JSONArray dv = info.optJSONArray("devices");
+		if (dv == null) return null;
+		java.util.Map<String, String> rooms = new java.util.HashMap<>();
+		JSONArray rs = info.optJSONArray("rooms");
+		if (rs != null) for (int i = 0; i < rs.length(); i++) {
+			JSONObject r = rs.optJSONObject(i);
+			if (r != null) rooms.put(r.optString("id"), r.optString("name"));
+		}
+		String p = norm(rest);
+		java.util.List<JSONObject> hits = new java.util.ArrayList<>();
+		for (int i = 0; i < dv.length(); i++) {
+			JSONObject d = dv.optJSONObject(i);
+			if ((d == null) || !hasOnOff(d)) continue;
+			if (covers(p, d.optString("name"))) hits.add(d);
+		}
+		if (hits.size() > 1) {
+			// Несколько «Свет» — выбрать по комнате из фразы
+			java.util.List<JSONObject> inRoom = new java.util.ArrayList<>();
+			for (JSONObject d : hits) {
+				String room = rooms.get(d.optString("room"));
+				if ((room != null) && !room.isEmpty() && covers(p, room)) inRoom.add(d);
+			}
+			if (!inRoom.isEmpty()) hits = inRoom;
+		}
+		if (hits.size() > 1) {
+			// «Свет» и «Светильник» на «включи светильник» — название целиком словами фразы
+			java.util.List<JSONObject> whole = new java.util.ArrayList<>();
+			for (JSONObject d : hits) {
+				if ((" " + p + " ").contains(" " + norm(d.optString("name")) + " ")) whole.add(d);
+			}
+			if (whole.size() == 1) hits = whole;
+		}
+		if (hits.size() != 1) return null;
+		JSONObject d = hits.get(0);
+		return new Target(false, d.optString("id"), d.optString("name"));
+	}
+
+	private static boolean hasOnOff(JSONObject d) {
+		JSONArray caps = d.optJSONArray("capabilities");
+		if (caps == null) return true; // в ответе без умений — не отсеивать
+		for (int i = 0; i < caps.length(); i++) {
+			JSONObject c = caps.optJSONObject(i);
+			if ((c != null) && "devices.capabilities.on_off".equals(c.optString("type"))) return true;
+		}
+		return false;
+	}
+
+	/** Умный дом пользователя (v1.0/user/info). Не в главном потоке. */
+	static JSONObject info(@NonNull String token) throws Exception {
+		return new JSONObject(request("GET", "user/info", token, null));
+	}
+
+	/** Выполнить команду; результат — что сказать. Не в главном потоке. */
+	static String run(@NonNull String token, @NonNull Action a) throws Exception {
+		Target t = a.target;
+		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : "device «", t.name, "» ",
+				t.scenario ? "" : (a.on ? "on" : "off"));
+		JSONObject r;
+		if (t.scenario) {
+			r = new JSONObject(request("POST", "scenarios/" + t.id + "/actions", token, null));
+		} else {
+			JSONObject state = new JSONObject().put("instance", "on").put("value", a.on);
+			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);
+			JSONObject dev = new JSONObject().put("id", t.id).put("actions", new JSONArray().put(action));
+			JSONObject body = new JSONObject().put("devices", new JSONArray().put(dev));
+			r = new JSONObject(request("POST", "devices/actions", token, body.toString()));
+		}
+		me.aap.utils.log.Log.i("JARVIS home: result ", r.optString("status"), " ", r.optString("message"));
+		if (!"ok".equals(r.optString("status"))) {
+			return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
+		}
+		if (t.scenario) return "Запускаю «" + t.name + "»";
+		return (a.on ? "Включаю " : "Выключаю ") + t.name;
+	}
+
 	/** Токен из адреса, куда Яндекс вернул после входа: …#access_token=…&expires_in=… */
 	@VisibleForTesting
 	@Nullable

@@ -128,6 +128,7 @@ public class JarvisFragment extends MainActivityFragment
 		Context ctx = requireContext();
 		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
 		rootView = root;
+		preloadHome(ctx);
 		QwenChat q = new QwenChat(ctx);
 		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
 		main.postDelayed(() -> {
@@ -737,15 +738,24 @@ public class JarvisFragment extends MainActivityFragment
 		}
 
 		MainActivityDelegate a = getActivityDelegate();
+		// Умный дом и маршрут — раньше команд Fermata: её «открой…» и «включи…»
+		// забрали бы «открой ворота» и «включи свет» себе
+		if (gateCommand(q) != null) {
+			gate(a, gateCommand(q));
+		} else if (routeDestination(q) != null) {
+			startRoute(a, routeDestination(q));
+		} else if (!home(a, q)) {
+			afterHome(a, q);
+		}
+	}
+
+	/** Не Умный дом: команды Fermata, телефона, Qwen. */
+	private void afterHome(MainActivityDelegate a, List<String> q) {
 		if (a.handleVoiceCommand(q)) {
 			Log.i("JARVIS tab: done by Fermata command");
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
-		} else if (gateCommand(q) != null) {
-			gate(a, gateCommand(q));
-		} else if (routeDestination(q) != null) {
-			startRoute(a, routeDestination(q));
 		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
 			String cmd = QwenChat.phoneCommand(q);
 			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
@@ -800,6 +810,119 @@ public class JarvisFragment extends MainActivityFragment
 		});
 	}
 
+	/** Состав Умного дома (v1.0/user/info) — общий для вкладки, обновляется раз в 10 минут. */
+	@Nullable
+	private static volatile org.json.JSONObject homeInfo;
+	private static volatile long homeInfoAt;
+	private static final long HOME_INFO_TTL_MS = 10 * 60_000L;
+
+	@Nullable
+	private static String yandexToken(Context ctx) {
+		return ctx.getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
+				.getString("token", null);
+	}
+
+	private static boolean homeInfoFresh() {
+		return (homeInfo != null) && (android.os.SystemClock.elapsedRealtime() - homeInfoAt < HOME_INFO_TTL_MS);
+	}
+
+	/** Не в главном потоке. */
+	private static org.json.JSONObject loadHomeInfo(String token) throws Exception {
+		org.json.JSONObject i = YandexHome.info(token);
+		homeInfo = i;
+		homeInfoAt = android.os.SystemClock.elapsedRealtime();
+		Log.i("JARVIS home: ", count(i, "scenarios"), " scenarios, ", count(i, "devices"), " devices");
+		return i;
+	}
+
+	private static int count(org.json.JSONObject i, String key) {
+		org.json.JSONArray a = i.optJSONArray(key);
+		return (a == null) ? 0 : a.length();
+	}
+
+	/** Загрузить состав Умного дома заранее — при открытии вкладки, если вход уже был. */
+	private static void preloadHome(Context ctx) {
+		String token = yandexToken(ctx);
+		if ((token == null) || homeInfoFresh()) return;
+		me.aap.fermata.FermataApplication.get().execute(() -> {
+			try {
+				loadHomeInfo(token);
+			} catch (Exception ex) {
+				Log.i("JARVIS home: preload failed: ", ex.getMessage());
+			}
+		});
+	}
+
+	@Nullable
+	private static YandexHome.Action homeMatch(List<String> q, @Nullable org.json.JSONObject info) {
+		for (String s : q) {
+			YandexHome.Action m = YandexHome.match(s, info);
+			if (m != null) return m;
+		}
+		return null;
+	}
+
+	/**
+	 * Устройство или сценарий Умного дома по фразе («включи свет в гараже»,
+	 * «запусти сценарий Утро»). true — фраза взята; false — не Умный дом, она
+	 * идёт дальше. Без входа в Яндекс — всегда false: «включи музыку» как раньше.
+	 */
+	private boolean home(MainActivityDelegate a, List<String> q) {
+		String token = yandexToken(a.getContext());
+		if (token == null) return false;
+		if (homeInfoFresh()) {
+			YandexHome.Action m = homeMatch(q, homeInfo);
+			if (m == null) return false;
+			runHome(a, token, m);
+			return true;
+		}
+		boolean looks = false;
+		for (String s : q) looks |= YandexHome.looksLike(s);
+		if (!looks) return false;
+		// Состав ещё не загружен — спросить, затем решить
+		setPhase(HudMath.Phase.THINK);
+		me.aap.fermata.FermataApplication.get().execute(() -> {
+			YandexHome.Action m = null;
+			try {
+				m = homeMatch(q, loadHomeInfo(token));
+			} catch (YandexHome.AuthException ex) {
+				Log.i("JARVIS home: token rejected (", ex.getMessage(), ")");
+				a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
+						.edit().remove("token").apply();
+			} catch (Exception ex) {
+				Log.i("JARVIS home: user/info failed: ", ex.getMessage());
+			}
+			YandexHome.Action found = m;
+			main.post(() -> {
+				if (!busy) return;
+				if (found != null) runHome(a, token, found);
+				else afterHome(a, q);
+			});
+		});
+		return true;
+	}
+
+	private void runHome(MainActivityDelegate a, String token, YandexHome.Action m) {
+		setPhase(HudMath.Phase.THINK);
+		me.aap.fermata.FermataApplication.get().execute(() -> {
+			String reply;
+			try {
+				reply = YandexHome.run(token, m);
+			} catch (YandexHome.AuthException ex) {
+				Log.i("JARVIS home: token rejected (", ex.getMessage(), ") — login again");
+				a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
+						.edit().remove("token").apply();
+				main.post(() -> yandexLogin(a, () -> runHome(a, yandexToken(a.getContext()), m)));
+				return;
+			} catch (Exception ex) {
+				Log.e(ex, "JARVIS home: request failed");
+				reply = "Умный дом Яндекса не ответил";
+			}
+			String r = reply;
+			main.post(() -> say(a, r));
+		});
+	}
+
 	/**
 	 * Вход в Яндекс ID — один раз, на телефоне: страница входа поверх круга;
 	 * Яндекс возвращает на {@link YandexHome#REDIRECT} с токеном в адресе —
@@ -809,7 +932,7 @@ public class JarvisFragment extends MainActivityFragment
 		String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
 				.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
 		if (clientId.isEmpty()) {
-			say(a, "Для ворот нужен ClientID Яндекса: настройки, дополнения, JARVIS");
+			say(a, "Для Умного дома нужен ClientID Яндекса: настройки, дополнения, JARVIS");
 			return;
 		}
 		android.widget.FrameLayout root = rootView;
@@ -842,6 +965,7 @@ public class JarvisFragment extends MainActivityFragment
 				if (token != null) {
 					a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
 							.edit().putString("token", token).apply();
+					preloadHome(a.getContext());
 					then.run();
 				} else if (busy) {
 					say(a, "Войти в Яндекс не получилось");
