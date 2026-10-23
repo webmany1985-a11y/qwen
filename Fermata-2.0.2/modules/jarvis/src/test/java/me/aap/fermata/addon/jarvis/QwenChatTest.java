@@ -23,6 +23,13 @@ public class QwenChatTest {
 	}
 
 	@Test
+	public void phoneCommandFoundInAnyAlternative() {
+		assertEquals("Включи музыку",
+				QwenChat.phoneCommand(java.util.Arrays.asList("музыку", "Включи музыку")));
+		assertEquals(null, QwenChat.phoneCommand(java.util.Arrays.asList("как дела", "как дело")));
+	}
+
+	@Test
 	public void conversationGoesToQwen() {
 		assertFalse(QwenChat.isPhoneCommand("какая погода завтра в Минске"));
 		assertFalse(QwenChat.isPhoneCommand("расскажи анекдот"));

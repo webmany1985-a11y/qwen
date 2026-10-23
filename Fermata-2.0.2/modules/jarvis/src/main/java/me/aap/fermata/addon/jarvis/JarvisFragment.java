@@ -726,9 +726,10 @@ public class JarvisFragment extends MainActivityFragment
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
-		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
-			Log.i("JARVIS tab: phone command — to JARVIS");
-			JarvisBridge.ask(a, q.get(0), forRequest());
+		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
+			String cmd = QwenChat.phoneCommand(q);
+			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
+			JarvisBridge.ask(a, cmd, forRequest());
 		} else if (qwen != null) {
 			askQwen(a, q.get(0));
 		} else if (!JarvisBridge.ask(a, q.get(0), forRequest())) {

@@ -5798,10 +5798,10 @@ index 0000000..1d0c7f6
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..7e91e93
+index 0000000..9719cfa
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,884 @@
+@@ -0,0 +1,885 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6530,9 +6530,10 @@ index 0000000..7e91e93
 +			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 +			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 +			done();
-+		} else if (QwenChat.isPhoneCommand(q.get(0)) && JarvisBridge.isInstalled(a.getContext())) {
-+			Log.i("JARVIS tab: phone command — to JARVIS");
-+			JarvisBridge.ask(a, q.get(0), forRequest());
++		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
++			String cmd = QwenChat.phoneCommand(q);
++			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
++			JarvisBridge.ask(a, cmd, forRequest());
 +		} else if (qwen != null) {
 +			askQwen(a, q.get(0));
 +		} else if (!JarvisBridge.ask(a, q.get(0), forRequest())) {
@@ -7175,10 +7176,10 @@ index 0000000..0769310
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
 new file mode 100644
-index 0000000..6eb1812
+index 0000000..737e526
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/QwenChat.java
-@@ -0,0 +1,365 @@
+@@ -0,0 +1,377 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -7536,6 +7537,18 @@ index 0000000..6eb1812
 +	 */
 +	private static final Pattern HOMEWORK = Pattern.compile(
 +			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк)");
++
++	/**
++	 * Вариант распознавания, который — команда телефону, или null. Смотрим все
++	 * варианты: первым распознавание может дать обрезанный («музыку» вместо
++	 * «включи музыку» — журнал 23.10.2026, 08:24:11, фраза ушла в Qwen).
++	 */
++	@Nullable
++	static String phoneCommand(@Nullable java.util.List<String> alternatives) {
++		if (alternatives == null) return null;
++		for (String s : alternatives) if (isPhoneCommand(s)) return s;
++		return null;
++	}
 +
 +	@VisibleForTesting
 +	static boolean isPhoneCommand(@Nullable String phrase) {
@@ -17724,10 +17737,10 @@ index 0000000..265234a
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
 new file mode 100644
-index 0000000..1014a9f
+index 0000000..406f8d7
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/QwenChatTest.java
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,59 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -17750,6 +17763,13 @@ index 0000000..1014a9f
 +		assertTrue(QwenChat.isPhoneCommand("что с домашкой у Софии"));
 +		assertTrue(QwenChat.isPhoneCommand("Марк сделал уроки?"));
 +		assertTrue(QwenChat.isPhoneCommand("что задали Софии"));
++	}
++
++	@Test
++	public void phoneCommandFoundInAnyAlternative() {
++		assertEquals("Включи музыку",
++				QwenChat.phoneCommand(java.util.Arrays.asList("музыку", "Включи музыку")));
++		assertEquals(null, QwenChat.phoneCommand(java.util.Arrays.asList("как дела", "как дело")));
 +	}
 +
 +	@Test

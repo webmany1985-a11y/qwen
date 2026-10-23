@@ -356,6 +356,18 @@ final class QwenChat {
 	private static final Pattern HOMEWORK = Pattern.compile(
 			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк)");
 
+	/**
+	 * Вариант распознавания, который — команда телефону, или null. Смотрим все
+	 * варианты: первым распознавание может дать обрезанный («музыку» вместо
+	 * «включи музыку» — журнал 23.10.2026, 08:24:11, фраза ушла в Qwen).
+	 */
+	@Nullable
+	static String phoneCommand(@Nullable java.util.List<String> alternatives) {
+		if (alternatives == null) return null;
+		for (String s : alternatives) if (isPhoneCommand(s)) return s;
+		return null;
+	}
+
 	@VisibleForTesting
 	static boolean isPhoneCommand(@Nullable String phrase) {
 		if (phrase == null) return false;
