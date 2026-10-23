@@ -65,6 +65,12 @@ public final class JarvisVoice {
 	/** Перечитать настройки JARVIS в фоне, если давно не читали. */
 	public static void refresh() {
 		if (loading || (System.currentTimeMillis() - loadedAt < TTL_MS)) return;
+		// JARVIS не установлен (другой телефон) — читать нечего, root не трогаем:
+		// голос по умолчанию
+		if (!JarvisBridge.isInstalled(FermataApplication.get())) {
+			loadedAt = System.currentTimeMillis();
+			return;
+		}
 		loading = true;
 		FermataApplication.get().execute(() -> {
 			String xml = null;

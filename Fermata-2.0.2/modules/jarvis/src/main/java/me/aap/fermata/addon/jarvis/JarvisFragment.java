@@ -366,6 +366,14 @@ public class JarvisFragment extends MainActivityFragment
 		busy = true;
 		Log.i("JARVIS tab: listen, car=", a.isCarActivityNotMirror());
 		setPhase(HudMath.Phase.APPEAR);
+		// В машине спросить разрешение нельзя (экран Android Auto). Если микрофон ещё
+		// не разрешали на телефоне (новый телефон — например, у жены), сказать об этом
+		if (a.isCarActivityNotMirror() && (androidx.core.content.ContextCompat.checkSelfPermission(
+				ctx, Manifest.permission.RECORD_AUDIO) != PERMISSION_GRANTED)) {
+			Log.i("JARVIS tab: no RECORD_AUDIO permission in car");
+			say(a, "Разрешите микрофон: на телефоне откройте вкладку JARVIS и нажмите на круг");
+			return;
+		}
 		FutureSupplier<int[]> perm = a.isCarActivityNotMirror() ?
 				completed(new int[]{PERMISSION_GRANTED}) :
 				a.getAppActivity().checkPermissions(Manifest.permission.RECORD_AUDIO);

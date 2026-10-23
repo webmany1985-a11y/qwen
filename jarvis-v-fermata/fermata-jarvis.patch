@@ -497,10 +497,10 @@ index 0000000..e72a94c
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
 new file mode 100644
-index 0000000..7502e67
+index 0000000..1ba4b39
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,190 @@
 +package me.aap.fermata.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -568,6 +568,12 @@ index 0000000..7502e67
 +	/** Перечитать настройки JARVIS в фоне, если давно не читали. */
 +	public static void refresh() {
 +		if (loading || (System.currentTimeMillis() - loadedAt < TTL_MS)) return;
++		// JARVIS не установлен (другой телефон) — читать нечего, root не трогаем:
++		// голос по умолчанию
++		if (!JarvisBridge.isInstalled(FermataApplication.get())) {
++			loadedAt = System.currentTimeMillis();
++			return;
++		}
 +		loading = true;
 +		FermataApplication.get().execute(() -> {
 +			String xml = null;
@@ -5827,10 +5833,10 @@ index 0000000..c7ffad8
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..9cc0336
+index 0000000..6451614
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1330 @@
+@@ -0,0 +1,1338 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6199,6 +6205,14 @@ index 0000000..9cc0336
 +		busy = true;
 +		Log.i("JARVIS tab: listen, car=", a.isCarActivityNotMirror());
 +		setPhase(HudMath.Phase.APPEAR);
++		// В машине спросить разрешение нельзя (экран Android Auto). Если микрофон ещё
++		// не разрешали на телефоне (новый телефон — например, у жены), сказать об этом
++		if (a.isCarActivityNotMirror() && (androidx.core.content.ContextCompat.checkSelfPermission(
++				ctx, Manifest.permission.RECORD_AUDIO) != PERMISSION_GRANTED)) {
++			Log.i("JARVIS tab: no RECORD_AUDIO permission in car");
++			say(a, "Разрешите микрофон: на телефоне откройте вкладку JARVIS и нажмите на круг");
++			return;
++		}
 +		FutureSupplier<int[]> perm = a.isCarActivityNotMirror() ?
 +				completed(new int[]{PERMISSION_GRANTED}) :
 +				a.getAppActivity().checkPermissions(Manifest.permission.RECORD_AUDIO);
