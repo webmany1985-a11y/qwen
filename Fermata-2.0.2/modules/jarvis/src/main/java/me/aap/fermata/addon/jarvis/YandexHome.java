@@ -359,6 +359,17 @@ final class YandexHome {
 	}
 
 	/** Ответ сервера с ошибкой авторизации — нужен новый вход. */
+	/** 403: вход есть, но приложению на oauth.yandex.ru не выданы права на Умный дом. */
+	static final class NoAccessException extends Exception {
+		NoAccessException(String m) {
+			super(m);
+		}
+	}
+
+	static final String NO_ACCESS = "Яндекс не дал доступ к Умному дому: у приложения на oauth.yandex.ru " +
+			"нет прав на Умный дом. Добавьте права на просмотр и управление устройствами, " +
+			"затем скажите команду снова и войдите заново";
+
 	static final class AuthException extends Exception {
 		AuthException(String m) {
 			super(m);
@@ -383,6 +394,7 @@ final class YandexHome {
 			int code = c.getResponseCode();
 			// 401 — вход недействителен; 403 (нет права) — обычная ошибка: вход не стирать
 			if (code == 401) throw new AuthException("HTTP " + code);
+			if (code == 403) throw new NoAccessException("HTTP 403");
 			InputStream in = (code < 400) ? c.getInputStream() : c.getErrorStream();
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			if (in != null) {

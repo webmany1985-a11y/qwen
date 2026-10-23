@@ -5827,10 +5827,10 @@ index 0000000..c7ffad8
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..845be0c
+index 0000000..0724222
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1284 @@
+@@ -0,0 +1,1321 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6634,6 +6634,8 @@ index 0000000..845be0c
 +				sp.edit().remove("token").apply();
 +				main.post(() -> yandexLogin(a, () -> gate(a, open)));
 +				return;
++			} catch (YandexHome.NoAccessException ex) {
++				reply = noAccess(sp);
 +			} catch (Exception ex) {
 +				Log.e(ex, "JARVIS gate: request failed");
 +				reply = "Умный дом Яндекса не ответил";
@@ -6653,6 +6655,20 @@ index 0000000..845be0c
 +	/** Последняя неудачная загрузка — «включи музыку» не ждёт сеть на каждой фразе. */
 +	private static volatile long homeFailedAt;
 +	private static final long HOME_RETRY_MS = 60_000L;
++	/** Загрузка заранее получила 403 — сказать об этом на ближайшей команде дома. */
++	private static volatile boolean homeNoAccess;
++
++	/**
++	 * 403 (журнал 23.10.2026 11:43: вход выполнен, user/info — «Forbidden»): у
++	 * приложения нет прав на Умный дом. Вход стереть: после правки прав на
++	 * oauth.yandex.ru нужен новый вход — следующая команда покажет страницу.
++	 */
++	private static String noAccess(android.content.SharedPreferences sp) {
++		Log.i("JARVIS home: HTTP 403 — the Yandex app has no smart home rights (iot:view, iot:control)");
++		sp.edit().remove("token").apply();
++		homeInfo = null;
++		return YandexHome.NO_ACCESS;
++	}
 +	private static final long HOME_INFO_TTL_MS = 10 * 60_000L;
 +
 +	@Nullable
@@ -6695,6 +6711,9 @@ index 0000000..845be0c
 +		me.aap.fermata.FermataApplication.get().execute(() -> {
 +			try {
 +				loadHomeInfo(token);
++			} catch (YandexHome.NoAccessException ex) {
++				noAccess(ctx.getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE));
++				homeNoAccess = true;
 +			} catch (Exception ex) {
 +				Log.i("JARVIS home: preload failed: ", ex.getMessage());
 +			}
@@ -6719,6 +6738,12 @@ index 0000000..845be0c
 +		String token = yandexToken(a.getContext());
 +		boolean looks = false;
 +		for (String s : q) looks |= YandexHome.looksLike(s);
++		if ((token == null) && looks && homeNoAccess) {
++			// Состав не дали (403) при загрузке заранее — сказать почему; следующая команда — вход
++			homeNoAccess = false;
++			say(a, YandexHome.NO_ACCESS);
++			return true;
++		}
 +		if (token == null) {
 +			// Входа ещё не было (журнал 23.10.2026 10:44: «включи свет» молча ушёл
 +			// в фонарик): если ClientID вписан — страница входа, затем та же фраза
@@ -6755,6 +6780,13 @@ index 0000000..845be0c
 +			YandexHome.Action m = null;
 +			try {
 +				m = homeMatch(q, loadHomeInfo(token));
++			} catch (YandexHome.NoAccessException ex) {
++				String r = noAccess(a.getContext().getApplicationContext()
++						.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE));
++				main.post(() -> {
++					if (busy) say(a, r);
++				});
++				return;
 +			} catch (YandexHome.AuthException ex) {
 +				Log.i("JARVIS home: token rejected (", ex.getMessage(), ")");
 +				a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
@@ -6785,6 +6817,9 @@ index 0000000..845be0c
 +						.edit().remove("token").apply();
 +				main.post(() -> yandexLogin(a, () -> runHome(a, yandexToken(a.getContext()), m)));
 +				return;
++			} catch (YandexHome.NoAccessException ex) {
++				reply = noAccess(a.getContext().getApplicationContext()
++						.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE));
 +			} catch (Exception ex) {
 +				Log.e(ex, "JARVIS home: request failed");
 +				reply = "Умный дом Яндекса не ответил";
@@ -6843,6 +6878,8 @@ index 0000000..845be0c
 +				if (token != null) {
 +					a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
 +							.edit().putString("token", token).apply();
++					homeFailedAt = 0;
++					homeNoAccess = false;
 +					preloadHome(a.getContext());
 +					then.run();
 +				} else if (busy) {
@@ -8034,10 +8071,10 @@ index 0000000..c0aace1
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
 new file mode 100644
-index 0000000..4417e18
+index 0000000..bba43c7
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
-@@ -0,0 +1,401 @@
+@@ -0,0 +1,413 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -8399,6 +8436,17 @@ index 0000000..4417e18
 +	}
 +
 +	/** Ответ сервера с ошибкой авторизации — нужен новый вход. */
++	/** 403: вход есть, но приложению на oauth.yandex.ru не выданы права на Умный дом. */
++	static final class NoAccessException extends Exception {
++		NoAccessException(String m) {
++			super(m);
++		}
++	}
++
++	static final String NO_ACCESS = "Яндекс не дал доступ к Умному дому: у приложения на oauth.yandex.ru " +
++			"нет прав на Умный дом. Добавьте права на просмотр и управление устройствами, " +
++			"затем скажите команду снова и войдите заново";
++
 +	static final class AuthException extends Exception {
 +		AuthException(String m) {
 +			super(m);
@@ -8423,6 +8471,7 @@ index 0000000..4417e18
 +			int code = c.getResponseCode();
 +			// 401 — вход недействителен; 403 (нет права) — обычная ошибка: вход не стирать
 +			if (code == 401) throw new AuthException("HTTP " + code);
++			if (code == 403) throw new NoAccessException("HTTP 403");
 +			InputStream in = (code < 400) ? c.getInputStream() : c.getErrorStream();
 +			ByteArrayOutputStream out = new ByteArrayOutputStream();
 +			if (in != null) {
