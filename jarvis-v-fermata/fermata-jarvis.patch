@@ -5827,10 +5827,10 @@ index 0000000..c7ffad8
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..eece7e0
+index 0000000..7650596
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1239 @@
+@@ -0,0 +1,1265 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6676,6 +6676,7 @@ index 0000000..eece7e0
 +	/** Загрузить состав Умного дома заранее — при открытии вкладки, если вход уже был. */
 +	private static void preloadHome(Context ctx) {
 +		String token = yandexToken(ctx);
++		if (token == null) Log.i("JARVIS home: no Yandex login yet");
 +		if ((token == null) || homeInfoFresh()) return;
 +		me.aap.fermata.FermataApplication.get().execute(() -> {
 +			try {
@@ -6702,15 +6703,32 @@ index 0000000..eece7e0
 +	 */
 +	private boolean home(MainActivityDelegate a, List<String> q) {
 +		String token = yandexToken(a.getContext());
-+		if (token == null) return false;
++		boolean looks = false;
++		for (String s : q) looks |= YandexHome.looksLike(s);
++		if (token == null) {
++			// Входа ещё не было (журнал 23.10.2026 10:44: «включи свет» молча ушёл
++			// в фонарик): если ClientID вписан — страница входа, затем та же фраза
++			String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
++					.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
++			if (!looks || clientId.isEmpty() || (rootView == null) || a.isCarActivityNotMirror()) {
++				if (looks) Log.i("JARVIS home: no Yandex login", clientId.isEmpty() ? ", no ClientID" : "");
++				return false;
++			}
++			Log.i("JARVIS home: no Yandex login — showing login");
++			yandexLogin(a, () -> {
++				if (!home(a, q)) afterHome(a, q);
++			}, () -> afterHome(a, q));
++			return true;
++		}
 +		if (homeInfoFresh()) {
 +			YandexHome.Action m = homeMatch(q, homeInfo);
-+			if (m == null) return false;
++			if (m == null) {
++				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
++				return false;
++			}
 +			runHome(a, token, m);
 +			return true;
 +		}
-+		boolean looks = false;
-+		for (String s : q) looks |= YandexHome.looksLike(s);
 +		if (!looks) return false;
 +		// Состав ещё не загружен — спросить, затем решить
 +		setPhase(HudMath.Phase.THINK);
@@ -6726,6 +6744,7 @@ index 0000000..eece7e0
 +				Log.i("JARVIS home: user/info failed: ", ex.getMessage());
 +			}
 +			YandexHome.Action found = m;
++			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
 +			main.post(() -> {
 +				if (!busy) return;
 +				if (found != null) runHome(a, token, found);
@@ -6762,6 +6781,13 @@ index 0000000..eece7e0
 +	 * токен сохраняется на телефоне, страница закрывается, then продолжает.
 +	 */
 +	private void yandexLogin(MainActivityDelegate a, Runnable then) {
++		yandexLogin(a, then, () -> {
++			if (busy) done();
++		});
++	}
++
++	/** onCancel — «Отмена» на странице входа. */
++	private void yandexLogin(MainActivityDelegate a, Runnable then, Runnable onCancel) {
 +		String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
 +				.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
 +		if (clientId.isEmpty()) {
@@ -6787,7 +6813,7 @@ index 0000000..eece7e0
 +		};
 +		cancel.setOnClickListener(v -> {
 +			close.run();
-+			if (busy) done();
++			if (busy) onCancel.run();
 +		});
 +		w.setWebViewClient(new android.webkit.WebViewClient() {
 +			private boolean caught(String url) {
@@ -18281,7 +18307,7 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..f83d290
+index 0000000..69b8e26
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
 @@ -0,0 +1,22 @@
@@ -18305,7 +18331,7 @@ index 0000000..f83d290
 +    <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
 +    <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
 +    <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
-+    <string name="jarvis_yandex_client_id">ClientID Яндекса для ворот (oauth.yandex.ru)</string>
++    <string name="jarvis_yandex_client_id">ClientID Яндекса для Умного дома (oauth.yandex.ru)</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java
 new file mode 100644

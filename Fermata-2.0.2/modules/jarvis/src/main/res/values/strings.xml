@@ -18,5 +18,5 @@
     <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
     <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
     <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
-    <string name="jarvis_yandex_client_id">ClientID Яндекса для ворот (oauth.yandex.ru)</string>
+    <string name="jarvis_yandex_client_id">ClientID Яндекса для Умного дома (oauth.yandex.ru)</string>
 </resources>

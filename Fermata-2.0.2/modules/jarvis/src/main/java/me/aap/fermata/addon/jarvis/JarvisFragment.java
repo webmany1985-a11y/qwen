@@ -843,6 +843,7 @@ public class JarvisFragment extends MainActivityFragment
 	/** Загрузить состав Умного дома заранее — при открытии вкладки, если вход уже был. */
 	private static void preloadHome(Context ctx) {
 		String token = yandexToken(ctx);
+		if (token == null) Log.i("JARVIS home: no Yandex login yet");
 		if ((token == null) || homeInfoFresh()) return;
 		me.aap.fermata.FermataApplication.get().execute(() -> {
 			try {
@@ -869,15 +870,32 @@ public class JarvisFragment extends MainActivityFragment
 	 */
 	private boolean home(MainActivityDelegate a, List<String> q) {
 		String token = yandexToken(a.getContext());
-		if (token == null) return false;
+		boolean looks = false;
+		for (String s : q) looks |= YandexHome.looksLike(s);
+		if (token == null) {
+			// Входа ещё не было (журнал 23.10.2026 10:44: «включи свет» молча ушёл
+			// в фонарик): если ClientID вписан — страница входа, затем та же фраза
+			String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
+					.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
+			if (!looks || clientId.isEmpty() || (rootView == null) || a.isCarActivityNotMirror()) {
+				if (looks) Log.i("JARVIS home: no Yandex login", clientId.isEmpty() ? ", no ClientID" : "");
+				return false;
+			}
+			Log.i("JARVIS home: no Yandex login — showing login");
+			yandexLogin(a, () -> {
+				if (!home(a, q)) afterHome(a, q);
+			}, () -> afterHome(a, q));
+			return true;
+		}
 		if (homeInfoFresh()) {
 			YandexHome.Action m = homeMatch(q, homeInfo);
-			if (m == null) return false;
+			if (m == null) {
+				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
+				return false;
+			}
 			runHome(a, token, m);
 			return true;
 		}
-		boolean looks = false;
-		for (String s : q) looks |= YandexHome.looksLike(s);
 		if (!looks) return false;
 		// Состав ещё не загружен — спросить, затем решить
 		setPhase(HudMath.Phase.THINK);
@@ -893,6 +911,7 @@ public class JarvisFragment extends MainActivityFragment
 				Log.i("JARVIS home: user/info failed: ", ex.getMessage());
 			}
 			YandexHome.Action found = m;
+			if (m == null) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
 			main.post(() -> {
 				if (!busy) return;
 				if (found != null) runHome(a, token, found);
@@ -929,6 +948,13 @@ public class JarvisFragment extends MainActivityFragment
 	 * токен сохраняется на телефоне, страница закрывается, then продолжает.
 	 */
 	private void yandexLogin(MainActivityDelegate a, Runnable then) {
+		yandexLogin(a, then, () -> {
+			if (busy) done();
+		});
+	}
+
+	/** onCancel — «Отмена» на странице входа. */
+	private void yandexLogin(MainActivityDelegate a, Runnable then, Runnable onCancel) {
 		String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
 				.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
 		if (clientId.isEmpty()) {
@@ -954,7 +980,7 @@ public class JarvisFragment extends MainActivityFragment
 		};
 		cancel.setOnClickListener(v -> {
 			close.run();
-			if (busy) done();
+			if (busy) onCancel.run();
 		});
 		w.setWebViewClient(new android.webkit.WebViewClient() {
 			private boolean caught(String url) {
