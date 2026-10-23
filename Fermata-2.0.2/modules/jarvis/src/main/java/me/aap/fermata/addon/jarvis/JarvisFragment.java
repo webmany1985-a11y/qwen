@@ -342,6 +342,12 @@ public class JarvisFragment extends MainActivityFragment
 			destroyRecognizer();
 			finishPhrase();
 		}
+		else if (inConversation && (phrase == null) && !heard) {
+			// Разговор, а говорить больше нечего — касание заканчивает его
+			Log.i("JARVIS tab: conversation ended by touch");
+			stopListening();
+			if (busy) done();
+		}
 		else if ((recognizer != null) && (phase() == HudMath.Phase.LISTEN)) recognizer.stopListening();
 	}
 
@@ -545,6 +551,7 @@ public class JarvisFragment extends MainActivityFragment
 		interrupt = Cancellable.CANCELED;
 		i.cancel();
 		busy = false;
+		inConversation = false;
 		phrase = null;
 		firstAlternatives = null;
 		setPhase(HudMath.Phase.IDLE);
@@ -657,7 +664,9 @@ public class JarvisFragment extends MainActivityFragment
 			createRecognizer(getActivityDelegate());
 			return;
 		}
-		if (silence) {
+		if (silence && inConversation) {
+			Log.i("JARVIS tab: silence — conversation over");
+		} else if (silence) {
 			toast(R.string.jarvis_not_heard);
 		} else {
 			Log.e("JARVIS tab: speech recognition error ", error);
@@ -719,6 +728,11 @@ public class JarvisFragment extends MainActivityFragment
 		releaseMic();
 		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
 		Log.i("JARVIS tab: phrase «", q.get(0), "»");
+		if (inConversation && isConversationEnd(q.get(0))) {
+			Log.i("JARVIS tab: conversation ended by phrase");
+			done();
+			return;
+		}
 
 		MainActivityDelegate a = getActivityDelegate();
 		if (a.handleVoiceCommand(q)) {
@@ -747,7 +761,8 @@ public class JarvisFragment extends MainActivityFragment
 			@Override
 			public void onReply(@NonNull String reply) {
 				String s = QwenChat.forSpeech(reply);
-				say(a, s.isEmpty() ? str(R.string.jarvis_qwen_empty) : s);
+				if (s.isEmpty()) say(a, str(R.string.jarvis_qwen_empty));
+				else sayAndContinue(a, s);
 			}
 
 			@Override
@@ -772,6 +787,43 @@ public class JarvisFragment extends MainActivityFragment
 		setPhase(HudMath.Phase.SPEAK);
 		speech = JarvisBridge.say(a, text, this);
 	}
+
+	/**
+	 * Ответ Qwen — и разговор продолжается: после ответа снова слушаем, без
+	 * касания шара (пожелание 23.10.2026: «спрашиваю погоду — он переспрашивает
+	 * город и отключается»). Разговор кончается молчанием (~10 с: две записи
+	 * по ~5 с), словами «спасибо», «всё», «хватит»… или касанием шара.
+	 */
+	private void sayAndContinue(MainActivityDelegate a, String text) {
+		if (!busy) return;
+		setPhase(HudMath.Phase.SPEAK);
+		speech = JarvisBridge.say(a, text, new JarvisBridge.Listener() {
+			@Override
+			public void onDone() {
+				if (busy && (hud != null)) followUp(a);
+			}
+		});
+	}
+
+	/** Слушать следующую фразу разговора — без «Слушаю», музыка остаётся на паузе. */
+	private void followUp(MainActivityDelegate a) {
+		Log.i("JARVIS tab: conversation goes on, listening");
+		inConversation = true;
+		retries = FOLLOW_UP_RETRIES;
+		continuations = CONTINUATIONS;
+		phrase = null;
+		firstAlternatives = null;
+		setPhase(HudMath.Phase.APPEAR);
+		// В машине ответ ещё звучит из динамиков, когда телефон уже договорил: микрофон
+		// не должен принять конец ответа за новую фразу
+		long pause = a.isCarActivityNotMirror() ? FOLLOW_UP_CAR_MS : FOLLOW_UP_MS;
+		main.postDelayed(() -> {
+			if (busy && (hud != null) && (recognizer == null)) withMic(a, () -> createRecognizer(a));
+		}, pause);
+	}
+
+	/** Идёт разговор: после ответа слушаем дальше ({@link #followUp}). */
+	private boolean inConversation;
 
 	private String str(int id) {
 		Context ctx = getContext();
@@ -848,6 +900,19 @@ public class JarvisFragment extends MainActivityFragment
 	private void toast(int msg) {
 		Context ctx = getContext();
 		if (ctx != null) Toast.makeText(ctx, dynCtx(ctx).getString(msg), Toast.LENGTH_SHORT).show();
+	}
+
+	/** Пауза между концом ответа и записью следующей фразы, мс: на телефоне и в машине. */
+	private static final long FOLLOW_UP_MS = 500;
+	private static final long FOLLOW_UP_CAR_MS = 1500;
+	/** В разговоре после ответа: повторных записей при молчании (каждая ~5 с). */
+	private static final int FOLLOW_UP_RETRIES = 1;
+	/** Фраза, которой заканчивают разговор. */
+	private static final java.util.regex.Pattern CONVERSATION_END = java.util.regex.Pattern.compile(
+			"^(?iu)(спасибо|всё|все|хватит|достаточно|отбой|стоп|пока|ладно,? всё|ничего|конец)[\\s,.!…]*(спасибо|джарвис)?[\\s,.!…]*$");
+
+	static boolean isConversationEnd(String phrase) {
+		return CONVERSATION_END.matcher(phrase.trim()).matches();
 	}
 
 	/** Через сколько после открытия вкладки загружать страницу Qwen, мс. */
