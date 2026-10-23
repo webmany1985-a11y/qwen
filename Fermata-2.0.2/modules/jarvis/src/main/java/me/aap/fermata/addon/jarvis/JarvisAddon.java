@@ -29,6 +29,9 @@ public class JarvisAddon implements FermataFragmentAddon {
 			PreferenceStore.Pref.s("JARVIS_WORK_ADDRESS", "");
 	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> HOME_ADDRESS =
 			PreferenceStore.Pref.s("JARVIS_HOME_ADDRESS", "");
+	/** ClientID приложения на oauth.yandex.ru (права iot:view, iot:control) — для ворот. */
+	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> YANDEX_CLIENT_ID =
+			PreferenceStore.Pref.s("JARVIS_YANDEX_CLIENT_ID", "");
 
 	@Override
 	public int getAddonId() {
@@ -67,6 +70,12 @@ public class JarvisAddon implements FermataFragmentAddon {
 			o.store = store;
 			o.pref = HOME_ADDRESS;
 			o.title = R.string.jarvis_home_address;
+			o.visibility = visibility;
+		});
+		set.addStringPref(o -> {
+			o.store = store;
+			o.pref = YANDEX_CLIENT_ID;
+			o.title = R.string.jarvis_yandex_client_id;
 			o.visibility = visibility;
 		});
 	}

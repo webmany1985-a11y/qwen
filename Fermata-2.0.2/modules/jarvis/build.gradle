@@ -25,4 +25,7 @@ dependencies {
     implementation project(':fermata')
     implementation libs.androidMaterial
     implementation libs.androidxMedia
+    // Настоящий org.json для тестов: в android.jar он заглушка (YandexHomeTest).
+    // Версия — та же, что в тестах JARVIS (android-team), есть в Maven Central
+    testImplementation 'org.json:json:20260814'
 }

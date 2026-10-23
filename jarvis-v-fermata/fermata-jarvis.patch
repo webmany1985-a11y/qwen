@@ -4672,10 +4672,10 @@ index b0e10c9..0000000
 -}
 diff --git a/modules/jarvis/build.gradle b/modules/jarvis/build.gradle
 new file mode 100644
-index 0000000..571274b
+index 0000000..ce44336
 --- /dev/null
 +++ b/modules/jarvis/build.gradle
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,31 @@
 +android {
 +    namespace = "me.aap.fermata.addon.jarvis"
 +    defaultConfig {
@@ -4703,6 +4703,9 @@ index 0000000..571274b
 +    implementation project(':fermata')
 +    implementation libs.androidMaterial
 +    implementation libs.androidxMedia
++    // Настоящий org.json для тестов: в android.jar он заглушка (YandexHomeTest).
++    // Версия — та же, что в тестах JARVIS (android-team), есть в Maven Central
++    testImplementation 'org.json:json:20260814'
 +}
 diff --git a/modules/jarvis/src/debug/AndroidManifest.xml b/modules/jarvis/src/debug/AndroidManifest.xml
 new file mode 100644
@@ -5736,10 +5739,10 @@ index 0000000..7872521
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
 new file mode 100644
-index 0000000..512cdcc
+index 0000000..c7ffad8
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,82 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import android.content.Context;
@@ -5771,6 +5774,9 @@ index 0000000..512cdcc
 +			PreferenceStore.Pref.s("JARVIS_WORK_ADDRESS", "");
 +	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> HOME_ADDRESS =
 +			PreferenceStore.Pref.s("JARVIS_HOME_ADDRESS", "");
++	/** ClientID приложения на oauth.yandex.ru (права iot:view, iot:control) — для ворот. */
++	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> YANDEX_CLIENT_ID =
++			PreferenceStore.Pref.s("JARVIS_YANDEX_CLIENT_ID", "");
 +
 +	@Override
 +	public int getAddonId() {
@@ -5811,14 +5817,20 @@ index 0000000..512cdcc
 +			o.title = R.string.jarvis_home_address;
 +			o.visibility = visibility;
 +		});
++		set.addStringPref(o -> {
++			o.store = store;
++			o.pref = YANDEX_CLIENT_ID;
++			o.title = R.string.jarvis_yandex_client_id;
++			o.visibility = visibility;
++		});
 +	}
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..2b90b6b
+index 0000000..b21d7b8
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,995 @@
+@@ -0,0 +1,1115 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -5948,6 +5960,7 @@ index 0000000..2b90b6b
 +													 @Nullable Bundle savedInstanceState) {
 +		Context ctx = requireContext();
 +		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
++		rootView = root;
 +		QwenChat q = new QwenChat(ctx);
 +		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
 +		main.postDelayed(() -> {
@@ -6075,6 +6088,7 @@ index 0000000..2b90b6b
 +		QwenChat q = qwen;
 +		qwen = null;
 +		qwenDone = null;
++		rootView = null;
 +		if (q != null) q.destroy();
 +		// Вопрос Qwen остался без ответа — разговор окончен, иначе круг не примет новый
 +		if (busy) done();
@@ -6561,6 +6575,8 @@ index 0000000..2b90b6b
 +			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 +			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 +			done();
++		} else if (gateCommand(q) != null) {
++			gate(a, gateCommand(q));
 +		} else if (routeDestination(q) != null) {
 +			startRoute(a, routeDestination(q));
 +		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
@@ -6573,6 +6589,122 @@ index 0000000..2b90b6b
 +			toast(R.string.jarvis_not_installed);
 +			done();
 +		}
++	}
++
++	@Nullable
++	private android.widget.FrameLayout rootView;
++
++	@Nullable
++	private static Boolean gateCommand(List<String> alternatives) {
++		for (String s : alternatives) {
++			Boolean g = YandexHome.gateCommand(s);
++			if (g != null) return g;
++		}
++		return null;
++	}
++
++	private static final String YANDEX_PREFS = "jarvis_yandex";
++
++	/** Ворота через Умный дом Яндекса ({@link YandexHome}). */
++	private void gate(MainActivityDelegate a, boolean open) {
++		Context ctx = a.getContext().getApplicationContext();
++		android.content.SharedPreferences sp = ctx.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE);
++		String token = sp.getString("token", null);
++		if (token == null) {
++			yandexLogin(a, () -> gate(a, open));
++			return;
++		}
++		setPhase(HudMath.Phase.THINK);
++		me.aap.fermata.FermataApplication.get().execute(() -> {
++			String reply;
++			try {
++				reply = YandexHome.gate(token, open);
++			} catch (YandexHome.AuthException ex) {
++				Log.i("JARVIS gate: token rejected (", ex.getMessage(), ") — login again");
++				sp.edit().remove("token").apply();
++				main.post(() -> yandexLogin(a, () -> gate(a, open)));
++				return;
++			} catch (Exception ex) {
++				Log.e(ex, "JARVIS gate: request failed");
++				reply = "Умный дом Яндекса не ответил";
++			}
++			String r = reply;
++			main.post(() -> say(a, r));
++		});
++	}
++
++	/**
++	 * Вход в Яндекс ID — один раз, на телефоне: страница входа поверх круга;
++	 * Яндекс возвращает на {@link YandexHome#REDIRECT} с токеном в адресе —
++	 * токен сохраняется на телефоне, страница закрывается, then продолжает.
++	 */
++	private void yandexLogin(MainActivityDelegate a, Runnable then) {
++		String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
++				.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
++		if (clientId.isEmpty()) {
++			say(a, "Для ворот нужен ClientID Яндекса: настройки, дополнения, JARVIS");
++			return;
++		}
++		android.widget.FrameLayout root = rootView;
++		if (a.isCarActivityNotMirror() || (root == null)) {
++			say(a, "Нужно один раз войти в Яндекс: на телефоне откройте вкладку JARVIS и скажите «открой ворота»");
++			return;
++		}
++		Context ctx = root.getContext();
++		android.webkit.WebView w = new android.webkit.WebView(ctx);
++		w.getSettings().setJavaScriptEnabled(true);
++		w.getSettings().setDomStorageEnabled(true);
++		android.widget.Button cancel = new android.widget.Button(ctx);
++		cancel.setText("Отмена");
++		Runnable close = () -> {
++			root.removeView(w);
++			root.removeView(cancel);
++			w.destroy();
++			if (hud != null) hud.setVisibility(View.VISIBLE);
++		};
++		cancel.setOnClickListener(v -> {
++			close.run();
++			if (busy) done();
++		});
++		w.setWebViewClient(new android.webkit.WebViewClient() {
++			private boolean caught(String url) {
++				if ((url == null) || !url.startsWith(YandexHome.REDIRECT)) return false;
++				String token = YandexHome.tokenFromRedirect(url);
++				Log.i("JARVIS gate: Yandex login ", (token != null) ? "done" : "without token");
++				close.run();
++				if (token != null) {
++					a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
++							.edit().putString("token", token).apply();
++					then.run();
++				} else if (busy) {
++					say(a, "Войти в Яндекс не получилось");
++				}
++				return true;
++			}
++
++			@Override
++			public boolean shouldOverrideUrlLoading(android.webkit.WebView view,
++																							android.webkit.WebResourceRequest request) {
++				String u = request.getUrl().toString();
++				if (caught(u)) return true;
++				String scheme = request.getUrl().getScheme();
++				return !"https".equals(scheme) && !"http".equals(scheme);
++			}
++
++			@Override
++			public void onPageStarted(android.webkit.WebView view, String url, android.graphics.Bitmap favicon) {
++				if (!caught(url)) super.onPageStarted(view, url, favicon);
++			}
++		});
++		if (hud != null) hud.setVisibility(View.GONE);
++		root.addView(w, new android.widget.FrameLayout.LayoutParams(
++				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++		android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
++				ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
++				android.view.Gravity.BOTTOM | android.view.Gravity.END);
++		root.addView(cancel, lp);
++		Log.i("JARVIS gate: Yandex login shown");
++		w.loadUrl(YandexHome.authorizeUrl(clientId));
 +	}
 +
 +	@Nullable
@@ -7729,6 +7861,206 @@ index 0000000..c0aace1
 +		if (WORK_WORDS.matcher(dest).matches()) return WORK;
 +		if (HOME_WORDS.matcher(dest).matches()) return HOME;
 +		return dest;
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
+new file mode 100644
+index 0000000..3d92329
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
+@@ -0,0 +1,194 @@
++package me.aap.fermata.addon.jarvis;
++
++import static java.nio.charset.StandardCharsets.UTF_8;
++
++import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
++import androidx.annotation.VisibleForTesting;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.io.ByteArrayOutputStream;
++import java.io.InputStream;
++import java.io.OutputStream;
++import java.net.HttpURLConnection;
++import java.net.URL;
++import java.util.Locale;
++import java.util.regex.Pattern;
++
++/**
++ * Ворота через Умный дом Яндекса (пожелание 23.10.2026: «у меня это
++ * интегрировано в умный дом от Яндекса»). Блок Sonoff уже добавлен туда через
++ * eWeLink — JARVIS запускает его так же, как Алиса.
++ *
++ * API для пользовательских приложений (yandex.ru/dev/dialogs/smart-home,
++ * «concepts/platform-protocol»): хост https://api.iot.yandex.net, заголовок
++ * «Authorization: Bearer токен»; GET v1.0/user/info — умный дом пользователя
++ * (права iot:view); POST v1.0/scenarios/{id}/actions — запуск сценария и
++ * POST v1.0/devices/actions — включение устройства (iot:control).
++ *
++ * Что запускать: сценарий, в названии которого есть «ворот» и глагол
++ * («Открыть ворота»); иначе любой сценарий с «ворот»; иначе устройство с
++ * «ворот» в названии — его включение (блок с импульсом — «Inching» — сам
++ * отпустит реле). Чистая логика выбора — {@link #pick}, проверяется тестом.
++ */
++final class YandexHome {
++	private static final String API = "https://api.iot.yandex.net/v1.0/";
++
++	/** «Открой ворота» и подобное: true — открыть, false — закрыть, null — не про ворота. */
++	@Nullable
++	static Boolean gateCommand(@Nullable String phrase) {
++		if (phrase == null) return null;
++		String p = phrase.trim().toLowerCase(Locale.ROOT).replace('ё', 'е');
++		if (!GATE.matcher(p).find()) return null;
++		if (OPEN.matcher(p).find()) return true;
++		if (CLOSE.matcher(p).find()) return false;
++		return null;
++	}
++
++	private static final Pattern GATE = Pattern.compile("(^|\\s)ворот");
++	private static final Pattern OPEN = Pattern.compile("(^|\\s)(открой|открыть|откройте|отвори|открывай)(\\s|$)");
++	private static final Pattern CLOSE = Pattern.compile("(^|\\s)(закрой|закрыть|закройте|затвори|закрывай)(\\s|$)");
++
++	/** Что запустить: сценарий или устройство. */
++	static final class Target {
++		final boolean scenario;
++		final String id;
++		final String name;
++
++		Target(boolean scenario, String id, String name) {
++			this.scenario = scenario;
++			this.id = id;
++			this.name = name;
++		}
++	}
++
++	/** Выбрать сценарий или устройство «ворот» из ответа v1.0/user/info. */
++	@VisibleForTesting
++	@Nullable
++	static Target pick(@NonNull JSONObject info, boolean open) {
++		String verb = open ? "откр" : "закр";
++		JSONArray sc = info.optJSONArray("scenarios");
++		Target any = null;
++		if (sc != null) {
++			for (int i = 0; i < sc.length(); i++) {
++				JSONObject s = sc.optJSONObject(i);
++				if (s == null) continue;
++				String n = s.optString("name").toLowerCase(Locale.ROOT).replace('ё', 'е');
++				if (!n.contains("ворот")) continue;
++				if (n.contains(verb)) return new Target(true, s.optString("id"), s.optString("name"));
++				// Сценарий с противоположным глаголом не берём: «Закрыть ворота» на «открой»
++				if ((any == null) && !n.contains(open ? "закр" : "откр")) {
++					any = new Target(true, s.optString("id"), s.optString("name"));
++				}
++			}
++		}
++		if (any != null) return any;
++		JSONArray dv = info.optJSONArray("devices");
++		if (dv != null) {
++			for (int i = 0; i < dv.length(); i++) {
++				JSONObject d = dv.optJSONObject(i);
++				if (d == null) continue;
++				String n = d.optString("name").toLowerCase(Locale.ROOT).replace('ё', 'е');
++				if (n.contains("ворот")) return new Target(false, d.optString("id"), d.optString("name"));
++			}
++		}
++		return null;
++	}
++
++	/** Токен из адреса, куда Яндекс вернул после входа: …#access_token=…&expires_in=… */
++	@VisibleForTesting
++	@Nullable
++	static String tokenFromRedirect(@Nullable String url) {
++		if (url == null) return null;
++		int h = url.indexOf('#');
++		if (h < 0) return null;
++		for (String kv : url.substring(h + 1).split("&")) {
++			if (kv.startsWith("access_token=")) {
++				String t = kv.substring("access_token=".length());
++				return t.isEmpty() ? null : t;
++			}
++		}
++		return null;
++	}
++
++	/** Адрес входа в Яндекс ID для приложения пользователя (права iot:view, iot:control). */
++	static String authorizeUrl(String clientId) {
++		return "https://oauth.yandex.ru/authorize?response_type=token&client_id=" +
++				android.net.Uri.encode(clientId.trim());
++	}
++
++	static final String REDIRECT = "https://oauth.yandex.ru/verification_code";
++
++	/** Ворота: найти и запустить. Результат — что сказать. Не в главном потоке. */
++	static String gate(@NonNull String token, boolean open) throws Exception {
++		JSONObject info = new JSONObject(request("GET", "user/info", token, null));
++		Target t = pick(info, open);
++		if (t == null) {
++			me.aap.utils.log.Log.i("JARVIS gate: no scenario or device with «ворот», scenarios ",
++					count(info, "scenarios"), ", devices ", count(info, "devices"));
++			return "В Умном доме Яндекса не нашёл ни сценария, ни устройства «Ворота»";
++		}
++		me.aap.utils.log.Log.i("JARVIS gate: ", t.scenario ? "scenario «" : "device «", t.name, "»");
++		JSONObject r;
++		if (t.scenario) {
++			r = new JSONObject(request("POST", "scenarios/" + t.id + "/actions", token, null));
++		} else {
++			JSONObject state = new JSONObject().put("instance", "on").put("value", true);
++			JSONObject action = new JSONObject().put("type", "devices.capabilities.on_off").put("state", state);
++			JSONObject dev = new JSONObject().put("id", t.id).put("actions", new JSONArray().put(action));
++			JSONObject body = new JSONObject().put("devices", new JSONArray().put(dev));
++			r = new JSONObject(request("POST", "devices/actions", token, body.toString()));
++		}
++		boolean ok = "ok".equals(r.optString("status"));
++		me.aap.utils.log.Log.i("JARVIS gate: result ", r.optString("status"), " ", r.optString("message"));
++		if (!ok) return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
++		return open ? "Открываю ворота" : "Закрываю ворота";
++	}
++
++	private static int count(JSONObject info, String key) {
++		JSONArray a = info.optJSONArray(key);
++		return (a == null) ? -1 : a.length();
++	}
++
++	/** Ответ сервера с ошибкой авторизации — нужен новый вход. */
++	static final class AuthException extends Exception {
++		AuthException(String m) {
++			super(m);
++		}
++	}
++
++	private static String request(String method, String path, String token, @Nullable String body)
++			throws Exception {
++		HttpURLConnection c = (HttpURLConnection) new URL(API + path).openConnection();
++		try {
++			c.setRequestMethod(method);
++			c.setConnectTimeout(10_000);
++			c.setReadTimeout(15_000);
++			c.setRequestProperty("Authorization", "Bearer " + token);
++			if (body != null) {
++				c.setDoOutput(true);
++				c.setRequestProperty("Content-Type", "application/json");
++				try (OutputStream o = c.getOutputStream()) {
++					o.write(body.getBytes(UTF_8));
++				}
++			}
++			int code = c.getResponseCode();
++			if ((code == 401) || (code == 403)) throw new AuthException("HTTP " + code);
++			InputStream in = (code < 400) ? c.getInputStream() : c.getErrorStream();
++			ByteArrayOutputStream out = new ByteArrayOutputStream();
++			if (in != null) {
++				try (InputStream i = in) {
++					byte[] buf = new byte[8192];
++					for (int n; (n = i.read(buf)) > 0; ) out.write(buf, 0, n);
++				}
++			}
++			String s = out.toString(UTF_8.name());
++			if (code >= 400) me.aap.utils.log.Log.i("JARVIS gate: HTTP ", code, " ", s);
++			return s.isEmpty() ? "{}" : s;
++		} finally {
++			c.disconnect();
++		}
 +	}
 +}
 diff --git a/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp b/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp
@@ -17645,10 +17977,10 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..6be372c
+index 0000000..f83d290
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,22 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
@@ -17669,6 +18001,7 @@ index 0000000..6be372c
 +    <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
 +    <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
 +    <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
++    <string name="jarvis_yandex_client_id">ClientID Яндекса для ворот (oauth.yandex.ru)</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java
 new file mode 100644
@@ -18046,6 +18379,67 @@ index 0000000..fdb0596
 +		assertNull(RoutePhrase.destination("маршрут"));
 +		assertNull(RoutePhrase.destination("во сколько будет автобус 311"));
 +		assertNull(RoutePhrase.destination("что такое маршрутизатор"));
++	}
++}
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
+new file mode 100644
+index 0000000..0ce5d81
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
+@@ -0,0 +1,55 @@
++package me.aap.fermata.addon.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertTrue;
++
++import org.json.JSONObject;
++import org.junit.Test;
++
++/** Ворота через Умный дом Яндекса: фраза, выбор сценария или устройства, токен. */
++public class YandexHomeTest {
++
++	@Test
++	public void gatePhrases() {
++		assertEquals(Boolean.TRUE, YandexHome.gateCommand("открой ворота"));
++		assertEquals(Boolean.TRUE, YandexHome.gateCommand("Джарвис, открой ворота"));
++		assertEquals(Boolean.TRUE, YandexHome.gateCommand("открыть ворота"));
++		assertEquals(Boolean.FALSE, YandexHome.gateCommand("закрой ворота"));
++		assertNull(YandexHome.gateCommand("открой окно"));
++		assertNull(YandexHome.gateCommand("какие ворота лучше"));
++		assertNull(YandexHome.gateCommand("открой поворот"));
++	}
++
++	private static JSONObject info(String json) throws Exception {
++		return new JSONObject(json);
++	}
++
++	@Test
++	public void scenarioWithVerbFirst() throws Exception {
++		JSONObject i = info("{\"scenarios\":[{\"id\":\"s1\",\"name\":\"Закрыть ворота\"}," +
++				"{\"id\":\"s2\",\"name\":\"Открыть ворота\"}],\"devices\":[{\"id\":\"d1\",\"name\":\"Ворота\"}]}");
++		YandexHome.Target t = YandexHome.pick(i, true);
++		assertTrue(t.scenario);
++		assertEquals("s2", t.id);
++		assertEquals("s1", YandexHome.pick(i, false).id);
++	}
++
++	@Test
++	public void deviceWhenNoScenario() throws Exception {
++		JSONObject i = info("{\"scenarios\":[{\"id\":\"s1\",\"name\":\"Свет в гараже\"}]," +
++				"\"devices\":[{\"id\":\"d0\",\"name\":\"Лампа\"},{\"id\":\"d1\",\"name\":\"Ворота Sonoff\"}]}");
++		YandexHome.Target t = YandexHome.pick(i, true);
++		assertFalse(t.scenario);
++		assertEquals("d1", t.id);
++		assertNull(YandexHome.pick(info("{\"scenarios\":[],\"devices\":[]}"), true));
++	}
++
++	@Test
++	public void tokenFromRedirect() {
++		assertEquals("y0_AgAAA", YandexHome.tokenFromRedirect(
++				"https://oauth.yandex.ru/verification_code#access_token=y0_AgAAA&token_type=bearer&expires_in=31536000"));
++		assertNull(YandexHome.tokenFromRedirect("https://oauth.yandex.ru/verification_code?error=access_denied"));
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java

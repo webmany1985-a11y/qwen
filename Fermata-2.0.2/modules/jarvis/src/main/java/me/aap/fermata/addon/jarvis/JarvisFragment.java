@@ -127,6 +127,7 @@ public class JarvisFragment extends MainActivityFragment
 													 @Nullable Bundle savedInstanceState) {
 		Context ctx = requireContext();
 		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
+		rootView = root;
 		QwenChat q = new QwenChat(ctx);
 		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
 		main.postDelayed(() -> {
@@ -254,6 +255,7 @@ public class JarvisFragment extends MainActivityFragment
 		QwenChat q = qwen;
 		qwen = null;
 		qwenDone = null;
+		rootView = null;
 		if (q != null) q.destroy();
 		// Вопрос Qwen остался без ответа — разговор окончен, иначе круг не примет новый
 		if (busy) done();
@@ -740,6 +742,8 @@ public class JarvisFragment extends MainActivityFragment
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
+		} else if (gateCommand(q) != null) {
+			gate(a, gateCommand(q));
 		} else if (routeDestination(q) != null) {
 			startRoute(a, routeDestination(q));
 		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
@@ -752,6 +756,122 @@ public class JarvisFragment extends MainActivityFragment
 			toast(R.string.jarvis_not_installed);
 			done();
 		}
+	}
+
+	@Nullable
+	private android.widget.FrameLayout rootView;
+
+	@Nullable
+	private static Boolean gateCommand(List<String> alternatives) {
+		for (String s : alternatives) {
+			Boolean g = YandexHome.gateCommand(s);
+			if (g != null) return g;
+		}
+		return null;
+	}
+
+	private static final String YANDEX_PREFS = "jarvis_yandex";
+
+	/** Ворота через Умный дом Яндекса ({@link YandexHome}). */
+	private void gate(MainActivityDelegate a, boolean open) {
+		Context ctx = a.getContext().getApplicationContext();
+		android.content.SharedPreferences sp = ctx.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE);
+		String token = sp.getString("token", null);
+		if (token == null) {
+			yandexLogin(a, () -> gate(a, open));
+			return;
+		}
+		setPhase(HudMath.Phase.THINK);
+		me.aap.fermata.FermataApplication.get().execute(() -> {
+			String reply;
+			try {
+				reply = YandexHome.gate(token, open);
+			} catch (YandexHome.AuthException ex) {
+				Log.i("JARVIS gate: token rejected (", ex.getMessage(), ") — login again");
+				sp.edit().remove("token").apply();
+				main.post(() -> yandexLogin(a, () -> gate(a, open)));
+				return;
+			} catch (Exception ex) {
+				Log.e(ex, "JARVIS gate: request failed");
+				reply = "Умный дом Яндекса не ответил";
+			}
+			String r = reply;
+			main.post(() -> say(a, r));
+		});
+	}
+
+	/**
+	 * Вход в Яндекс ID — один раз, на телефоне: страница входа поверх круга;
+	 * Яндекс возвращает на {@link YandexHome#REDIRECT} с токеном в адресе —
+	 * токен сохраняется на телефоне, страница закрывается, then продолжает.
+	 */
+	private void yandexLogin(MainActivityDelegate a, Runnable then) {
+		String clientId = me.aap.fermata.FermataApplication.get().getPreferenceStore()
+				.getStringPref(JarvisAddon.YANDEX_CLIENT_ID).trim();
+		if (clientId.isEmpty()) {
+			say(a, "Для ворот нужен ClientID Яндекса: настройки, дополнения, JARVIS");
+			return;
+		}
+		android.widget.FrameLayout root = rootView;
+		if (a.isCarActivityNotMirror() || (root == null)) {
+			say(a, "Нужно один раз войти в Яндекс: на телефоне откройте вкладку JARVIS и скажите «открой ворота»");
+			return;
+		}
+		Context ctx = root.getContext();
+		android.webkit.WebView w = new android.webkit.WebView(ctx);
+		w.getSettings().setJavaScriptEnabled(true);
+		w.getSettings().setDomStorageEnabled(true);
+		android.widget.Button cancel = new android.widget.Button(ctx);
+		cancel.setText("Отмена");
+		Runnable close = () -> {
+			root.removeView(w);
+			root.removeView(cancel);
+			w.destroy();
+			if (hud != null) hud.setVisibility(View.VISIBLE);
+		};
+		cancel.setOnClickListener(v -> {
+			close.run();
+			if (busy) done();
+		});
+		w.setWebViewClient(new android.webkit.WebViewClient() {
+			private boolean caught(String url) {
+				if ((url == null) || !url.startsWith(YandexHome.REDIRECT)) return false;
+				String token = YandexHome.tokenFromRedirect(url);
+				Log.i("JARVIS gate: Yandex login ", (token != null) ? "done" : "without token");
+				close.run();
+				if (token != null) {
+					a.getContext().getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE)
+							.edit().putString("token", token).apply();
+					then.run();
+				} else if (busy) {
+					say(a, "Войти в Яндекс не получилось");
+				}
+				return true;
+			}
+
+			@Override
+			public boolean shouldOverrideUrlLoading(android.webkit.WebView view,
+																							android.webkit.WebResourceRequest request) {
+				String u = request.getUrl().toString();
+				if (caught(u)) return true;
+				String scheme = request.getUrl().getScheme();
+				return !"https".equals(scheme) && !"http".equals(scheme);
+			}
+
+			@Override
+			public void onPageStarted(android.webkit.WebView view, String url, android.graphics.Bitmap favicon) {
+				if (!caught(url)) super.onPageStarted(view, url, favicon);
+			}
+		});
+		if (hud != null) hud.setVisibility(View.GONE);
+		root.addView(w, new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+		android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+				android.view.Gravity.BOTTOM | android.view.Gravity.END);
+		root.addView(cancel, lp);
+		Log.i("JARVIS gate: Yandex login shown");
+		w.loadUrl(YandexHome.authorizeUrl(clientId));
 	}
 
 	@Nullable
