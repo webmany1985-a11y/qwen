@@ -19,4 +19,8 @@
     <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
     <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
     <string name="jarvis_yandex_client_id">ClientID Яндекса для Умного дома (oauth.yandex.ru)</string>
+    <string name="jarvis_voice">Голос JARVIS</string>
+    <string name="jarvis_voice_pitch">Тембр голоса</string>
+    <string name="jarvis_voice_rate">Темп речи</string>
+    <string name="jarvis_voice_test">Послушать голос</string>
 </resources>

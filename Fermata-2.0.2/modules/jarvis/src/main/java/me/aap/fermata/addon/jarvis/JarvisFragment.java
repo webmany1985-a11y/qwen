@@ -171,8 +171,6 @@ public class JarvisFragment extends MainActivityFragment
 		lp.setMargins(m, m, m, m);
 		root.addView(close, lp);
 		qwenDone = close;
-		// Голос JARVIS читается заранее, чтобы первое «Слушаю» уже было его голосом
-		me.aap.fermata.jarvis.JarvisVoice.refresh();
 		// И синтезатор подключается заранее — первое «Слушаю» без задержки
 		// Приложение могло ещё не подняться (восстановление после выгрузки) — ждать его
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(a -> {

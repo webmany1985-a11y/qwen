@@ -53,6 +53,50 @@ public class JarvisAddon implements FermataFragmentAddon {
 	@Override
 	public void contributeSettings(Context ctx, PreferenceStore store, PreferenceSet set,
 																 ChangeableCondition visibility) {
+		// Голос — свой, как в JARVIS (пожелание 23.10.2026: без root и без JARVIS)
+		me.aap.fermata.jarvis.JarvisVoice.loadVoices(ctx);
+		set.addListPref(o -> {
+			o.setStringValues(store, me.aap.fermata.jarvis.JarvisVoice.VOICE,
+					me.aap.fermata.jarvis.JarvisVoice.voices());
+			// Голоса движка читаются в фоне — список обновляется при нажатии
+			o.initList = l -> l.setStringValues(store, me.aap.fermata.jarvis.JarvisVoice.VOICE,
+					me.aap.fermata.jarvis.JarvisVoice.voices());
+			o.title = R.string.jarvis_voice;
+			o.subtitle = me.aap.fermata.R.string.string_format;
+			o.formatSubtitle = true;
+			o.visibility = visibility;
+		});
+		set.addFloatPref(o -> {
+			o.store = store;
+			o.pref = me.aap.fermata.jarvis.JarvisVoice.PITCH;
+			o.title = R.string.jarvis_voice_pitch;
+			o.scale = 0.05f;
+			o.seekMin = 10;
+			o.seekMax = 30;
+			o.visibility = visibility;
+		});
+		set.addFloatPref(o -> {
+			o.store = store;
+			o.pref = me.aap.fermata.jarvis.JarvisVoice.RATE;
+			o.title = R.string.jarvis_voice_rate;
+			o.scale = 0.05f;
+			o.seekMin = 10;
+			o.seekMax = 30;
+			o.visibility = visibility;
+		});
+		set.addButton(o -> {
+			o.title = R.string.jarvis_voice_test;
+			o.onClick = () -> me.aap.utils.voice.TextToSpeech.create(ctx, new java.util.Locale("ru"))
+					.onCompletion((t, err) -> {
+						if (err != null) {
+							me.aap.utils.log.Log.e(err, "JARVIS voice: test failed");
+							return;
+						}
+						me.aap.fermata.jarvis.JarvisVoice.apply(t);
+						t.speak("Слушаю. Так звучит голос JARVIS.").onCompletion((r, e) -> t.close());
+					});
+			o.visibility = visibility;
+		});
 		set.addBooleanPref(o -> {
 			o.store = store;
 			o.pref = CAR_MIC;
