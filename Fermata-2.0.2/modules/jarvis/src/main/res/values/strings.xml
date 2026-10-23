@@ -16,4 +16,6 @@
     <string name="jarvis_qwen_empty">Qwen ответил без текста</string>
     <string name="jarvis_car_mic">Микрофон машины</string>
     <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
+    <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
+    <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
 </resources>

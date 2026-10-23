@@ -24,6 +24,11 @@ public class JarvisAddon implements FermataFragmentAddon {
 	private static final AddonInfo info = FermataAddon.findAddonInfo(JarvisAddon.class.getName());
 	/** Микрофон машины по Bluetooth на время фразы (пробно, 22.10.2026). Только в машине. */
 	static final PreferenceStore.Pref<BooleanSupplier> CAR_MIC = PreferenceStore.Pref.b("JARVIS_CAR_MIC", false);
+	/** Адреса для «маршрут на работу», «поехали домой» (23.10.2026). Пусто — слова «Работа», «Дом». */
+	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> WORK_ADDRESS =
+			PreferenceStore.Pref.s("JARVIS_WORK_ADDRESS", "");
+	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> HOME_ADDRESS =
+			PreferenceStore.Pref.s("JARVIS_HOME_ADDRESS", "");
 
 	@Override
 	public int getAddonId() {
@@ -50,6 +55,18 @@ public class JarvisAddon implements FermataFragmentAddon {
 			o.pref = CAR_MIC;
 			o.title = R.string.jarvis_car_mic;
 			o.subtitle = R.string.jarvis_car_mic_sub;
+			o.visibility = visibility;
+		});
+		set.addStringPref(o -> {
+			o.store = store;
+			o.pref = WORK_ADDRESS;
+			o.title = R.string.jarvis_work_address;
+			o.visibility = visibility;
+		});
+		set.addStringPref(o -> {
+			o.store = store;
+			o.pref = HOME_ADDRESS;
+			o.title = R.string.jarvis_home_address;
 			o.visibility = visibility;
 		});
 	}

@@ -5736,10 +5736,10 @@ index 0000000..7872521
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
 new file mode 100644
-index 0000000..1d0c7f6
+index 0000000..512cdcc
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,73 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import android.content.Context;
@@ -5766,6 +5766,11 @@ index 0000000..1d0c7f6
 +	private static final AddonInfo info = FermataAddon.findAddonInfo(JarvisAddon.class.getName());
 +	/** Микрофон машины по Bluetooth на время фразы (пробно, 22.10.2026). Только в машине. */
 +	static final PreferenceStore.Pref<BooleanSupplier> CAR_MIC = PreferenceStore.Pref.b("JARVIS_CAR_MIC", false);
++	/** Адреса для «маршрут на работу», «поехали домой» (23.10.2026). Пусто — слова «Работа», «Дом». */
++	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> WORK_ADDRESS =
++			PreferenceStore.Pref.s("JARVIS_WORK_ADDRESS", "");
++	static final PreferenceStore.Pref<me.aap.utils.function.Supplier<String>> HOME_ADDRESS =
++			PreferenceStore.Pref.s("JARVIS_HOME_ADDRESS", "");
 +
 +	@Override
 +	public int getAddonId() {
@@ -5794,14 +5799,26 @@ index 0000000..1d0c7f6
 +			o.subtitle = R.string.jarvis_car_mic_sub;
 +			o.visibility = visibility;
 +		});
++		set.addStringPref(o -> {
++			o.store = store;
++			o.pref = WORK_ADDRESS;
++			o.title = R.string.jarvis_work_address;
++			o.visibility = visibility;
++		});
++		set.addStringPref(o -> {
++			o.store = store;
++			o.pref = HOME_ADDRESS;
++			o.title = R.string.jarvis_home_address;
++			o.visibility = visibility;
++		});
 +	}
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..7170cea
+index 0000000..2b90b6b
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,950 @@
+@@ -0,0 +1,995 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6544,6 +6561,8 @@ index 0000000..7170cea
 +			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 +			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 +			done();
++		} else if (routeDestination(q) != null) {
++			startRoute(a, routeDestination(q));
 +		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
 +			String cmd = QwenChat.phoneCommand(q);
 +			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
@@ -6554,6 +6573,49 @@ index 0000000..7170cea
 +			toast(R.string.jarvis_not_installed);
 +			done();
 +		}
++	}
++
++	@Nullable
++	private static String routeDestination(List<String> alternatives) {
++		for (String s : alternatives) {
++			String d = RoutePhrase.destination(s);
++			if (d != null) return d;
++		}
++		return null;
++	}
++
++	/**
++	 * Маршрут в Google Картах (пожелание 23.10.2026: «открыть Гугл карты с
++	 * маршрутом до работы»). Работа и дом — адреса из настроек вкладки; пусто —
++	 * слова «Работа», «Дом» (Карты сами сопоставят с сохранёнными местами).
++	 */
++	private void startRoute(MainActivityDelegate a, String dest) {
++		me.aap.utils.pref.PreferenceStore ps = me.aap.fermata.FermataApplication.get().getPreferenceStore();
++		String q;
++		String spoken;
++		if (RoutePhrase.WORK.equals(dest)) {
++			q = ps.getStringPref(JarvisAddon.WORK_ADDRESS).trim();
++			if (q.isEmpty()) q = "Работа";
++			spoken = "Прокладываю маршрут на работу";
++		} else if (RoutePhrase.HOME.equals(dest)) {
++			q = ps.getStringPref(JarvisAddon.HOME_ADDRESS).trim();
++			if (q.isEmpty()) q = "Дом";
++			spoken = "Прокладываю маршрут домой";
++		} else {
++			q = dest;
++			spoken = "Прокладываю маршрут: " + dest;
++		}
++		Log.i("JARVIS tab: route to «", q, "»");
++		Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=" +
++				android.net.Uri.encode(q))).setPackage("com.google.android.apps.maps")
++				.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
++		try {
++			a.getContext().getApplicationContext().startActivity(i);
++		} catch (Exception ex) {
++			Log.e(ex, "JARVIS tab: Google Maps not started");
++			spoken = "Не получилось открыть Google Карты";
++		}
++		say(a, spoken);
 +	}
 +
 +	/** Вопрос — Qwen, ответ — голосом JARVIS. */
@@ -7620,6 +7682,53 @@ index 0000000..737e526
 +		if (phrase == null) return false;
 +		String p = phrase.trim().toLowerCase(Locale.ROOT);
 +		return PHONE_COMMAND.matcher(p).find() || HOMEWORK.matcher(p).find();
++	}
++}
+diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/RoutePhrase.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/RoutePhrase.java
+new file mode 100644
+index 0000000..c0aace1
+--- /dev/null
++++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/RoutePhrase.java
+@@ -0,0 +1,41 @@
++package me.aap.fermata.addon.jarvis;
++
++import androidx.annotation.Nullable;
++
++import java.util.Locale;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/**
++ * «Маршрут на работу», «поехали домой», «проложи маршрут до вокзала» — куда
++ * ехать (пожелание 23.10.2026: «открыть Гугл карты с маршрутом до работы»).
++ * Чистая логика, без Android.
++ */
++final class RoutePhrase {
++	/** Работа и дом — особые цели: их адреса берутся из настроек вкладки. */
++	static final String WORK = "work";
++	static final String HOME = "home";
++
++	private static final Pattern ROUTE = Pattern.compile(
++			"^(джарвис[\\s,]+)?(проложи(те)?\\s+)?(маршрут|дорогу|путь|навигаци[юя]|поехали|едем|поедем|вези|отвези|веди)" +
++					"(\\s+(меня|нас))?(\\s+(на|до|в|во|к|ко)(?=\\s))?\\s*(?<dest>.*)$");
++	private static final Pattern WORK_WORDS = Pattern.compile("^(работ[ауые]|офис|на работу|службу|службы)$");
++	private static final Pattern HOME_WORDS = Pattern.compile("^(дом|домой|дому|дома)$");
++
++	private RoutePhrase() {
++	}
++
++	/** Цель маршрута: {@link #WORK}, {@link #HOME}, адрес или место словами; null — не маршрут. */
++	@Nullable
++	static String destination(@Nullable String phrase) {
++		if (phrase == null) return null;
++		String p = phrase.trim().toLowerCase(Locale.ROOT).replace('ё', 'е').replaceAll("[.!?]+$", "");
++		Matcher m = ROUTE.matcher(p);
++		if (!m.matches()) return null;
++		String dest = m.group("dest").trim();
++		if (dest.isEmpty()) return null;
++		if (WORK_WORDS.matcher(dest).matches()) return WORK;
++		if (HOME_WORDS.matcher(dest).matches()) return HOME;
++		return dest;
 +	}
 +}
 diff --git a/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp b/modules/jarvis/src/main/res/drawable-nodpi/jarvis_sfera.webp
@@ -17536,10 +17645,10 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..246ef86
+index 0000000..6be372c
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,21 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
@@ -17558,6 +17667,8 @@ index 0000000..246ef86
 +    <string name="jarvis_qwen_empty">Qwen ответил без текста</string>
 +    <string name="jarvis_car_mic">Микрофон машины</string>
 +    <string name="jarvis_car_mic_sub">В машине фразу слушает микрофон магнитолы по Bluetooth. На время фразы магнитола переходит в режим звонка</string>
++    <string name="jarvis_work_address">Адрес работы (для «маршрут на работу»)</string>
++    <string name="jarvis_home_address">Адрес дома (для «поехали домой»)</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java
 new file mode 100644
@@ -17895,6 +18006,46 @@ index 0000000..406f8d7
 +		String s = QwenChat.forSpeech(b.toString());
 +		assertTrue(s.length() <= QwenChat.MAX_SPEECH);
 +		assertTrue(s.endsWith("."));
++	}
++}
+diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/RoutePhraseTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/RoutePhraseTest.java
+new file mode 100644
+index 0000000..fdb0596
+--- /dev/null
++++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/RoutePhraseTest.java
+@@ -0,0 +1,34 @@
++package me.aap.fermata.addon.jarvis;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertNull;
++
++import org.junit.Test;
++
++/** «Маршрут на работу» и подобное — куда прокладывать маршрут. */
++public class RoutePhraseTest {
++
++	@Test
++	public void workAndHome() {
++		assertEquals(RoutePhrase.WORK, RoutePhrase.destination("маршрут на работу"));
++		assertEquals(RoutePhrase.WORK, RoutePhrase.destination("Проложи маршрут до работы"));
++		assertEquals(RoutePhrase.WORK, RoutePhrase.destination("поехали на работу"));
++		assertEquals(RoutePhrase.HOME, RoutePhrase.destination("поехали домой"));
++		assertEquals(RoutePhrase.HOME, RoutePhrase.destination("маршрут домой"));
++		assertEquals(RoutePhrase.HOME, RoutePhrase.destination("Джарвис, вези меня домой"));
++	}
++
++	@Test
++	public void placeByWords() {
++		assertEquals("вокзала", RoutePhrase.destination("проложи маршрут до вокзала"));
++		assertEquals("минск, улица немига 5", RoutePhrase.destination("маршрут до Минск, улица Немига 5"));
++	}
++
++	@Test
++	public void notARoute() {
++		assertNull(RoutePhrase.destination("какая погода"));
++		assertNull(RoutePhrase.destination("маршрут"));
++		assertNull(RoutePhrase.destination("во сколько будет автобус 311"));
++		assertNull(RoutePhrase.destination("что такое маршрутизатор"));
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java

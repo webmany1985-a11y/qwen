@@ -740,6 +740,8 @@ public class JarvisFragment extends MainActivityFragment
 			// Команду выполнила Fermata. done() вернёт музыку, только если команда
 			// её не трогала: так устроен interruptPlayback — «пауза» останется паузой
 			done();
+		} else if (routeDestination(q) != null) {
+			startRoute(a, routeDestination(q));
 		} else if ((QwenChat.phoneCommand(q) != null) && JarvisBridge.isInstalled(a.getContext())) {
 			String cmd = QwenChat.phoneCommand(q);
 			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
@@ -750,6 +752,49 @@ public class JarvisFragment extends MainActivityFragment
 			toast(R.string.jarvis_not_installed);
 			done();
 		}
+	}
+
+	@Nullable
+	private static String routeDestination(List<String> alternatives) {
+		for (String s : alternatives) {
+			String d = RoutePhrase.destination(s);
+			if (d != null) return d;
+		}
+		return null;
+	}
+
+	/**
+	 * Маршрут в Google Картах (пожелание 23.10.2026: «открыть Гугл карты с
+	 * маршрутом до работы»). Работа и дом — адреса из настроек вкладки; пусто —
+	 * слова «Работа», «Дом» (Карты сами сопоставят с сохранёнными местами).
+	 */
+	private void startRoute(MainActivityDelegate a, String dest) {
+		me.aap.utils.pref.PreferenceStore ps = me.aap.fermata.FermataApplication.get().getPreferenceStore();
+		String q;
+		String spoken;
+		if (RoutePhrase.WORK.equals(dest)) {
+			q = ps.getStringPref(JarvisAddon.WORK_ADDRESS).trim();
+			if (q.isEmpty()) q = "Работа";
+			spoken = "Прокладываю маршрут на работу";
+		} else if (RoutePhrase.HOME.equals(dest)) {
+			q = ps.getStringPref(JarvisAddon.HOME_ADDRESS).trim();
+			if (q.isEmpty()) q = "Дом";
+			spoken = "Прокладываю маршрут домой";
+		} else {
+			q = dest;
+			spoken = "Прокладываю маршрут: " + dest;
+		}
+		Log.i("JARVIS tab: route to «", q, "»");
+		Intent i = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=" +
+				android.net.Uri.encode(q))).setPackage("com.google.android.apps.maps")
+				.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+		try {
+			a.getContext().getApplicationContext().startActivity(i);
+		} catch (Exception ex) {
+			Log.e(ex, "JARVIS tab: Google Maps not started");
+			spoken = "Не получилось открыть Google Карты";
+		}
+		say(a, spoken);
 	}
 
 	/** Вопрос — Qwen, ответ — голосом JARVIS. */
