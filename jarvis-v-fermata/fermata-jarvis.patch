@@ -5827,10 +5827,10 @@ index 0000000..c7ffad8
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..0724222
+index 0000000..5415000
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1321 @@
+@@ -0,0 +1,1330 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6714,6 +6714,15 @@ index 0000000..0724222
 +			} catch (YandexHome.NoAccessException ex) {
 +				noAccess(ctx.getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE));
 +				homeNoAccess = true;
++			} catch (YandexHome.AuthException ex) {
++				// Вход отозван (журнал 23.10.2026 12:11: после правки прав приложения — 401):
++				// стереть, чтобы ближайшая команда дома показала страницу входа
++				Log.i("JARVIS home: token rejected on preload (", ex.getMessage(), ") — login on next command");
++				android.content.SharedPreferences sp = ctx.getApplicationContext()
++						.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE);
++				// Только если за это время не вошли заново
++				if (token.equals(sp.getString("token", null))) sp.edit().remove("token").apply();
++				homeInfo = null;
 +			} catch (Exception ex) {
 +				Log.i("JARVIS home: preload failed: ", ex.getMessage());
 +			}

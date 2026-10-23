@@ -881,6 +881,15 @@ public class JarvisFragment extends MainActivityFragment
 			} catch (YandexHome.NoAccessException ex) {
 				noAccess(ctx.getApplicationContext().getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE));
 				homeNoAccess = true;
+			} catch (YandexHome.AuthException ex) {
+				// Вход отозван (журнал 23.10.2026 12:11: после правки прав приложения — 401):
+				// стереть, чтобы ближайшая команда дома показала страницу входа
+				Log.i("JARVIS home: token rejected on preload (", ex.getMessage(), ") — login on next command");
+				android.content.SharedPreferences sp = ctx.getApplicationContext()
+						.getSharedPreferences(YANDEX_PREFS, Context.MODE_PRIVATE);
+				// Только если за это время не вошли заново
+				if (token.equals(sp.getString("token", null))) sp.edit().remove("token").apply();
+				homeInfo = null;
 			} catch (Exception ex) {
 				Log.i("JARVIS home: preload failed: ", ex.getMessage());
 			}
