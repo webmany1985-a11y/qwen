@@ -814,6 +814,12 @@ public class JarvisFragment extends MainActivityFragment
 	@Nullable
 	private static volatile org.json.JSONObject homeInfo;
 	private static volatile long homeInfoAt;
+	/** Вход, которым загружен состав: вошли заново — состав не наш. */
+	@Nullable
+	private static volatile String homeOwner;
+	/** Последняя неудачная загрузка — «включи музыку» не ждёт сеть на каждой фразе. */
+	private static volatile long homeFailedAt;
+	private static final long HOME_RETRY_MS = 60_000L;
 	private static final long HOME_INFO_TTL_MS = 10 * 60_000L;
 
 	@Nullable
@@ -822,14 +828,22 @@ public class JarvisFragment extends MainActivityFragment
 				.getString("token", null);
 	}
 
-	private static boolean homeInfoFresh() {
-		return (homeInfo != null) && (android.os.SystemClock.elapsedRealtime() - homeInfoAt < HOME_INFO_TTL_MS);
+	private static boolean homeInfoFresh(@Nullable String token) {
+		return (homeInfo != null) && (token != null) && token.equals(homeOwner) &&
+				(android.os.SystemClock.elapsedRealtime() - homeInfoAt < HOME_INFO_TTL_MS);
 	}
 
 	/** Не в главном потоке. */
 	private static org.json.JSONObject loadHomeInfo(String token) throws Exception {
-		org.json.JSONObject i = YandexHome.info(token);
+		org.json.JSONObject i;
+		try {
+			i = YandexHome.info(token);
+		} catch (Exception ex) {
+			homeFailedAt = android.os.SystemClock.elapsedRealtime();
+			throw ex;
+		}
 		homeInfo = i;
+		homeOwner = token;
 		homeInfoAt = android.os.SystemClock.elapsedRealtime();
 		Log.i("JARVIS home: ", count(i, "scenarios"), " scenarios, ", count(i, "devices"), " devices");
 		return i;
@@ -844,7 +858,7 @@ public class JarvisFragment extends MainActivityFragment
 	private static void preloadHome(Context ctx) {
 		String token = yandexToken(ctx);
 		if (token == null) Log.i("JARVIS home: no Yandex login yet");
-		if ((token == null) || homeInfoFresh()) return;
+		if ((token == null) || homeInfoFresh(token)) return;
 		me.aap.fermata.FermataApplication.get().execute(() -> {
 			try {
 				loadHomeInfo(token);
@@ -887,7 +901,7 @@ public class JarvisFragment extends MainActivityFragment
 			}, () -> afterHome(a, q));
 			return true;
 		}
-		if (homeInfoFresh()) {
+		if (homeInfoFresh(token)) {
 			YandexHome.Action m = homeMatch(q, homeInfo);
 			if (m == null) {
 				if (looks) Log.i("JARVIS home: no device or scenario for «", q.get(0), "»");
@@ -897,6 +911,11 @@ public class JarvisFragment extends MainActivityFragment
 			return true;
 		}
 		if (!looks) return false;
+		if (android.os.SystemClock.elapsedRealtime() - homeFailedAt < HOME_RETRY_MS) {
+			Log.i("JARVIS home: user/info failed recently — not waiting");
+			preloadHome(a.getContext());
+			return false;
+		}
 		// Состав ещё не загружен — спросить, затем решить
 		setPhase(HudMath.Phase.THINK);
 		me.aap.fermata.FermataApplication.get().execute(() -> {

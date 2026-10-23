@@ -102,4 +102,21 @@ public class YandexHomeTest {
 		assertTrue(YandexHome.looksLike("Джарвис, запусти сценарий утро"));
 		assertFalse(YandexHome.looksLike("какая погода"));
 	}
+
+	@Test
+	public void actionResult() throws Exception {
+		assertTrue(YandexHome.succeeded(info("{\"status\":\"ok\"}")));
+		assertTrue(YandexHome.succeeded(info("{\"devices\":[{\"id\":\"d\",\"capabilities\":[{\"state\":" +
+				"{\"instance\":\"on\",\"action_result\":{\"status\":\"DONE\"}}}]}]}")));
+		assertFalse(YandexHome.succeeded(info("{\"devices\":[{\"id\":\"d\",\"capabilities\":[{\"state\":" +
+				"{\"instance\":\"on\",\"action_result\":{\"status\":\"ERROR\"}}}]}]}")));
+		assertFalse(YandexHome.succeeded(info("{\"status\":\"error\"}")));
+	}
+
+	@Test
+	public void gateDeviceMustSwitch() throws Exception {
+		JSONObject i = info("{\"scenarios\":[],\"devices\":[{\"id\":\"x\",\"name\":\"Датчик ворот\",\"capabilities\":[]}," +
+				"{\"id\":\"d\",\"name\":\"Ворота\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}");
+		assertEquals("d", YandexHome.pick(i, true).id);
+	}
 }

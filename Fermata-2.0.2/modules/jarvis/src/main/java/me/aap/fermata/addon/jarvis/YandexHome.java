@@ -91,7 +91,7 @@ final class YandexHome {
 				JSONObject d = dv.optJSONObject(i);
 				if (d == null) continue;
 				String n = d.optString("name").toLowerCase(Locale.ROOT).replace('ё', 'е');
-				if (n.contains("ворот")) return new Target(false, d.optString("id"), d.optString("name"));
+				if (n.contains("ворот") && hasOnOff(d)) return new Target(false, d.optString("id"), d.optString("name"));
 			}
 		}
 		return null;
@@ -270,9 +270,7 @@ final class YandexHome {
 			r = new JSONObject(request("POST", "devices/actions", token, body.toString()));
 		}
 		me.aap.utils.log.Log.i("JARVIS home: result ", r.optString("status"), " ", r.optString("message"));
-		if (!"ok".equals(r.optString("status"))) {
-			return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
-		}
+		if (!succeeded(r)) return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
 		if (t.scenario) return "Запускаю «" + t.name + "»";
 		return (a.on ? "Включаю " : "Выключаю ") + t.name;
 	}
@@ -321,10 +319,38 @@ final class YandexHome {
 			JSONObject body = new JSONObject().put("devices", new JSONArray().put(dev));
 			r = new JSONObject(request("POST", "devices/actions", token, body.toString()));
 		}
-		boolean ok = "ok".equals(r.optString("status"));
 		me.aap.utils.log.Log.i("JARVIS gate: result ", r.optString("status"), " ", r.optString("message"));
-		if (!ok) return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
+		if (!succeeded(r)) return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
+		// Устройство (блок с импульсом) не знает направления: тот же импульс, что у кнопки пульта
+		if (!t.scenario) return "Подаю импульс воротам";
 		return open ? "Открываю ворота" : "Закрываю ворота";
+	}
+
+	/**
+	 * Выполнено ли: верхний «status»: «ok» либо у каждого устройства
+	 * action_result.status «DONE» (формат ответа devices/actions живым
+	 * обменом не сверен — принимаем оба признака).
+	 */
+	@VisibleForTesting
+	static boolean succeeded(@NonNull JSONObject r) {
+		if ("ok".equals(r.optString("status"))) return true;
+		JSONArray dv = r.optJSONArray("devices");
+		if (dv == null) return false;
+		int n = 0;
+		for (int i = 0; i < dv.length(); i++) {
+			JSONObject d = dv.optJSONObject(i);
+			JSONArray caps = (d == null) ? null : d.optJSONArray("capabilities");
+			if (caps == null) continue;
+			for (int j = 0; j < caps.length(); j++) {
+				JSONObject c = caps.optJSONObject(j);
+				JSONObject st = (c == null) ? null : c.optJSONObject("state");
+				JSONObject ar = (st == null) ? null : st.optJSONObject("action_result");
+				if (ar == null) continue;
+				if (!"DONE".equals(ar.optString("status"))) return false;
+				n++;
+			}
+		}
+		return n > 0;
 	}
 
 	private static int count(JSONObject info, String key) {
@@ -344,8 +370,8 @@ final class YandexHome {
 		HttpURLConnection c = (HttpURLConnection) new URL(API + path).openConnection();
 		try {
 			c.setRequestMethod(method);
-			c.setConnectTimeout(10_000);
-			c.setReadTimeout(15_000);
+			c.setConnectTimeout(5_000);
+			c.setReadTimeout(10_000);
 			c.setRequestProperty("Authorization", "Bearer " + token);
 			if (body != null) {
 				c.setDoOutput(true);
@@ -355,7 +381,8 @@ final class YandexHome {
 				}
 			}
 			int code = c.getResponseCode();
-			if ((code == 401) || (code == 403)) throw new AuthException("HTTP " + code);
+			// 401 — вход недействителен; 403 (нет права) — обычная ошибка: вход не стирать
+			if (code == 401) throw new AuthException("HTTP " + code);
 			InputStream in = (code < 400) ? c.getInputStream() : c.getErrorStream();
 			ByteArrayOutputStream out = new ByteArrayOutputStream();
 			if (in != null) {
