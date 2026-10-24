@@ -37,6 +37,14 @@ import me.aap.utils.voice.TextToSpeech;
  * com.jarvis.assistant.service.ExternalCommandService.
  */
 public final class JarvisBridge {
+	/**
+	 * Открывать вкладку JARVIS, когда JARVIS Auto запускается на экране машины
+	 * (пожелание 24.10.2026: «при включении андроид авто … сразу вкладка со сферой»).
+	 */
+	public static final me.aap.utils.pref.PreferenceStore.Pref<me.aap.utils.function.BooleanSupplier>
+			OPEN_IN_CAR = me.aap.utils.pref.PreferenceStore.Pref.b("JARVIS_OPEN_IN_CAR", true);
+	public static final String ADDON_CLASS = "me.aap.fermata.addon.jarvis.JarvisAddon";
+
 	public static final String PKG = "com.jarvis.assistant";
 	public static final String ACTION = "com.jarvis.assistant.action.KOMANDA";
 	public static final String PERMISSION = "com.jarvis.assistant.permission.KOMANDA";
@@ -168,7 +176,7 @@ public final class JarvisBridge {
 			JarvisVoice.apply(tts);
 			Cancellable interrupt = a.interruptPlayback();
 			speaking[0] = tts;
-			tts.speak(text).onCompletion((r, serr) -> {
+			tts.speak(text, null, JarvisVoice.speakParams()).onCompletion((r, serr) -> {
 				speaking[0] = null;
 				if (stopped[0]) Log.i("JARVIS: reply stopped");
 				else if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");

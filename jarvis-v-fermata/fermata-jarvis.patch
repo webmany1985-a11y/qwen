@@ -210,10 +210,10 @@ index 4911c14..d03de6c 100644
          </intent>
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
 new file mode 100644
-index 0000000..e72a94c
+index 0000000..d8262f5
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisBridge.java
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,289 @@
 +package me.aap.fermata.jarvis;
 +
 +import static android.content.Context.BIND_AUTO_CREATE;
@@ -253,6 +253,14 @@ index 0000000..e72a94c
 + * com.jarvis.assistant.service.ExternalCommandService.
 + */
 +public final class JarvisBridge {
++	/**
++	 * Открывать вкладку JARVIS, когда JARVIS Auto запускается на экране машины
++	 * (пожелание 24.10.2026: «при включении андроид авто … сразу вкладка со сферой»).
++	 */
++	public static final me.aap.utils.pref.PreferenceStore.Pref<me.aap.utils.function.BooleanSupplier>
++			OPEN_IN_CAR = me.aap.utils.pref.PreferenceStore.Pref.b("JARVIS_OPEN_IN_CAR", true);
++	public static final String ADDON_CLASS = "me.aap.fermata.addon.jarvis.JarvisAddon";
++
 +	public static final String PKG = "com.jarvis.assistant";
 +	public static final String ACTION = "com.jarvis.assistant.action.KOMANDA";
 +	public static final String PERMISSION = "com.jarvis.assistant.permission.KOMANDA";
@@ -384,7 +392,7 @@ index 0000000..e72a94c
 +			JarvisVoice.apply(tts);
 +			Cancellable interrupt = a.interruptPlayback();
 +			speaking[0] = tts;
-+			tts.speak(text).onCompletion((r, serr) -> {
++			tts.speak(text, null, JarvisVoice.speakParams()).onCompletion((r, serr) -> {
 +				speaking[0] = null;
 +				if (stopped[0]) Log.i("JARVIS: reply stopped");
 +				else if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");
@@ -497,16 +505,17 @@ index 0000000..e72a94c
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
 new file mode 100644
-index 0000000..58b525c
+index 0000000..8214848
 --- /dev/null
 +++ b/fermata/src/main/java/me/aap/fermata/jarvis/JarvisVoice.java
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,224 @@
 +package me.aap.fermata.jarvis;
 +
 +import android.content.Context;
 +import android.util.Pair;
 +
 +import androidx.annotation.NonNull;
++import androidx.annotation.Nullable;
 +import androidx.annotation.VisibleForTesting;
 +
 +import java.util.ArrayList;
@@ -541,6 +550,16 @@ index 0000000..58b525c
 +			PreferenceStore.Pref.f("JARVIS_RATE", DEFAULT_RATE);
 +	public static final PreferenceStore.Pref<DoubleSupplier> PITCH =
 +			PreferenceStore.Pref.f("JARVIS_PITCH", DEFAULT_PITCH);
++	/**
++	 * Громкость голоса JARVIS относительно музыки: 1 — как раньше, меньше — тише,
++	 * больше — громче (пожелание 24.10.2026: «в машине он говорит тихо, отдельно
++	 * его уровень не изменить без изменения музыки»). Тише — параметром
++	 * громкости синтеза, громче — усилителем (LoudnessEnhancer) на аудиосессии
++	 * голоса, как в JARVIS (VoiceBoost): громкость музыки не меняется.
++	 */
++	public static final PreferenceStore.Pref<DoubleSupplier> VOLUME =
++			PreferenceStore.Pref.f("JARVIS_VOLUME", 1f);
++	static final float MAX_VOLUME = 4f;
 +
 +	/** Где лежали значения, прочитанные у JARVIS через root (сборки до 34). */
 +	private static final String LEGACY_STORE = "jarvis_voice";
@@ -587,6 +606,56 @@ index 0000000..58b525c
 +			Log.i("JARVIS voice: settings taken from JARVIS (read earlier)");
 +		} catch (Throwable ex) {
 +			Log.e(ex, "JARVIS voice: migration failed");
++		}
++	}
++
++	@Nullable
++	private static android.media.audiofx.LoudnessEnhancer enhancer;
++	private static int session;
++	private static boolean enhancerFailed;
++
++	/**
++	 * Параметры произнесения с громкостью голоса ({@link #VOLUME}) — передавать
++	 * в {@code speak(text, data, params)}. Тише 1 — громкость синтеза, громче —
++	 * аудиосессия с усилителем; усилитель не создался — без подъёма.
++	 */
++	public static android.os.Bundle speakParams() {
++		android.os.Bundle b = new android.os.Bundle();
++		float v = prefs().getFloatPref(VOLUME);
++		if (v < 0.99f) {
++			b.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, Math.max(0.1f, v));
++		} else if (v > 1.01f) {
++			int s = boostSession(gainMb(v));
++			if (s != 0) b.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_SESSION_ID, s);
++		}
++		return b;
++	}
++
++	/** Подъём в мБ (1/100 дБ): ×2 — +6 дБ, ×4 — +12 дБ. */
++	@VisibleForTesting
++	static int gainMb(float v) {
++		float c = Math.min(Math.max(v, 1f), MAX_VOLUME);
++		return Math.round((float) (2000.0 * Math.log10(c)));
++	}
++
++	private static synchronized int boostSession(int mb) {
++		if (enhancerFailed) return 0;
++		try {
++			if (enhancer == null) {
++				android.media.AudioManager am = (android.media.AudioManager) FermataApplication.get()
++						.getSystemService(Context.AUDIO_SERVICE);
++				int id = am.generateAudioSessionId();
++				enhancer = new android.media.audiofx.LoudnessEnhancer(id);
++				session = id;
++				Log.i("JARVIS voice: volume boost ready, session ", id);
++			}
++			enhancer.setTargetGain(mb);
++			enhancer.setEnabled(true);
++			return session;
++		} catch (Throwable ex) {
++			enhancerFailed = true;
++			Log.e(ex, "JARVIS voice: volume boost not available");
++			return 0;
 +		}
 +	}
 +
@@ -971,7 +1040,7 @@ index 0000000..ac43e7f
 +	}
 +}
 diff --git a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
-index 03dfc56..054bbd3 100644
+index 03dfc56..5c7b941 100644
 --- a/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 +++ b/fermata/src/main/java/me/aap/fermata/ui/activity/MainActivityDelegate.java
 @@ -62,6 +62,7 @@ import android.view.Gravity;
@@ -991,7 +1060,20 @@ index 03dfc56..054bbd3 100644
  import me.aap.fermata.media.engine.MediaEngineManager;
  import me.aap.fermata.media.lib.AtvInterface;
  import me.aap.fermata.media.lib.DefaultMediaLib;
-@@ -474,6 +477,7 @@ public class MainActivityDelegate extends ActivityDelegate
+@@ -334,6 +337,12 @@ public class MainActivityDelegate extends ActivityDelegate
+ 		}
+ 
+ 		String showAddon = getPrefs().getShowAddonOnStartPref();
++		// В машине — сразу вкладка JARVIS (настройка в дополнении JARVIS)
++		if (isCarActivityNotMirror() && me.aap.fermata.FermataApplication.get().getPreferenceStore()
++				.getBooleanPref(me.aap.fermata.jarvis.JarvisBridge.OPEN_IN_CAR) &&
++				(AddonManager.get().getAddon(me.aap.fermata.jarvis.JarvisBridge.ADDON_CLASS) != null)) {
++			showAddon = me.aap.fermata.jarvis.JarvisBridge.ADDON_CLASS;
++		}
+ 		if (showAddon != null) {
+ 			FermataAddon addon = AddonManager.get().getAddon(showAddon);
+ 
+@@ -474,6 +483,7 @@ public class MainActivityDelegate extends ActivityDelegate
  			case MainActivityPrefs.THEME_STAR_WARS -> R.style.AppTheme_BlackStarWars;
  			case MainActivityPrefs.THEME_PURPLE -> R.style.AppTheme_Purple;
  			case MainActivityPrefs.THEME_CLASSIC -> R.style.AppTheme_Classic;
@@ -999,7 +1081,7 @@ index 03dfc56..054bbd3 100644
  			default -> R.style.AppTheme_Dark;
  		};
  		ctx.setTheme(theme);
-@@ -830,13 +834,19 @@ public class MainActivityDelegate extends ActivityDelegate
+@@ -830,13 +840,19 @@ public class MainActivityDelegate extends ActivityDelegate
  			} else if (getAppActivity().isInputActive()) {
  				getAppActivity().setTextInput(q.get(0));
  			} else {
@@ -1022,7 +1104,7 @@ index 03dfc56..054bbd3 100644
  	public FutureSupplier<List<String>> startSpeechRecognizer() {
  		return startSpeechRecognizer(null, false);
  	}
-@@ -989,6 +999,21 @@ public class MainActivityDelegate extends ActivityDelegate
+@@ -989,6 +1005,21 @@ public class MainActivityDelegate extends ActivityDelegate
  	private void init() {
  		FermataActivity a = getAppActivity();
  		a.setContentView(getLayout());
@@ -5718,10 +5800,10 @@ index 0000000..7872521
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
 new file mode 100644
-index 0000000..2d8f612
+index 0000000..c5eb3d6
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisAddon.java
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,143 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import android.content.Context;
@@ -5808,6 +5890,16 @@ index 0000000..2d8f612
 +			o.seekMax = 30;
 +			o.visibility = visibility;
 +		});
++		set.addFloatPref(o -> {
++			o.store = store;
++			o.pref = me.aap.fermata.jarvis.JarvisVoice.VOLUME;
++			o.title = R.string.jarvis_voice_volume;
++			o.subtitle = R.string.jarvis_voice_volume_sub;
++			o.scale = 0.1f;
++			o.seekMin = 3;
++			o.seekMax = 40;
++			o.visibility = visibility;
++		});
 +		set.addButton(o -> {
 +			o.title = R.string.jarvis_voice_test;
 +			o.onClick = () -> me.aap.utils.voice.TextToSpeech.create(ctx, new java.util.Locale("ru"))
@@ -5817,8 +5909,15 @@ index 0000000..2d8f612
 +							return;
 +						}
 +						me.aap.fermata.jarvis.JarvisVoice.apply(t);
-+						t.speak("Слушаю. Так звучит голос JARVIS.").onCompletion((r, e) -> t.close());
++						t.speak("Слушаю. Так звучит голос JARVIS.", null,
++								me.aap.fermata.jarvis.JarvisVoice.speakParams()).onCompletion((r, e) -> t.close());
 +					});
++			o.visibility = visibility;
++		});
++		set.addBooleanPref(o -> {
++			o.store = store;
++			o.pref = me.aap.fermata.jarvis.JarvisBridge.OPEN_IN_CAR;
++			o.title = R.string.jarvis_open_in_car;
 +			o.visibility = visibility;
 +		});
 +		set.addBooleanPref(o -> {
@@ -5850,10 +5949,10 @@ index 0000000..2d8f612
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..7d22d34
+index 0000000..f1b663d
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1336 @@
+@@ -0,0 +1,1337 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6305,7 +6404,8 @@ index 0000000..7d22d34
 +			greeting = tts;
 +			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 +			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
-+			tts.speak(text).onCompletion((r, serr) -> main.post(() -> {
++			tts.speak(text, null, me.aap.fermata.jarvis.JarvisVoice.speakParams())
++					.onCompletion((r, serr) -> main.post(() -> {
 +				if (greeting != tts) return; // запись уже отменена
 +				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
 +				greeting = null;
@@ -18534,10 +18634,10 @@ HcmV?d00001
 
 diff --git a/modules/jarvis/src/main/res/values/strings.xml b/modules/jarvis/src/main/res/values/strings.xml
 new file mode 100644
-index 0000000..daa2e7e
+index 0000000..4586401
 --- /dev/null
 +++ b/modules/jarvis/src/main/res/values/strings.xml
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,29 @@
 +<?xml version="1.0" encoding="utf-8"?>
 +<resources>
 +    <string name="jarvis_hud_title" translatable="false">J.A.R.V.I.S</string>
@@ -18563,6 +18663,9 @@ index 0000000..daa2e7e
 +    <string name="jarvis_voice_pitch">Тембр голоса</string>
 +    <string name="jarvis_voice_rate">Темп речи</string>
 +    <string name="jarvis_voice_test">Послушать голос</string>
++    <string name="jarvis_voice_volume">Громкость голоса JARVIS</string>
++    <string name="jarvis_voice_volume_sub">1 — как раньше; больше — громче музыки, меньше — тише. Музыку не меняет</string>
++    <string name="jarvis_open_in_car">В машине открывать вкладку JARVIS</string>
 +</resources>
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/ConversationEndTest.java
 new file mode 100644
@@ -19094,10 +19197,10 @@ index 0000000..3dc58ac
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
 new file mode 100644
-index 0000000..b19b503
+index 0000000..eaa8e58
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,43 @@
 +package me.aap.fermata.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -19130,6 +19233,15 @@ index 0000000..b19b503
 +	public void onlyDefaultAliasLeft() {
 +		assertEquals(Arrays.asList("ru-RU-language"),
 +				JarvisVoice.selectable(Arrays.asList(v("ru-RU-language", "ru", false, false)), "ru"));
++	}
++
++	@Test
++	public void volumeGain() {
++		assertEquals(0, JarvisVoice.gainMb(1f));
++		assertEquals(602, JarvisVoice.gainMb(2f));
++		assertEquals(1204, JarvisVoice.gainMb(4f));
++		assertEquals(1204, JarvisVoice.gainMb(9f)); // не громче ×4
++		assertEquals(0, JarvisVoice.gainMb(0.5f)); // тише — не усилителем
 +	}
 +}
 diff --git a/modules/web/build.gradle b/modules/web/build.gradle

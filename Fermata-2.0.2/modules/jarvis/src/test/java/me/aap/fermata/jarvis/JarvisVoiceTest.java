@@ -31,4 +31,13 @@ public class JarvisVoiceTest {
 		assertEquals(Arrays.asList("ru-RU-language"),
 				JarvisVoice.selectable(Arrays.asList(v("ru-RU-language", "ru", false, false)), "ru"));
 	}
+
+	@Test
+	public void volumeGain() {
+		assertEquals(0, JarvisVoice.gainMb(1f));
+		assertEquals(602, JarvisVoice.gainMb(2f));
+		assertEquals(1204, JarvisVoice.gainMb(4f));
+		assertEquals(1204, JarvisVoice.gainMb(9f)); // не громче ×4
+		assertEquals(0, JarvisVoice.gainMb(0.5f)); // тише — не усилителем
+	}
 }

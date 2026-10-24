@@ -337,6 +337,12 @@ public class MainActivityDelegate extends ActivityDelegate
 		}
 
 		String showAddon = getPrefs().getShowAddonOnStartPref();
+		// В машине — сразу вкладка JARVIS (настройка в дополнении JARVIS)
+		if (isCarActivityNotMirror() && me.aap.fermata.FermataApplication.get().getPreferenceStore()
+				.getBooleanPref(me.aap.fermata.jarvis.JarvisBridge.OPEN_IN_CAR) &&
+				(AddonManager.get().getAddon(me.aap.fermata.jarvis.JarvisBridge.ADDON_CLASS) != null)) {
+			showAddon = me.aap.fermata.jarvis.JarvisBridge.ADDON_CLASS;
+		}
 		if (showAddon != null) {
 			FermataAddon addon = AddonManager.get().getAddon(showAddon);
 

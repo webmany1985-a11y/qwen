@@ -23,4 +23,7 @@
     <string name="jarvis_voice_pitch">Тембр голоса</string>
     <string name="jarvis_voice_rate">Темп речи</string>
     <string name="jarvis_voice_test">Послушать голос</string>
+    <string name="jarvis_voice_volume">Громкость голоса JARVIS</string>
+    <string name="jarvis_voice_volume_sub">1 — как раньше; больше — громче музыки, меньше — тише. Музыку не меняет</string>
+    <string name="jarvis_open_in_car">В машине открывать вкладку JARVIS</string>
 </resources>

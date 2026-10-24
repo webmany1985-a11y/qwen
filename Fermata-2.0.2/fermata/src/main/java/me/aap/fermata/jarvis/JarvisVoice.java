@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Pair;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import java.util.ArrayList;
@@ -38,6 +39,16 @@ public final class JarvisVoice {
 			PreferenceStore.Pref.f("JARVIS_RATE", DEFAULT_RATE);
 	public static final PreferenceStore.Pref<DoubleSupplier> PITCH =
 			PreferenceStore.Pref.f("JARVIS_PITCH", DEFAULT_PITCH);
+	/**
+	 * Громкость голоса JARVIS относительно музыки: 1 — как раньше, меньше — тише,
+	 * больше — громче (пожелание 24.10.2026: «в машине он говорит тихо, отдельно
+	 * его уровень не изменить без изменения музыки»). Тише — параметром
+	 * громкости синтеза, громче — усилителем (LoudnessEnhancer) на аудиосессии
+	 * голоса, как в JARVIS (VoiceBoost): громкость музыки не меняется.
+	 */
+	public static final PreferenceStore.Pref<DoubleSupplier> VOLUME =
+			PreferenceStore.Pref.f("JARVIS_VOLUME", 1f);
+	static final float MAX_VOLUME = 4f;
 
 	/** Где лежали значения, прочитанные у JARVIS через root (сборки до 34). */
 	private static final String LEGACY_STORE = "jarvis_voice";
@@ -84,6 +95,56 @@ public final class JarvisVoice {
 			Log.i("JARVIS voice: settings taken from JARVIS (read earlier)");
 		} catch (Throwable ex) {
 			Log.e(ex, "JARVIS voice: migration failed");
+		}
+	}
+
+	@Nullable
+	private static android.media.audiofx.LoudnessEnhancer enhancer;
+	private static int session;
+	private static boolean enhancerFailed;
+
+	/**
+	 * Параметры произнесения с громкостью голоса ({@link #VOLUME}) — передавать
+	 * в {@code speak(text, data, params)}. Тише 1 — громкость синтеза, громче —
+	 * аудиосессия с усилителем; усилитель не создался — без подъёма.
+	 */
+	public static android.os.Bundle speakParams() {
+		android.os.Bundle b = new android.os.Bundle();
+		float v = prefs().getFloatPref(VOLUME);
+		if (v < 0.99f) {
+			b.putFloat(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_VOLUME, Math.max(0.1f, v));
+		} else if (v > 1.01f) {
+			int s = boostSession(gainMb(v));
+			if (s != 0) b.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_SESSION_ID, s);
+		}
+		return b;
+	}
+
+	/** Подъём в мБ (1/100 дБ): ×2 — +6 дБ, ×4 — +12 дБ. */
+	@VisibleForTesting
+	static int gainMb(float v) {
+		float c = Math.min(Math.max(v, 1f), MAX_VOLUME);
+		return Math.round((float) (2000.0 * Math.log10(c)));
+	}
+
+	private static synchronized int boostSession(int mb) {
+		if (enhancerFailed) return 0;
+		try {
+			if (enhancer == null) {
+				android.media.AudioManager am = (android.media.AudioManager) FermataApplication.get()
+						.getSystemService(Context.AUDIO_SERVICE);
+				int id = am.generateAudioSessionId();
+				enhancer = new android.media.audiofx.LoudnessEnhancer(id);
+				session = id;
+				Log.i("JARVIS voice: volume boost ready, session ", id);
+			}
+			enhancer.setTargetGain(mb);
+			enhancer.setEnabled(true);
+			return session;
+		} catch (Throwable ex) {
+			enhancerFailed = true;
+			Log.e(ex, "JARVIS voice: volume boost not available");
+			return 0;
 		}
 	}
 
