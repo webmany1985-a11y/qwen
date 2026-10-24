@@ -141,4 +141,58 @@ public class YandexHomeTest {
 		assertEquals("g1", a.target.id);
 		assertTrue(YandexHome.names(i).contains("«Свет на террасе»"));
 	}
+
+	private static final String TV = "{\"rooms\":[{\"id\":\"r1\",\"name\":\"Гостиная\"}],\"scenarios\":[]," +
+			"\"devices\":[{\"id\":\"tv\",\"name\":\"Телевизор\",\"room\":\"r1\",\"capabilities\":[" +
+			"{\"type\":\"devices.capabilities.on_off\",\"parameters\":{}}," +
+			"{\"type\":\"devices.capabilities.range\",\"parameters\":{\"instance\":\"channel\",\"random_access\":true}}," +
+			"{\"type\":\"devices.capabilities.range\",\"parameters\":{\"instance\":\"volume\",\"random_access\":false}}," +
+			"{\"type\":\"devices.capabilities.toggle\",\"parameters\":{\"instance\":\"mute\"}}]}," +
+			"{\"id\":\"l\",\"name\":\"Свет\",\"room\":\"r1\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}";
+
+	@Test
+	public void tvChannels() throws Exception {
+		JSONObject i = info(TV);
+		YandexHome.Action a = YandexHome.match("Включи Пятый канал на телевизоре", i);
+		assertEquals("devices.capabilities.range", a.capType);
+		assertEquals("channel", a.instance);
+		assertEquals(5, a.value, 0);
+		assertFalse(a.relative);
+		assertEquals(12, YandexHome.match("переключи на 12 канал", i).value, 0);
+		assertEquals(3, YandexHome.match("включи канал номер три", i).value, 0);
+		assertEquals(15, YandexHome.match("пятнадцатый канал", i).value, 0);
+		YandexHome.Action n = YandexHome.match("следующий канал", i);
+		assertTrue(n.relative);
+		assertEquals(1, n.value, 0);
+		assertEquals(-1, YandexHome.match("переключи канал назад", i).value, 0);
+		assertNull(YandexHome.match("какой канал смотреть", i));
+	}
+
+	@Test
+	public void tvVolume() throws Exception {
+		JSONObject i = info(TV);
+		YandexHome.Action a = YandexHome.match("сделай громче на телевизоре", i);
+		assertEquals("volume", a.instance);
+		assertTrue(a.relative);
+		assertEquals(YandexHome.VOLUME_STEP, a.value, 0);
+		assertEquals(-5, YandexHome.match("тише на телевизоре на 5", i).value, 0);
+		assertEquals(-5, YandexHome.match("телевизор тише на пять", i).value, 0);
+		assertNull(YandexHome.match("сделай громче", i)); // не сказано, что телевизор — может быть музыка
+		YandexHome.Action g = YandexHome.match("громкость 10 на телевизоре", i);
+		assertNull(g.capType); // только шагами — ответ без запроса
+		YandexHome.Action m = YandexHome.match("выключи звук на телевизоре", i);
+		assertEquals("devices.capabilities.toggle", m.capType);
+		assertEquals(1, m.value, 0);
+	}
+
+	@Test
+	public void extraWordsAreNotOnOff() throws Exception {
+		JSONObject i = info(TV);
+		assertEquals("tv", YandexHome.match("включи телевизор", i).target.id);
+		assertEquals("tv", YandexHome.match("включи пожалуйста телевизор в гостиной", i).target.id);
+		assertNull(YandexHome.match("включи мультики на телевизоре", i));
+		assertEquals(5, YandexHome.number("пятый").intValue());
+		assertEquals(3, YandexHome.number("третьего").intValue());
+		assertNull(YandexHome.number("пятница"));
+	}
 }

@@ -8209,10 +8209,10 @@ index 0000000..c0aace1
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
 new file mode 100644
-index 0000000..94b99ae
+index 0000000..f2fcbd7
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/YandexHome.java
-@@ -0,0 +1,507 @@
+@@ -0,0 +1,747 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static java.nio.charset.StandardCharsets.UTF_8;
@@ -8324,10 +8324,30 @@ index 0000000..94b99ae
 +		final Target target;
 +		/** Для устройства: включить (true) или выключить; для сценария не важно. */
 +		final boolean on;
++		/** Канал, громкость, звук: тип умения и функция Яндекса; null — включение/выключение. */
++		@Nullable
++		final String capType;
++		@Nullable
++		final String instance;
++		final double value;
++		final boolean relative;
++		/** Что сказать после выполнения. */
++		@Nullable
++		final String say;
 +
 +		Action(Target target, boolean on) {
++			this(target, on, null, null, 0, false, null);
++		}
++
++		Action(Target target, boolean on, @Nullable String capType, @Nullable String instance,
++					 double value, boolean relative, @Nullable String say) {
 +			this.target = target;
 +			this.on = on;
++			this.capType = capType;
++			this.instance = instance;
++			this.value = value;
++			this.relative = relative;
++			this.say = say;
 +		}
 +	}
 +
@@ -8354,6 +8374,9 @@ index 0000000..94b99ae
 +		}
 +		Target exact = scenarioByName(info, p);
 +		if (exact != null) return new Action(exact, true);
++		// Канал и громкость телевизора — раньше «включи …»: «включи пятый канал»
++		Action tv = tvCommand(p, info);
++		if (tv != null) return tv;
 +		boolean on;
 +		String rest;
 +		if ((m = ON.matcher(p)).matches()) {
@@ -8431,7 +8454,7 @@ index 0000000..94b99ae
 +				b.append('«').append(o.optString("name")).append('»');
 +				String room = rooms.get(o.optString("room"));
 +				if ((room != null) && !room.isEmpty()) b.append(" (").append(room).append(')');
-+				if (!key.equals("scenarios") && !hasOnOff(o)) b.append(" [нет вкл/выкл]");
++				if (!key.equals("scenarios")) b.append(" [").append(caps(o)).append(']');
 +				b.append(i + 1 < a.length() ? ", " : "");
 +			}
 +			b.append("; ");
@@ -8443,7 +8466,173 @@ index 0000000..94b99ae
 +	static boolean looksLike(@Nullable String phrase) {
 +		if (phrase == null) return false;
 +		String p = norm(phrase).replaceFirst("^джарвис\\s*,?\\s*", "");
-+		return SCENARIO.matcher(p).matches() || ON.matcher(p).matches() || OFF.matcher(p).matches();
++		return SCENARIO.matcher(p).matches() || ON.matcher(p).matches() || OFF.matcher(p).matches() ||
++				TV_WORDS.matcher(p).find();
++	}
++
++	private static final Pattern TV_WORDS = Pattern.compile("(^|\\s)(канал|громче|погромче|тише|потише|громкость|звук)");
++
++	// --- Телевизор: каналы и громкость (пожелание 24.10.2026) ---
++
++	private static final String RANGE = "devices.capabilities.range";
++	private static final String TOGGLE = "devices.capabilities.toggle";
++	/** На сколько шагов «громче»/«тише» без числа: у ИК-пульта шаг — одно нажатие. */
++	static final int VOLUME_STEP = 3;
++
++	/**
++	 * «Включи пятый канал», «переключи на 12 канал», «следующий канал»,
++	 * «громче на телевизоре», «тише на 5», «выключи звук на телевизоре».
++	 * Канал — у единственного телевизора с каналами можно не называть его;
++	 * громкость и звук — только если назван телевизор или комната: «громче»
++	 * без этого может быть о музыке. null — не команда телевизору.
++	 */
++	@Nullable
++	private static Action tvCommand(String p, JSONObject info) {
++		String[] w = p.split(" ");
++		int ch = -1;
++		for (int i = 0; i < w.length; i++) if (w[i].startsWith("канал")) ch = i;
++		if (ch >= 0) {
++			Integer rel = null;
++			Integer num = null;
++			for (String x : w) {
++				if (x.matches("следующ\\p{L}*|вперед|вперёд|плюс|дальше")) rel = 1;
++				else if (x.matches("предыдущ\\p{L}*|назад|минус|прошл\\p{L}*")) rel = -1;
++			}
++			if (ch > 0) num = number(w[ch - 1]);
++			if ((num == null) && (ch + 1 < w.length)) {
++				num = number(w[ch + 1]);
++				if ((num == null) && w[ch + 1].equals("номер") && (ch + 2 < w.length)) num = number(w[ch + 2]);
++			}
++			if ((num == null) && (rel == null)) return null;
++			JSONObject d = capDevice(info, p, RANGE, "channel", false);
++			if (d == null) return null;
++			Target t = target(d);
++			if (rel != null) {
++				return new Action(t, true, RANGE, "channel", rel, true,
++						(rel > 0) ? "Следующий канал" : "Предыдущий канал");
++			}
++			if (!randomAccess(d, RANGE, "channel")) {
++				return new Action(t, true, null, null, 0, false,
++						"Телевизор в Умном доме переключает каналы только вперёд и назад");
++			}
++			return new Action(t, true, RANGE, "channel", num, false, "Включаю " + num + " канал");
++		}
++		boolean louder = p.matches(".*(^|\\s)(громче|погромче)(\\s|$).*");
++		boolean quieter = p.matches(".*(^|\\s)(тише|потише)(\\s|$).*");
++		if (louder || quieter) {
++			JSONObject d = capDevice(info, p, RANGE, "volume", true);
++			if (d == null) return null;
++			Integer n = null;
++			for (int i = 0; i + 1 < w.length; i++) if (w[i].equals("на")) n = (n != null) ? n : number(w[i + 1]);
++			int step = (n != null) ? n : VOLUME_STEP;
++			return new Action(target(d), true, RANGE, "volume", louder ? step : -step, true,
++					louder ? "Громче" : "Тише");
++		}
++		if (p.matches(".*(^|\\s)громкость(\\s|$).*")) {
++			Integer n = null;
++			for (String x : w) if (n == null) n = number(x);
++			if (n == null) return null;
++			JSONObject d = capDevice(info, p, RANGE, "volume", true);
++			if (d == null) return null;
++			if (!randomAccess(d, RANGE, "volume")) {
++				return new Action(target(d), true, null, null, 0, false,
++						"Громкость у телевизора в Умном доме меняется только громче и тише");
++			}
++			return new Action(target(d), true, RANGE, "volume", n, false, "Громкость " + n);
++		}
++		boolean muteOff = p.matches("^(выключи(ть)?|отключи(ть)?|убери)\\s+звук.*") || p.contains("без звука");
++		boolean muteOn = p.matches("^(включи(ть)?|верни)\\s+звук.*");
++		if (muteOff || muteOn) {
++			JSONObject d = capDevice(info, p, TOGGLE, "mute", true);
++			if (d == null) return null;
++			return new Action(target(d), true, TOGGLE, "mute", muteOff ? 1 : 0, false,
++					muteOff ? "Выключаю звук" : "Включаю звук");
++		}
++		return null;
++	}
++
++	private static Target target(JSONObject d) {
++		return new Target(false, d.optString("id"), d.optString("name"));
++	}
++
++	@Nullable
++	private static JSONObject capability(JSONObject d, String type, String instance) {
++		JSONArray caps = d.optJSONArray("capabilities");
++		if (caps == null) return null;
++		for (int i = 0; i < caps.length(); i++) {
++			JSONObject c = caps.optJSONObject(i);
++			if ((c == null) || !type.equals(c.optString("type"))) continue;
++			JSONObject pr = c.optJSONObject("parameters");
++			if ((pr != null) && instance.equals(pr.optString("instance"))) return c;
++		}
++		return null;
++	}
++
++	/** Можно ли задать значение сразу (канал 5), а не только шагами — у ИК-пульта бывает только шагами. */
++	private static boolean randomAccess(JSONObject d, String type, String instance) {
++		JSONObject c = capability(d, type, instance);
++		JSONObject pr = (c == null) ? null : c.optJSONObject("parameters");
++		return (pr == null) || pr.optBoolean("random_access", true);
++	}
++
++	/**
++	 * Устройство с умением: названное во фразе (по названию или комнате), иначе —
++	 * единственное такое, если называть не обязательно.
++	 */
++	@Nullable
++	private static JSONObject capDevice(JSONObject info, String p, String type, String instance,
++																			boolean mustName) {
++		JSONArray dv = info.optJSONArray("devices");
++		if (dv == null) return null;
++		java.util.Map<String, String> rooms = rooms(info);
++		java.util.List<JSONObject> all = new java.util.ArrayList<>();
++		java.util.List<JSONObject> named = new java.util.ArrayList<>();
++		for (int i = 0; i < dv.length(); i++) {
++			JSONObject d = dv.optJSONObject(i);
++			if ((d == null) || (capability(d, type, instance) == null)) continue;
++			all.add(d);
++			String room = rooms.get(d.optString("room"));
++			if (covers(p, d.optString("name")) || ((room != null) && !room.isEmpty() && covers(p, room))) {
++				named.add(d);
++			}
++		}
++		if (named.size() == 1) return named.get(0);
++		if (!named.isEmpty() || mustName) return null;
++		return (all.size() == 1) ? all.get(0) : null;
++	}
++
++	private static java.util.Map<String, String> rooms(JSONObject info) {
++		java.util.Map<String, String> rooms = new java.util.HashMap<>();
++		JSONArray rs = info.optJSONArray("rooms");
++		if (rs != null) for (int i = 0; i < rs.length(); i++) {
++			JSONObject r = rs.optJSONObject(i);
++			if (r != null) rooms.put(r.optString("id"), r.optString("name"));
++		}
++		return rooms;
++	}
++
++	private static final String[] ORDINAL = {"перв", "втор", "трет", "четверт", "пят", "шест", "седьм", "восьм",
++			"девят", "десят", "одиннадцат", "двенадцат", "тринадцат", "четырнадцат", "пятнадцат",
++			"шестнадцат", "семнадцат", "восемнадцат", "девятнадцат", "двадцат"};
++	private static final String[] CARDINAL = {"один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь",
++			"девять", "десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать",
++			"шестнадцать", "семнадцать", "восемнадцать", "девятнадцать", "двадцать"};
++	private static final Pattern ORD_END = Pattern.compile("(ый|ой|ий|ого|его|ую|ая|ье|ьего|ья|ьей|ьему|ому|ым|ом)");
++
++	/** «5», «пятый», «пятого», «пять», «одну» → число; иначе null. */
++	@VisibleForTesting
++	@Nullable
++	static Integer number(String w) {
++		if (w.matches("\\d{1,4}")) return Integer.parseInt(w);
++		if (w.equals("одну") || w.equals("одна")) return 1;
++		if (w.equals("две")) return 2;
++		for (int i = 0; i < CARDINAL.length; i++) if (w.equals(CARDINAL[i])) return i + 1;
++		// Длинные корни раньше: «пятнадцатый» — не «пят…»
++		for (int i = ORDINAL.length - 1; i >= 0; i--) {
++			String r = ORDINAL[i];
++			if (w.startsWith(r) && ORD_END.matcher(w.substring(r.length())).matches()) return i + 1;
++		}
++		return null;
 +	}
 +
 +	private static String norm(String s) {
@@ -8539,7 +8728,46 @@ index 0000000..94b99ae
 +		}
 +		if (hits.size() != 1) return null;
 +		JSONObject d = hits.get(0);
++		// Лишние слова — не эта команда: «включи пятый канал на телевизоре» не «включи телевизор»
++		String room = rooms.get(d.optString("room"));
++		if (!extra(p, d.optString("name"), room).isEmpty()) return null;
 +		return new Target(false, groups.contains(d), d.optString("id"), d.optString("name"));
++	}
++
++	private static final java.util.Set<String> FILLER = new java.util.HashSet<>(java.util.Arrays.asList(
++			"пожалуйста", "мне", "нам", "тогда", "давай", "давайте", "сейчас", "быстро", "весь", "всё", "все",
++			"там", "тут", "этот", "эту", "это", "уже", "ещё", "еще", "срочно", "ка"));
++
++	/** Слова фразы, которых нет ни в названии устройства, ни в комнате (без предлогов и вежливости). */
++	@VisibleForTesting
++	static String extra(String phrase, String name, @Nullable String room) {
++		StringBuilder b = new StringBuilder();
++		for (String w : content(phrase).split(" ")) {
++			if (w.isEmpty() || FILLER.contains(w)) continue;
++			if (covers(norm(name), w)) continue;
++			if ((room != null) && !room.isEmpty() && covers(norm(room), w)) continue;
++			if (b.length() > 0) b.append(' ');
++			b.append(w);
++		}
++		return b.toString();
++	}
++
++	/** Умения устройства коротко: «on, channel, volume, mute». */
++	private static String caps(JSONObject d) {
++		JSONArray caps = d.optJSONArray("capabilities");
++		if (caps == null) return "?";
++		StringBuilder b = new StringBuilder();
++		for (int i = 0; i < caps.length(); i++) {
++			JSONObject c = caps.optJSONObject(i);
++			if (c == null) continue;
++			JSONObject pr = c.optJSONObject("parameters");
++			String inst = (pr != null) ? pr.optString("instance") : "";
++			if (inst.isEmpty()) inst = c.optString("type").replace("devices.capabilities.", "");
++			if ((pr != null) && pr.has("random_access") && !pr.optBoolean("random_access")) inst += "(шагами)";
++			if (b.length() > 0) b.append(", ");
++			b.append(inst);
++		}
++		return b.toString();
 +	}
 +
 +	private static boolean hasOnOff(JSONObject d) {
@@ -8560,10 +8788,21 @@ index 0000000..94b99ae
 +	/** Выполнить команду; результат — что сказать. Не в главном потоке. */
 +	static String run(@NonNull String token, @NonNull Action a) throws Exception {
 +		Target t = a.target;
++		if ((a.capType == null) && (a.say != null)) return a.say; // ответ без запроса
 +		me.aap.utils.log.Log.i("JARVIS home: ", t.scenario ? "scenario «" : t.group ? "group «" : "device «", t.name, "» ",
-+				t.scenario ? "" : (a.on ? "on" : "off"));
++				t.scenario ? "" : (a.capType != null) ? a.instance + " " + a.value + (a.relative ? " relative" : "") :
++						(a.on ? "on" : "off"));
 +		JSONObject r;
-+		if (t.scenario) {
++		if (a.capType != null) {
++			JSONObject state = new JSONObject().put("instance", a.instance);
++			if (TOGGLE.equals(a.capType)) state.put("value", a.value != 0);
++			else state.put("value", a.value);
++			if (a.relative) state.put("relative", true);
++			JSONObject action = new JSONObject().put("type", a.capType).put("state", state);
++			JSONObject dev = new JSONObject().put("id", t.id).put("actions", new JSONArray().put(action));
++			JSONObject body = new JSONObject().put("devices", new JSONArray().put(dev));
++			r = new JSONObject(request("POST", "devices/actions", token, body.toString()));
++		} else if (t.scenario) {
 +			r = new JSONObject(request("POST", "scenarios/" + t.id + "/actions", token, null));
 +		} else if (t.group) {
 +			// v1.0/groups/{id}/actions — включение группы целиком
@@ -8580,6 +8819,7 @@ index 0000000..94b99ae
 +		}
 +		me.aap.utils.log.Log.i("JARVIS home: result ", r.optString("status"), " ", r.optString("message"));
 +		if (!succeeded(r)) return "Умный дом не выполнил команду: " + r.optString("message", "ошибка");
++		if (a.say != null) return a.say;
 +		if (t.scenario) return "Запускаю «" + t.name + "»";
 +		return (a.on ? "Включаю " : "Выключаю ") + t.name;
 +	}
@@ -19047,10 +19287,10 @@ index 0000000..fdb0596
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
 new file mode 100644
-index 0000000..3dc58ac
+index 0000000..343a178
 --- /dev/null
 +++ b/modules/jarvis/src/test/java/me/aap/fermata/addon/jarvis/YandexHomeTest.java
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,198 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static org.junit.Assert.assertEquals;
@@ -19193,6 +19433,60 @@ index 0000000..3dc58ac
 +		assertTrue(a.target.group);
 +		assertEquals("g1", a.target.id);
 +		assertTrue(YandexHome.names(i).contains("«Свет на террасе»"));
++	}
++
++	private static final String TV = "{\"rooms\":[{\"id\":\"r1\",\"name\":\"Гостиная\"}],\"scenarios\":[]," +
++			"\"devices\":[{\"id\":\"tv\",\"name\":\"Телевизор\",\"room\":\"r1\",\"capabilities\":[" +
++			"{\"type\":\"devices.capabilities.on_off\",\"parameters\":{}}," +
++			"{\"type\":\"devices.capabilities.range\",\"parameters\":{\"instance\":\"channel\",\"random_access\":true}}," +
++			"{\"type\":\"devices.capabilities.range\",\"parameters\":{\"instance\":\"volume\",\"random_access\":false}}," +
++			"{\"type\":\"devices.capabilities.toggle\",\"parameters\":{\"instance\":\"mute\"}}]}," +
++			"{\"id\":\"l\",\"name\":\"Свет\",\"room\":\"r1\",\"capabilities\":[{\"type\":\"devices.capabilities.on_off\"}]}]}";
++
++	@Test
++	public void tvChannels() throws Exception {
++		JSONObject i = info(TV);
++		YandexHome.Action a = YandexHome.match("Включи Пятый канал на телевизоре", i);
++		assertEquals("devices.capabilities.range", a.capType);
++		assertEquals("channel", a.instance);
++		assertEquals(5, a.value, 0);
++		assertFalse(a.relative);
++		assertEquals(12, YandexHome.match("переключи на 12 канал", i).value, 0);
++		assertEquals(3, YandexHome.match("включи канал номер три", i).value, 0);
++		assertEquals(15, YandexHome.match("пятнадцатый канал", i).value, 0);
++		YandexHome.Action n = YandexHome.match("следующий канал", i);
++		assertTrue(n.relative);
++		assertEquals(1, n.value, 0);
++		assertEquals(-1, YandexHome.match("переключи канал назад", i).value, 0);
++		assertNull(YandexHome.match("какой канал смотреть", i));
++	}
++
++	@Test
++	public void tvVolume() throws Exception {
++		JSONObject i = info(TV);
++		YandexHome.Action a = YandexHome.match("сделай громче на телевизоре", i);
++		assertEquals("volume", a.instance);
++		assertTrue(a.relative);
++		assertEquals(YandexHome.VOLUME_STEP, a.value, 0);
++		assertEquals(-5, YandexHome.match("тише на телевизоре на 5", i).value, 0);
++		assertEquals(-5, YandexHome.match("телевизор тише на пять", i).value, 0);
++		assertNull(YandexHome.match("сделай громче", i)); // не сказано, что телевизор — может быть музыка
++		YandexHome.Action g = YandexHome.match("громкость 10 на телевизоре", i);
++		assertNull(g.capType); // только шагами — ответ без запроса
++		YandexHome.Action m = YandexHome.match("выключи звук на телевизоре", i);
++		assertEquals("devices.capabilities.toggle", m.capType);
++		assertEquals(1, m.value, 0);
++	}
++
++	@Test
++	public void extraWordsAreNotOnOff() throws Exception {
++		JSONObject i = info(TV);
++		assertEquals("tv", YandexHome.match("включи телевизор", i).target.id);
++		assertEquals("tv", YandexHome.match("включи пожалуйста телевизор в гостиной", i).target.id);
++		assertNull(YandexHome.match("включи мультики на телевизоре", i));
++		assertEquals(5, YandexHome.number("пятый").intValue());
++		assertEquals(3, YandexHome.number("третьего").intValue());
++		assertNull(YandexHome.number("пятница"));
 +	}
 +}
 diff --git a/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java b/modules/jarvis/src/test/java/me/aap/fermata/jarvis/JarvisVoiceTest.java
