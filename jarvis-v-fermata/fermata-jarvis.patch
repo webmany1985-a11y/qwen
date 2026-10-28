@@ -5949,10 +5949,10 @@ index 0000000..c5eb3d6
 +}
 diff --git a/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
 new file mode 100644
-index 0000000..f1b663d
+index 0000000..80577f6
 --- /dev/null
 +++ b/modules/jarvis/src/main/java/me/aap/fermata/addon/jarvis/JarvisFragment.java
-@@ -0,0 +1,1337 @@
+@@ -0,0 +1,1438 @@
 +package me.aap.fermata.addon.jarvis;
 +
 +import static android.content.pm.PackageManager.PERMISSION_GRANTED;
@@ -6081,8 +6081,22 @@ index 0000000..f1b663d
 +	public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
 +													 @Nullable Bundle savedInstanceState) {
 +		Context ctx = requireContext();
-+		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx);
++		// Касания — в журнал (жалоба 28.10.2026: в машине вкладка перестаёт реагировать на
++		// нажатия, а кнопки руля работают): доходит ли касание до вкладки и кто его берёт
++		android.widget.FrameLayout root = new android.widget.FrameLayout(ctx) {
++			@Override
++			public boolean dispatchTouchEvent(android.view.MotionEvent e) {
++				int act = e.getActionMasked();
++				boolean handled = super.dispatchTouchEvent(e);
++				if ((act == android.view.MotionEvent.ACTION_DOWN) || (act == android.view.MotionEvent.ACTION_UP) ||
++						(act == android.view.MotionEvent.ACTION_CANCEL)) {
++					logTouch(e, handled);
++				}
++				return handled;
++			}
++		};
 +		rootView = root;
++		startWatchdog();
 +		preloadHome(ctx);
 +		QwenChat q = new QwenChat(ctx);
 +		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
@@ -6179,8 +6193,94 @@ index 0000000..f1b663d
 +		if (ctx == null) return;
 +		try {
 +			MainActivityDelegate.get(ctx).setBarsHidden(!visible);
-+		} catch (RuntimeException ignore) {
++			if (isCar()) Log.i("JARVIS tab: bars ", visible ? "shown" : "hidden");
++		} catch (RuntimeException ex) {
++			Log.e(ex, "JARVIS tab: bars ", visible ? "show" : "hide", " failed");
 +		}
++	}
++
++	private boolean isCar() {
++		try {
++			Context ctx = getContext();
++			return (ctx != null) && MainActivityDelegate.get(ctx).isCarActivityNotMirror();
++		} catch (RuntimeException ex) {
++			return false;
++		}
++	}
++
++	/** Касание вкладки — в журнал: где, на круге ли, что видно поверх, занята ли вкладка. */
++	private void logTouch(android.view.MotionEvent e, boolean handled) {
++		JarvisHudView h = hud;
++		String act = (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) ? "down" :
++				(e.getActionMasked() == android.view.MotionEvent.ACTION_UP) ? "up" : "cancel";
++		Log.i("JARVIS tab: touch ", act, " ", (int) e.getX(), ",", (int) e.getY(),
++				", sphere=", (h != null) && h.isOnSphere(e.getX(), e.getY()),
++				", handled=", handled, ", busy=", busy, ", phase=", phase(),
++				", hud=", (h == null) ? "null" : (h.getVisibility() == View.VISIBLE) ? "visible" : "hidden",
++				", qwenPage=", isQwenPageShown(), ", car=", isCar());
++	}
++
++	// --- Сторож главного потока: отклик вкладки ---
++
++	/** Насколько главный поток должен опоздать, чтобы это попало в журнал, мс. */
++	private static final long WATCHDOG_LATE_MS = 2000;
++	@Nullable
++	private Thread watchdog;
++
++	/**
++	 * Раз в секунду ставит задачу главному потоку и смотрит, когда он её выполнит.
++	 * Опоздал больше чем на 2 с — в журнал: на сколько и чем был занят (стек).
++	 * Так видно, зависло ли приложение целиком или касания просто не доходят.
++	 */
++	private void startWatchdog() {
++		stopWatchdog();
++		Thread t = new Thread(() -> {
++			Thread mainThread = Looper.getMainLooper().getThread();
++			while (!Thread.currentThread().isInterrupted()) {
++				java.util.concurrent.atomic.AtomicLong ranAt = new java.util.concurrent.atomic.AtomicLong();
++				long posted = android.os.SystemClock.uptimeMillis();
++				main.post(() -> ranAt.set(android.os.SystemClock.uptimeMillis()));
++				try {
++					Thread.sleep(WATCHDOG_LATE_MS);
++				} catch (InterruptedException ex) {
++					return;
++				}
++				// Сам сторож проспал заметно дольше — процесс был заморожен системой целиком
++				// (фон), это не зависание вкладки
++				boolean frozen = android.os.SystemClock.uptimeMillis() - posted > WATCHDOG_LATE_MS + 1500;
++				if ((ranAt.get() != 0) || frozen) {
++					try {
++						Thread.sleep(1000);
++					} catch (InterruptedException ex) {
++						return;
++					}
++					continue;
++				}
++				StringBuilder st = new StringBuilder();
++				StackTraceElement[] trace = mainThread.getStackTrace();
++				for (int i = 0; (i < trace.length) && (i < 12); i++) st.append("\n  at ").append(trace[i]);
++				Log.w("JARVIS tab: main thread not responding for ", android.os.SystemClock.uptimeMillis() - posted,
++						" ms, car=", isCar(), st);
++				// Ждать, пока отвиснет, и записать, сколько длилось
++				while ((ranAt.get() == 0) && !Thread.currentThread().isInterrupted()) {
++					try {
++						Thread.sleep(500);
++					} catch (InterruptedException ex) {
++						return;
++					}
++				}
++				Log.w("JARVIS tab: main thread responding again after ", ranAt.get() - posted, " ms");
++			}
++		}, "JarvisWatchdog");
++		t.setDaemon(true);
++		t.start();
++		watchdog = t;
++	}
++
++	private void stopWatchdog() {
++		Thread t = watchdog;
++		watchdog = null;
++		if (t != null) t.interrupt();
 +	}
 +
 +	private void showBarsForAWhile() {
@@ -6203,6 +6303,7 @@ index 0000000..f1b663d
 +
 +	@Override
 +	public void onDestroyView() {
++		stopWatchdog();
 +		restoreBars();
 +		stopListening();
 +		closeWarm();
