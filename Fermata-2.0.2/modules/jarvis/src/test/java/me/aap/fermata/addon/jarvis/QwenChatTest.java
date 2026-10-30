@@ -20,6 +20,18 @@ public class QwenChatTest {
 		assertTrue(QwenChat.isPhoneCommand("что с домашкой у Софии"));
 		assertTrue(QwenChat.isPhoneCommand("Марк сделал уроки?"));
 		assertTrue(QwenChat.isPhoneCommand("что задали Софии"));
+		// Школа и дети из «Домашки» (30.10.2026)
+		assertTrue(QwenChat.isPhoneCommand("какие уроки завтра у Марка"));
+		assertTrue(QwenChat.isPhoneCommand("во сколько заканчиваются уроки"));
+		assertTrue(QwenChat.isPhoneCommand("расписание Софии на понедельник"));
+		assertTrue(QwenChat.isPhoneCommand("четвертные оценки Софии"));
+		assertTrue(QwenChat.isPhoneCommand("где Марк"));
+		assertTrue(QwenChat.isPhoneCommand("Джарвис, где сейчас дети?"));
+		assertTrue(QwenChat.isPhoneCommand("София уже дома?"));
+		assertTrue(QwenChat.isPhoneCommand("Марк пришёл домой"));
+		assertTrue(QwenChat.isPhoneCommand("что с питанием у Марка"));
+		assertTrue(QwenChat.isPhoneCommand("есть ли задолженность"));
+		assertTrue(QwenChat.isPhoneCommand("какие кружки у Софии"));
 	}
 
 	@Test
@@ -36,6 +48,9 @@ public class QwenChatTest {
 		assertFalse(QwenChat.isPhoneCommand("напиши стихотворение про осень"));
 		assertFalse(QwenChat.isPhoneCommand("что такое договор подряда"));
 		assertFalse(QwenChat.isPhoneCommand("кто открыл Америку"));
+		assertFalse(QwenChat.isPhoneCommand("где находится Эйфелева башня"));
+		assertFalse(QwenChat.isPhoneCommand("когда заканчивается сезон дождей"));
+		assertFalse(QwenChat.isPhoneCommand("сколько стоит билет в Брест"));
 		assertFalse(QwenChat.isPhoneCommand(null));
 	}
 

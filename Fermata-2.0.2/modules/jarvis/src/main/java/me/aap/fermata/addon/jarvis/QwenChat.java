@@ -354,7 +354,19 @@ final class QwenChat {
 	 * доступа нет (журнал 22.10.2026, 09:22 и 09:58: «что с домашкой у Софии»).
 	 */
 	private static final Pattern HOMEWORK = Pattern.compile(
-			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк)");
+			"(?iu)(домашк|домашн\\S*\\s+задани|сделал[аи]?\\s+урок|задали|дневник|оценк|отметк|" +
+					// Школа и дети из «Домашки» (30.10.2026): расписание, конец уроков, четвертные,
+					// питание, задолженность, кружки — отвечает JARVIS
+					"расписани|(^|\\s)урок|четвертн|итогов\\S*\\s+отметк|питани|задолженн|кружк|факультатив|" +
+					"дети\\s+дома)");
+
+	/**
+	 * «Где Марк?», «где сейчас дети», «София уже дома?», «Марк пришёл домой?» — где дети, тоже JARVIS (место
+	 * знает «Домашка»). Имён здесь нет: одно слово после «где» или перед «дома»; не ребёнок — JARVIS сам
+	 * отдаст фразу в разговор.
+	 */
+	private static final Pattern KIDS_PLACE = Pattern.compile(
+			"^(?iu)(джарвис[\\s,]+)?(где\\s+(сейчас\\s+)?[\\p{L}]+|[\\p{L}]+\\s+(уже\\s+)?(дома|пришл\\S*|пришел|пришёл|дошл\\S*|дошел|дошёл|вернул\\S*)(\\s+домой)?)[\\s?!.]*$");
 
 	/**
 	 * Вариант распознавания, который — команда телефону, или null. Смотрим все
@@ -372,6 +384,6 @@ final class QwenChat {
 	static boolean isPhoneCommand(@Nullable String phrase) {
 		if (phrase == null) return false;
 		String p = phrase.trim().toLowerCase(Locale.ROOT);
-		return PHONE_COMMAND.matcher(p).find() || HOMEWORK.matcher(p).find();
+		return PHONE_COMMAND.matcher(p).find() || HOMEWORK.matcher(p).find() || KIDS_PLACE.matcher(p).find();
 	}
 }
