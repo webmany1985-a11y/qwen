@@ -67,17 +67,32 @@ public class JarvisHudView extends View {
 	@Nullable
 	private final Bitmap sfera;
 	/**
-	 * Значок Opel в огне — покой круга (пожелание пользователя 30.10.2026, вырезан из присланного им фото):
-	 * res/drawable-nodpi/jarvis_opel.webp. Нет файла — в покое прежний круг.
+	 * Значок Opel в огне — покой круга (пожелание пользователя 30.10.2026, вырезан из присланного им фото), двумя
+	 * слоями с прозрачностью вместо чёрного фона: res/drawable-nodpi/jarvis_opel_znachok.webp — сам значок
+	 * (неподвижен), jarvis_opel_ogon.webp — огонь (живёт). Нет файлов — в покое прежний круг.
 	 */
 	@Nullable
 	private final Bitmap opel;
 	@Nullable
+	private final Bitmap ogon;
+	private final Paint logoPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+	private final float[] flameOut = new float[2];
+	/** Живое пламя вокруг значка — частицы ({@link EmblemMorph.Fire}). */
+	private final EmblemMorph.Fire fire = new EmblemMorph.Fire();
+	/** Мягкое пятно частицы: белое с прозрачными краями, цвет — фильтром по возрасту. */
+	private final Bitmap puff = makePuff();
+	private static final int FIRE_SHADES = 16;
+	private final Paint[] firePaint = new Paint[FIRE_SHADES];
+	private final RectF puffBox = new RectF();
+	@Nullable
 	private final EmblemMorph.Sparks sparks;
-	private final float[] opelMesh = new float[(MESH + 1) * (MESH + 1) * 2];
+	/** Сетка огня гуще сетки сферы: у языков пламени мелкие волны, на 32 ячейках они рвались бы. */
+	private static final int FIRE_MESH = 48;
+	private final float[] opelMesh = new float[(FIRE_MESH + 1) * (FIRE_MESH + 1) * 2];
 	private final float[] sparkPos = new float[2];
 	/** Превращение: 0 — значок, 1 — сфера; меньше 0 — ещё не задано (первый кадр). */
 	private float morph = -1f;
+	private float fireDt;
 	private final float[] pt = new float[3];
 	private final float[] pt2 = new float[3];
 	private final String title;
@@ -98,8 +113,19 @@ public class JarvisHudView extends View {
 		thinking = ctx.getString(R.string.jarvis_hud_thinking);
 		setContentDescription(ctx.getString(R.string.jarvis_hud_description));
 		sfera = loadSfera(ctx);
-		opel = loadBitmap(ctx, R.drawable.jarvis_opel);
-		sparks = (opel == null) ? null : sparksOf(opel);
+		Bitmap z = loadBitmap(ctx, R.drawable.jarvis_opel_znachok);
+		Bitmap f = loadBitmap(ctx, R.drawable.jarvis_opel_ogon);
+		opel = ((z != null) && (f != null)) ? z : null;
+		ogon = (opel != null) ? f : null;
+		sparks = (opel == null) ? null : sparksOf(z, f);
+		PorterDuffXfermode addMode = new PorterDuffXfermode(PorterDuff.Mode.ADD);
+		for (int i = 0; i < FIRE_SHADES; i++) {
+			Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+			p.setColorFilter(new android.graphics.PorterDuffColorFilter(
+					EmblemMorph.fireColor((i + 0.5f) / FIRE_SHADES), PorterDuff.Mode.MULTIPLY));
+			p.setXfermode(addMode);
+			firePaint[i] = p;
+		}
 		PorterDuffXfermode add = new PorterDuffXfermode(PorterDuff.Mode.ADD);
 		plus.setXfermode(add);
 		stroke.setXfermode(add);
@@ -161,6 +187,7 @@ public class JarvisHudView extends View {
 		}
 		float t = HudMath.sinceSeconds(now, start);
 		float dt = HudMath.clampDt(HudMath.sinceSeconds(now, prev));
+		fireDt = dt;
 		float real = (phase == HudMath.Phase.SPEAK) ? HudMath.speakLevel(t) : micLevel;
 		animator.advance(phase, real, t, dt);
 		prev = now;
@@ -173,8 +200,8 @@ public class JarvisHudView extends View {
 			drawHud(c, 1f);
 		} else {
 			float vis = EmblemMorph.hudVisibility(morph);
+			// Без чёрного фона под значком (замечание 30.10.2026): затемнение — только у сферы, проявляется с ней
 			if (vis > 0f) drawHud(c, vis);
-			else c.drawColor(BACKDROP);
 			drawEmblem(c, EmblemMorph.emblemAlpha(morph));
 			drawSparks(c, morph);
 		}
@@ -193,7 +220,7 @@ public class JarvisHudView extends View {
 		float open = HudMath.open(t) * vis;
 		float level = animator.getLevel();
 
-		c.drawColor(BACKDROP);
+		c.drawColor(withAlpha(BACKDROP, vis));
 
 		// Свечение ядра. Под сферой-картинкой — меньше: иначе центр засвечен и мутный
 		float coreR = HudMath.coreRadius(s, level, open) * ((sfera != null) ? 1.6f : 2.6f);
@@ -483,31 +510,77 @@ public class JarvisHudView extends View {
 	}
 
 	/**
-	 * Значок в огне: пульсирует и дышит яркостью; языки пламени снаружи огненного кольца колышутся по сетке
-	 * ({@link EmblemMorph#flame}), сам значок неподвижен.
+	 * Значок в огне. Сам значок неподвижен; огонь живёт: слой пламени натянут на сетку, узлы которой гонят волны
+	 * {@link EmblemMorph#flame} от кольца наружу, яркость неровно мерцает; второй слой того же огня, чуть больше и
+	 * медленно покачиваясь, с другой турбулентностью — языки не повторяют друг друга.
 	 */
 	private void drawEmblem(Canvas c, float alpha) {
-		Bitmap b = opel;
-		if ((b == null) || (alpha <= 0.01f)) return;
+		Bitmap z = opel, f = ogon;
+		if ((z == null) || (f == null) || (alpha <= 0.01f)) return;
 		float t = since;
 		float cx = getWidth() / 2f, cy = getHeight() / 2f;
-		float ringPx = Math.min(getWidth(), getHeight()) * EmblemMorph.RING_OF_VIEW * EmblemMorph.pulse(t);
-		float bw = b.getWidth(), bh = b.getHeight();
-		float sc = ringPx / (EmblemMorph.RING_OF_SIDE * bw);
-		float ringImg = EmblemMorph.RING_OF_SIDE * bw;
-		int k = 0;
-		for (int gy = 0; gy <= MESH; gy++) {
-			float dy = gy * bh / MESH - bh / 2f;
-			for (int gx = 0; gx <= MESH; gx++) {
-				float dx = gx * bw / MESH - bw / 2f;
-				float rn = (float) Math.sqrt(dx * dx + dy * dy) / ringImg;
-				float f = 1f + EmblemMorph.flame((float) Math.atan2(dy, dx), rn, t);
-				opelMesh[k++] = cx + dx * f * sc;
-				opelMesh[k++] = cy + dy * f * sc;
+		float ringPx = Math.min(getWidth(), getHeight()) * EmblemMorph.RING_OF_VIEW;
+		float sc = ringPx / (EmblemMorph.RING_OF_SIDE * f.getWidth());
+
+		// Подложка — огонь с фото, приглушён и неровно мерцает; поверх — живые языки пламени
+		fireMesh(f, cx, cy, sc, 1f, 0f, t, 0f);
+		image.setAlpha(Math.round(255f * clamp(alpha * 0.55f * EmblemMorph.flicker(t, 0f), 0f, 1f)));
+		c.drawBitmapMesh(f, FIRE_MESH, FIRE_MESH, opelMesh, 0, null, 0, image);
+		fire.step(HudMath.clampDt(fireDt));
+		for (int i = 0; i < EmblemMorph.Fire.MAX; i++) {
+			if (!fire.alive[i]) continue;
+			float a = fire.alpha(i) * alpha;
+			if (a < 0.004f) continue;
+			// Пятно — гауссово с краем на 2 радиусах, как в предпросмотре
+			float r = fire.radius(i) * ringPx * 2f;
+			float px = cx + fire.x[i] * ringPx, py = cy + fire.y[i] * ringPx;
+			puffBox.set(px - r, py - r, px + r, py + r);
+			Paint p = firePaint[Math.min(FIRE_SHADES - 1, (int) (fire.progress(i) * FIRE_SHADES))];
+			p.setAlpha(Math.round(255f * clamp(a, 0f, 1f)));
+			c.drawBitmap(puff, null, puffBox, p);
+		}
+
+		// Значок поверх огня — обычным наложением: хром не должен просвечивать пламенем
+		float zs = ringPx / (EmblemMorph.RING_OF_SIDE * z.getWidth());
+		float hw = z.getWidth() * zs / 2f, hh = z.getHeight() * zs / 2f;
+		box.set(cx - hw, cy - hh, cx + hw, cy + hh);
+		logoPaint.setAlpha(Math.round(255f * clamp(alpha, 0f, 1f)));
+		c.drawBitmap(z, null, box, logoPaint);
+	}
+
+	/** Белое пятно 64×64 с гауссовым спадом прозрачности — одно на все частицы. */
+	private static Bitmap makePuff() {
+		int n = 64;
+		int[] px = new int[n * n];
+		for (int y = 0; y < n; y++) {
+			for (int x = 0; x < n; x++) {
+				float dx = (x + 0.5f - n / 2f) / (n / 4f), dy = (y + 0.5f - n / 2f) / (n / 4f);
+				int a = Math.round(255f * (float) Math.exp(-(dx * dx + dy * dy) * 1.6f));
+				px[y * n + x] = (a << 24) | 0xFFFFFF;
 			}
 		}
-		image.setAlpha(Math.round(255f * clamp(alpha * EmblemMorph.glow(t), 0f, 1f)));
-		c.drawBitmapMesh(b, MESH, MESH, opelMesh, 0, null, 0, image);
+		return Bitmap.createBitmap(px, n, n, Bitmap.Config.ARGB_8888);
+	}
+
+	/** Сетка слоя огня: масштаб, поворот (рад) и турбулентность со своим временем и зерном. */
+	private void fireMesh(Bitmap b, float cx, float cy, float sc, float scale, float rot, float t, float seed) {
+		float bw = b.getWidth(), bh = b.getHeight();
+		float ringImg = EmblemMorph.RING_OF_SIDE * bw;
+		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
+		int k = 0;
+		for (int gy = 0; gy <= FIRE_MESH; gy++) {
+			float dy = gy * bh / FIRE_MESH - bh / 2f;
+			for (int gx = 0; gx <= FIRE_MESH; gx++) {
+				float dx = gx * bw / FIRE_MESH - bw / 2f;
+				float d = (float) Math.sqrt(dx * dx + dy * dy);
+				float a = (float) Math.atan2(dy, dx);
+				EmblemMorph.flame(a, d / ringImg, t, seed, flameOut);
+				float rr = d + flameOut[0] * ringImg;
+				float aa = a + rot + ((d > 1f) ? flameOut[1] * ringImg / d : 0f);
+				opelMesh[k++] = cx + (float) Math.cos(aa) * rr * sc * scale;
+				opelMesh[k++] = cy + (float) Math.sin(aa) * rr * sc * scale;
+			}
+		}
 	}
 
 	/** Искры значка посреди превращения: разлетаются из значка и садятся на сферу. */
@@ -533,11 +606,18 @@ public class JarvisHudView extends View {
 		}
 	}
 
-	private static EmblemMorph.Sparks sparksOf(Bitmap b) {
-		int w = b.getWidth(), h = b.getHeight();
-		int[] px = new int[w * h];
-		b.getPixels(px, 0, w, 0, 0, w, h);
-		return EmblemMorph.sparks(px, w, h, EmblemMorph.SPARKS);
+	/** Искры из обоих слоёв: цвет точки — с учётом прозрачности (тусклое пламя не даёт ярких искр). */
+	private static EmblemMorph.Sparks sparksOf(Bitmap z, Bitmap f) {
+		int w = z.getWidth(), h = z.getHeight();
+		int[] a = new int[w * h], b = new int[w * h];
+		z.getPixels(a, 0, w, 0, 0, w, h);
+		f.getPixels(b, 0, w, 0, 0, w, h);
+		for (int i = 0; i < a.length; i++) {
+			int p = (Color.alpha(a[i]) >= Color.alpha(b[i])) ? a[i] : b[i];
+			float k = Color.alpha(p) / 255f;
+			a[i] = Color.rgb(Math.round(Color.red(p) * k), Math.round(Color.green(p) * k), Math.round(Color.blue(p) * k));
+		}
+		return EmblemMorph.sparks(a, w, h, EmblemMorph.SPARKS);
 	}
 
 	private static int blend(int a, int b, float k) {

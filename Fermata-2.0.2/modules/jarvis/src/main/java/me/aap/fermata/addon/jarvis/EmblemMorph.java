@@ -5,9 +5,10 @@ import static me.aap.fermata.addon.jarvis.HudMath.clamp;
 import java.util.Random;
 
 /**
- * Значок Opel в огне в покое и его превращение в сферу (пожелание пользователя 30.10.2026: «в состоянии покоя
- * пульсирующий значок Опель как на фото; при нажатии значок разлетается на нынешнюю сферу»). Чистая математика без
- * Android — проверяется на JVM ({@code EmblemMorphTest}); рисует {@link JarvisHudView}.
+ * Значок Opel в огне в покое и его превращение в сферу (пожелание пользователя 30.10.2026: «при нажатии значок
+ * разлетается на нынешнюю сферу»). Уточнение того же дня: чёрного фона нет, сам значок не пульсирует — живёт только
+ * огонь; пульсация — у сферы. Чистая математика без Android — проверяется на JVM ({@code EmblemMorphTest});
+ * рисует {@link JarvisHudView}.
  *
  * <p>Превращение — величина {@code m}: 0 — значок, 1 — сфера. В покое (фаза IDLE) она идёт к 0, в остальных фазах — к 1,
  * за {@link #MORPH_SECONDS}. Значок гаснет в начале превращения, искры, взятые из его ярких точек, разлетаются и
@@ -16,7 +17,7 @@ import java.util.Random;
 public final class EmblemMorph {
 	/** За сколько секунд значок становится сферой (и обратно). */
 	public static final float MORPH_SECONDS = 0.9f;
-	/** Радиус огненного кольца на картинке значка — доля стороны картинки (jarvis_opel.webp, замер по кадру). */
+	/** Радиус огненного кольца на картинке значка — доля стороны картинки (jarvis_opel_*.webp, замер по кадру). */
 	public static final float RING_OF_SIDE = 0.37f;
 	/** Радиус огненного кольца на экране — доля меньшей стороны вида. */
 	public static final float RING_OF_VIEW = 0.27f;
@@ -53,26 +54,128 @@ public final class EmblemMorph {
 		return clamp(m * 5f, 0f, 1f) * clamp((1f - m) * 4f, 0f, 1f);
 	}
 
-	/** Пульс значка в покое: масштаб около 1, вдох-выдох раз в {@code 1.6} с. */
-	public static float pulse(float t) {
-		return 1f + 0.035f * (float) Math.sin(t * Math.PI * 2.0 / 1.6);
-	}
-
-	/** Яркость значка в покое: дышит вместе с пульсом, 0,85..1. */
-	public static float glow(float t) {
-		return 0.925f + 0.075f * (float) Math.sin(t * Math.PI * 2.0 / 1.6);
+	/**
+	 * Мерцание огня: яркость слоя пламени, неровная, как у живого огня, — сумма колебаний с несоизмеримыми
+	 * частотами. {@code seed} разводит слои, чтобы они мерцали не в такт. Значения 0,8..1.
+	 */
+	public static float flicker(float t, float seed) {
+		double v = Math.sin(t * 7.3 + seed) * 0.5 + Math.sin(t * 11.9 + seed * 2.1) * 0.3
+				+ Math.sin(t * 2.3 + seed * 0.7) * 0.2;
+		return 0.9f + 0.1f * (float) v;
 	}
 
 	/**
-	 * Колыхание пламени: смещение узла сетки картинки по радиусу, доля. Внутри огненного кольца (rn < 0,85, где rn —
-	 * расстояние в радиусах кольца) — 0: сам значок не плывёт, колышутся только языки огня снаружи.
+	 * Живой огонь: смещение узла сетки слоя пламени, в долях радиуса огненного кольца. {@code out[0]} — по радиусу
+	 * (языки вытягиваются и опадают), {@code out[1]} — вдоль кольца (колышутся). Волны бегут от кольца наружу, как
+	 * поднимается пламя. Внутри кольца (rn < 0,75) — 0: значок не двигается.
 	 */
-	public static float flame(float angle, float rn, float t) {
-		if (rn < 0.85f) return 0f;
-		float k = clamp((rn - 0.85f) / 0.5f, 0f, 1f);
-		float w = (float) (Math.sin(angle * 3f + t * 2.1f) + 0.6 * Math.sin(angle * 7f - t * 3.3f)
-				+ 0.4 * Math.sin(angle * 11f + t * 5.2f));
-		return 0.045f * k * w / 2f;
+	public static void flame(float angle, float rn, float t, float seed, float[] out) {
+		if (rn < 0.75f) {
+			out[0] = 0f;
+			out[1] = 0f;
+			return;
+		}
+		float k = smooth(0.75f, 1.3f, rn);
+		double a = angle, r = rn;
+		double radial = Math.sin(a * 5 + r * 9 - t * 3.1 + seed) * 0.55
+				+ Math.sin(a * 9 - r * 13 - t * 4.7 + seed * 1.7) * 0.3
+				+ Math.sin(a * 17 + r * 21 - t * 7.9 + seed * 2.9) * 0.15;
+		double along = Math.sin(a * 4 - r * 7 - t * 2.3 + seed * 0.5) * 0.6
+				+ Math.sin(a * 11 + r * 15 - t * 5.3 + seed * 1.3) * 0.4;
+		out[0] = 0.08f * k * (float) radial;
+		out[1] = 0.04f * k * (float) along;
+	}
+
+	/**
+	 * Живое пламя (замечание 30.10.2026: «огонь должен не просто колыхаться, а гореть»): языки — частицы, которые
+	 * постоянно рождаются на огненном кольце, вылетают наружу, всплывают вверх, их сносит и закручивает; по возрасту
+	 * цвет идёт от жёлто-белого к оранжевому, красному и гаснет. Координаты — в радиусах огненного кольца от центра,
+	 * ось y вниз (как на экране). Параметры подобраны на кадрах предпросмотра.
+	 */
+	public static final class Fire {
+		/** Частиц в секунду. */
+		public static final float RATE = 750f;
+		public static final int MAX = 1500;
+		public final float[] x = new float[MAX], y = new float[MAX], vx = new float[MAX], vy = new float[MAX];
+		public final float[] age = new float[MAX], life = new float[MAX], size = new float[MAX];
+		public final boolean[] alive = new boolean[MAX];
+		private final Random rnd = new Random(3010L);
+		private float due;
+		private float t;
+
+		/** Шаг времени dt (с): родить новые, сдвинуть, состарить. */
+		public void step(float dt) {
+			t += dt;
+			due += RATE * dt;
+			int born = (int) due;
+			due -= born;
+			for (int i = 0; (i < MAX) && (born > 0); i++) {
+				if (alive[i]) continue;
+				born--;
+				double th = rnd.nextDouble() * Math.PI * 2.0;
+				double r = 1.0 + rnd.nextGaussian() * 0.05;
+				double out = 0.15 + rnd.nextDouble() * 0.3;
+				x[i] = (float) (Math.cos(th) * r);
+				y[i] = (float) (Math.sin(th) * r);
+				vx[i] = (float) (Math.cos(th) * out);
+				vy[i] = (float) (Math.sin(th) * out - 0.35);
+				age[i] = 0f;
+				life[i] = 0.6f + rnd.nextFloat() * 0.65f;
+				size[i] = 0.05f + rnd.nextFloat() * 0.04f;
+				alive[i] = true;
+			}
+			for (int i = 0; i < MAX; i++) {
+				if (!alive[i]) continue;
+				vy[i] -= 2.4f * dt; // всплывает
+				float swirl = (float) (Math.sin(y[i] * 7f + t * 5.3f) + 0.5 * Math.sin(y[i] * 13f - t * 8.1f + x[i] * 3f));
+				vx[i] += swirl * 2.2f * dt;
+				vx[i] *= 0.985f;
+				vy[i] *= 0.99f;
+				x[i] += vx[i] * dt;
+				y[i] += vy[i] * dt;
+				age[i] += dt;
+				if (age[i] >= life[i]) alive[i] = false;
+			}
+		}
+
+		/** Доля прожитого 0..1. */
+		public float progress(int i) {
+			return clamp(age[i] / life[i], 0f, 1f);
+		}
+
+		/**
+		 * Яркость частицы: гаснет к концу жизни; над значком (ближе 0,82 радиуса кольца) не видна — языки снизу не
+		 * заслоняют хром.
+		 */
+		public float alpha(int i) {
+			float u = progress(i);
+			float r = (float) Math.sqrt(x[i] * x[i] + y[i] * y[i]);
+			return (float) Math.pow(1f - u, 1.3) * 0.14f * clamp((r - 0.82f) / 0.12f, 0f, 1f);
+		}
+
+		/** Радиус пятна частицы: растёт к середине жизни. */
+		public float radius(int i) {
+			float u = progress(i);
+			return size[i] * (0.7f + 0.8f * (float) Math.sin(Math.PI * Math.min(1f, u * 1.3f)));
+		}
+	}
+
+	/** Цвет пламени по возрасту u 0..1 (ARGB, непрозрачный): жёлто-белый → оранжевый → красный → тёмный. */
+	public static int fireColor(float u) {
+		float[][] stops = {{0f, 1f, 0.9f, 0.55f}, {0.15f, 1f, 0.7f, 0.2f}, {0.4f, 1f, 0.42f, 0.05f},
+				{0.7f, 0.8f, 0.15f, 0.02f}, {1f, 0.25f, 0.03f, 0f}};
+		float q = clamp(u, 0f, 1f);
+		for (int i = 0; i + 1 < stops.length; i++) {
+			float[] a = stops[i], b = stops[i + 1];
+			if (q <= b[0]) {
+				float k = (q - a[0]) / (b[0] - a[0]);
+				int r = Math.round(255f * (a[1] + (b[1] - a[1]) * k));
+				int g = Math.round(255f * (a[2] + (b[2] - a[2]) * k));
+				int bl = Math.round(255f * (a[3] + (b[3] - a[3]) * k));
+				return 0xFF000000 | (r << 16) | (g << 8) | bl;
+			}
+		}
+		return 0xFF400800;
 	}
 
 	/** Искры. Координаты — в радиусах: from — от центра значка в радиусах огненного кольца, to — в радиусах сферы. */
