@@ -42,7 +42,8 @@ import me.aap.utils.voice.TextToSpeech;
  * Порядок как при голосовом поиске Fermata: сначала фразу пробует выполнить
  * сама Fermata («пауза», «играй…»). Команду телефону («позвони», «открой»…)
  * выполняет JARVIS на телефоне, а разговор ведёт Qwen с chat.qwen.ai
- * (QwenChat; пожелание 21.10.2026). Ответ только произносится голосом
+ * (QwenChat; пожелание 21.10.2026) или DeepSeek с chat.deepseek.com (DeepSeekChat;
+ * пожелание 30.10.2026) — какой основной, решают настройки, второй — запасной (ChatPlan). Ответ только произносится голосом
  * JARVIS — под кругом ничего не показывается.
  *
  * Сайт Qwen открыт под кругом невидимым. Долгое касание шара показывает его
@@ -66,7 +67,18 @@ public class JarvisFragment extends MainActivityFragment
 	@Nullable
 	private JarvisHudView hud;
 	@Nullable
-	private QwenChat qwen;
+	/** Сайты разговора: основной создаётся при открытии вкладки, запасной — когда понадобился. */
+	private final java.util.EnumMap<ChatPlan.Site, WebChat> chats = new java.util.EnumMap<>(ChatPlan.Site.class);
+	@Nullable
+	private android.widget.FrameLayout chatRoot;
+	/** Чья страница сейчас показана поверх круга. */
+	@Nullable
+	private WebChat shownChat;
+	/** Основной сайт просил войти, а ответил запасной — сказано ли об этом (раз за открытие вкладки). */
+	private boolean toldFallback;
+	/** Сайт, который последним просил войти вручную: долгое касание шара показывает его, иначе — основной. */
+	@Nullable
+	private ChatPlan.Site loginSite;
 	@Nullable
 	private CarMic carMic;
 	@Nullable
@@ -143,17 +155,12 @@ public class JarvisFragment extends MainActivityFragment
 		rootView = root;
 		startWatchdog();
 		preloadHome(ctx);
-		QwenChat q = new QwenChat(ctx);
-		// Страница Qwen — через 3 с, если не идёт разговор (иначе — при вопросе)
+		chatRoot = root;
+		WebChat q = chat(ctx, mainSite());
+		// Страница основного сайта — через 3 с, если не идёт разговор (иначе — при вопросе)
 		main.postDelayed(() -> {
-			if ((qwen == q) && !busy) q.load();
+			if ((chats.get(q.site) == q) && !busy) q.load();
 		}, QWEN_LOAD_DELAY_MS);
-		View web = q.getView();
-		web.setAlpha(0f);
-		web.setFocusable(false);
-		root.addView(web, new android.widget.FrameLayout.LayoutParams(
-				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-		qwen = q;
 
 		JarvisHudView v = new JarvisHudView(dynCtx(ctx));
 		// Голос — только касанием шара; касание в любом другом месте показывает
@@ -162,7 +169,7 @@ public class JarvisFragment extends MainActivityFragment
 			if (e.getAction() == android.view.MotionEvent.ACTION_DOWN) downAt = e.getEventTime();
 			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
 			if (v.isOnSphere(e.getX(), e.getY())) {
-				if ((e.getEventTime() - downAt >= LONG_PRESS_MS) && !busy) showQwenPage();
+				if ((e.getEventTime() - downAt >= LONG_PRESS_MS) && !busy) showChatPage((loginSite != null) ? loginSite : mainSite());
 				else onCircleClick();
 			} else {
 				showBarsForAWhile();
@@ -193,12 +200,34 @@ public class JarvisFragment extends MainActivityFragment
 		return root;
 	}
 
-	/** Показать сайт Qwen поверх круга: войти, посмотреть разговор. */
-	private void showQwenPage() {
-		QwenChat q = qwen;
-		if ((q == null) || (hud == null) || (qwenDone == null)) return;
+	private static ChatPlan.Site mainSite() {
+		return ChatPlan.Site.of(WebChat.prefs().getStringPref(ChatPlan.MAIN));
+	}
+
+	/** Сайт разговора; нет — создать под кругом невидимым (страница грузится при первом вопросе). */
+	private WebChat chat(Context ctx, ChatPlan.Site site) {
+		WebChat c = chats.get(site);
+		if (c != null) return c;
+		c = (site == ChatPlan.Site.DEEPSEEK) ? new DeepSeekChat(ctx) : new QwenChat(ctx);
+		View web = c.getView();
+		web.setAlpha(0f);
+		web.setFocusable(false);
+		android.widget.FrameLayout root = chatRoot;
+		// Под кругом: страница — первым ребёнком, круг и кнопка «Готово» — поверх
+		if (root != null) root.addView(web, 0, new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+		chats.put(site, c);
+		Log.i("[CHAT] ", site.title, " created", (site == mainSite()) ? " (main)" : " (fallback)");
+		return c;
+	}
+
+	/** Показать сайт поверх круга: войти, выбрать модель и режим, посмотреть разговор. */
+	private void showChatPage(ChatPlan.Site site) {
+		if ((hud == null) || (qwenDone == null) || (chatRoot == null)) return;
+		WebChat q = chat(requireContext(), site);
 		q.load();
-		Log.i("[QWEN] page shown");
+		shownChat = q;
+		Log.i("[CHAT] ", site.title, " page shown");
 		restoreBars();
 		View web = q.getView();
 		web.setAlpha(1f);
@@ -209,9 +238,10 @@ public class JarvisFragment extends MainActivityFragment
 	}
 
 	private void hideQwenPage() {
-		QwenChat q = qwen;
+		WebChat q = shownChat;
 		if ((q == null) || (hud == null) || (qwenDone == null)) return;
-		Log.i("[QWEN] page hidden");
+		shownChat = null;
+		Log.i("[CHAT] ", q.site.title, " page hidden");
 		q.rememberModel();
 		View web = q.getView();
 		web.clearFocus();
@@ -352,11 +382,12 @@ public class JarvisFragment extends MainActivityFragment
 		restoreBars();
 		stopListening();
 		closeWarm();
-		QwenChat q = qwen;
-		qwen = null;
 		qwenDone = null;
 		rootView = null;
-		if (q != null) q.destroy();
+		chatRoot = null;
+		shownChat = null;
+		for (WebChat c : chats.values()) c.destroy();
+		chats.clear();
 		// Вопрос Qwen остался без ответа — разговор окончен, иначе круг не примет новый
 		if (busy) done();
 		hud = null;
@@ -430,8 +461,7 @@ public class JarvisFragment extends MainActivityFragment
 		else if ((phase() == HudMath.Phase.SPEAK) || (phase() == HudMath.Phase.THINK)) {
 			// Ответ не нужен дальше — замолчать; следующее касание — снова «Слушаю»
 			Log.i("JARVIS tab: reply stopped by touch, phase=", phase());
-			QwenChat q = qwen;
-			if (q != null) q.cancel();
+			for (WebChat c : chats.values()) c.cancel();
 			Cancellable s = speech;
 			speech = Cancellable.CANCELED;
 			s.cancel();
@@ -868,8 +898,8 @@ public class JarvisFragment extends MainActivityFragment
 			String cmd = QwenChat.phoneCommand(q);
 			Log.i("JARVIS tab: phone command — to JARVIS: «", cmd, "»");
 			JarvisBridge.ask(a, cmd, forRequest());
-		} else if (qwen != null) {
-			askQwen(a, q.get(0));
+		} else if (chatRoot != null) {
+			askChat(a, q.get(0));
 		} else if (!JarvisBridge.ask(a, q.get(0), forRequest())) {
 			toast(R.string.jarvis_not_installed);
 			done();
@@ -1240,32 +1270,70 @@ public class JarvisFragment extends MainActivityFragment
 		say(a, spoken);
 	}
 
-	/** Вопрос — Qwen, ответ — голосом JARVIS. */
-	private void askQwen(MainActivityDelegate a, String text) {
-		QwenChat q = qwen;
-		if (q == null) return;
+	/**
+	 * Вопрос — основному сайту (Qwen или DeepSeek, по настройкам), ответ — голосом JARVIS. Не ответил за отведённое
+	 * время, ошибка, пустой ответ или нужен вход вручную — тот же вопрос запасному, если он включён (ChatPlan).
+	 */
+	private void askChat(MainActivityDelegate a, String text) {
+		if (chatRoot == null) return;
 		setPhase(HudMath.Phase.THINK);
-		q.ask(text, new QwenChat.Callback() {
+		java.util.List<ChatPlan.Site> order = ChatPlan.order(WebChat.prefs().getStringPref(ChatPlan.MAIN),
+				WebChat.prefs().getBooleanPref(ChatPlan.FALLBACK));
+		askAt(a, text, order, 0, null);
+	}
+
+	/** Попытка i из order; why — почему не ответил предыдущий (для журнала и одной фразы). */
+	private void askAt(MainActivityDelegate a, String text, java.util.List<ChatPlan.Site> order, int i,
+										 @Nullable String why) {
+		if ((chatRoot == null) || !busy) return;
+		ChatPlan.Site site = order.get(i);
+		boolean last = i == order.size() - 1;
+		WebChat c = chat(requireContext(), site);
+		long wait = ChatPlan.waitFor(WebChat.prefs(), site);
+		int req = request;
+		if (why != null) Log.i("[CHAT] ", order.get(i - 1).title, " did not answer (", why, ") — asking ", site.title);
+		c.ask(text, wait, new WebChat.Callback() {
 			@Override
 			public void onReply(@NonNull String reply) {
+				if (req != request) return;
 				String s = QwenChat.forSpeech(reply);
-				if (s.isEmpty()) say(a, str(R.string.jarvis_qwen_empty));
-				else sayAndContinue(a, s);
+				if (s.isEmpty()) {
+					if (!last) askAt(a, text, order, i + 1, "пустой ответ");
+					else say(a, String.format(str(R.string.jarvis_chat_empty), site.title));
+					return;
+				}
+				Log.i("[CHAT] answered by ", site.title, (i > 0) ? " (fallback)" : "");
+				if (loginSite == site) loginSite = null;
+				// Основной просит войти, ответил запасной — сказать один раз за открытие вкладки
+				if ((i > 0) && "нужен вход".equals(why) && !toldFallback) {
+					toldFallback = true;
+					loginSite = order.get(i - 1);
+					s = String.format(str(R.string.jarvis_chat_fallback_login), order.get(i - 1).title, site.title) + s;
+				}
+				sayAndContinue(a, s);
 			}
 
 			@Override
 			public void onLogin() {
+				if (req != request) return;
+				if (!last) {
+					askAt(a, text, order, i + 1, "нужен вход");
+					return;
+				}
+				loginSite = site;
 				if (a.isCarActivityNotMirror()) {
-					say(a, str(R.string.jarvis_qwen_login_car));
+					say(a, String.format(str(R.string.jarvis_chat_login_car), site.title));
 				} else {
-					showQwenPage();
-					say(a, str(R.string.jarvis_qwen_login));
+					showChatPage(site);
+					say(a, String.format(str(R.string.jarvis_chat_login), site.title));
 				}
 			}
 
 			@Override
-			public void onError(@NonNull String why) {
-				say(a, str(R.string.jarvis_qwen_error) + why);
+			public void onError(@NonNull String err) {
+				if (req != request) return;
+				if (!last) askAt(a, text, order, i + 1, err);
+				else say(a, String.format(str(R.string.jarvis_chat_error), site.title) + err);
 			}
 		});
 	}

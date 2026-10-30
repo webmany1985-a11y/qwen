@@ -139,5 +139,7 @@ public class JarvisAddon implements FermataFragmentAddon {
 			o.title = R.string.jarvis_yandex_client_id;
 			o.visibility = visibility;
 		});
+		// Разговор: Qwen или DeepSeek, вторая — запасная (пожелание 30.10.2026)
+		ChatSettings.contribute(ctx, store, set, visibility);
 	}
 }

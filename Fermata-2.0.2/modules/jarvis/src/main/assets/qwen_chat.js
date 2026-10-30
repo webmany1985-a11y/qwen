@@ -198,6 +198,14 @@
 		else setTimeout(() => whenReady(then, t0), 300);
 	}
 
+	/** Подпись режима совпадает с выбранной: без регистра, по первым пяти буквам (сайт меняет окончания). */
+	function same5(a, b) {
+		a = (a || '').trim().toLowerCase(); b = (b || '').trim().toLowerCase();
+		if (!a || !b) return false;
+		const n = Math.min(5, a.length, b.length);
+		return a.slice(0, n) === b.slice(0, n);
+	}
+
 	/** Выставить мышление и поиск, как запомнено; then — после. */
 	function applyModes(want, then) {
 		const wantThink = want && want.thinking;
@@ -218,14 +226,14 @@
 				const t = document.querySelector('.mode-selector-drawer-item .qwen-chat-v2-dropdown-menu-trigger');
 				const cur = t ? (t.innerText || '').trim() : '';
 				thinkingApplied = true;
-				if (!t || (cur === wantThink)) {
+				if (!t || same5(cur, wantThink)) {
 					next();
 					return;
 				}
 				t.click();
 				setTimeout(() => {
 					const it = Array.from(document.querySelectorAll('.qwen-chat-v2-dropdown-menu-item'))
-						.find(e => (e.innerText || '').trim() === wantThink);
+						.find(e => same5((e.innerText || '').trim(), wantThink));
 					if (it) it.click();
 					log('thinking ' + cur + ' -> ' + wantThink + (it ? '' : ': not in the list'));
 					setTimeout(next, 500);

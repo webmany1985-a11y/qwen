@@ -1,50 +1,30 @@
 package me.aap.fermata.addon.jarvis;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static me.aap.fermata.util.Utils.dynCtx;
-
-import android.annotation.SuppressLint;
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
-import android.webkit.ConsoleMessage;
-import android.webkit.CookieManager;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.json.JSONObject;
-import org.json.JSONTokener;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 import me.aap.utils.log.Log;
+import me.aap.utils.pref.PreferenceStore;
 
 /**
- * Разговор во вкладке JARVIS ведёт Qwen с сайта chat.qwen.ai (пожелание
- * 21.10.2026: «берём ИИ Квин с его сайта и обворачиваем его в визуальную
- * оболочку джарвиза»). Сайт открыт в WebView под кругом JARVIS: невидимым,
- * пока не нужен вход. Фраза вписывается в поле сайта и отправляется его
- * кнопкой, ответ читается со страницы скриптом assets/qwen_chat.js.
+ * Qwen с сайта chat.qwen.ai (пожелание 21.10.2026: «берём ИИ Квин с его сайта и обворачиваем его в визуальную
+ * оболочку джарвиза»). Страница — в WebView ({@link WebChat}), ответ читает assets/qwen_chat.js.
  *
- * Вход — один раз, по почте (вход через Google в WebView Google не пускает);
- * cookies сайта сохраняются, как в браузере.
+ * <p>Модель, режим (быстрый, авто, мышление) и поиск — из настроек JARVIS Auto ({@link ChatPlan}); выбранное на самой
+ * странице (долгое касание шара) тоже запоминается туда. Вход — почтой и паролем из настроек, сам, когда сайт
+ * выкинул из аккаунта (страница входа: «Войти с паролем», почта, пароль — сверено в «Домашке» 29.10.2026).
  */
-final class QwenChat {
+final class QwenChat extends WebChat {
 	static final String URL = "https://chat.qwen.ai/";
-	/** Сколько ждать загрузки страницы и ответа Qwen, мс. */
-	private static final long LOAD_WAIT_MS = 25_000;
-	private static final long REPLY_WAIT_MS = 60_000;
-	private static final long POLL_MS = 700;
+	static final String LOGIN_URL = "https://chat.qwen.ai/auth?action=signin";
 	/** Длина ответа для озвучивания: синтезатор берёт ~4000 знаков, слушать длинное в машине тяжело. */
 	static final int MAX_SPEECH = 1200;
 	/**
@@ -55,257 +35,89 @@ final class QwenChat {
 			"Отвечай кратко, по-русски, обычным текстом без списков, таблиц и разметки — " +
 					"ответ будет озвучен голосом. ";
 
-	interface Callback {
-		void onReply(@NonNull String text);
-
-		/** Сайт просит войти. */
-		void onLogin();
-
-		void onError(@NonNull String why);
-	}
-
-	private final Handler main = new Handler(Looper.getMainLooper());
-	private final WebView web;
-	private final String script;
-	private boolean loaded;
-	private boolean loadStarted;
-	/** В этом разговоре уже была фраза — просьба о краткости не повторяется. */
-	private boolean started;
-	@Nullable
-	private Callback pending;
-	private long deadline;
-	@Nullable
-	private String lastText;
-
-	@SuppressLint("SetJavaScriptEnabled")
 	QwenChat(Context ctx) {
-		script = readScript(ctx);
-		web = new WebView(ctx);
-		WebSettings s = web.getSettings();
-		s.setJavaScriptEnabled(true);
-		s.setDomStorageEnabled(true);
-		s.setDatabaseEnabled(true);
-		s.setMediaPlaybackRequiresUserGesture(true);
-		CookieManager cm = CookieManager.getInstance();
-		cm.setAcceptCookie(true);
-		cm.setAcceptThirdPartyCookies(web, true);
-		web.setWebViewClient(new WebViewClient() {
-			@Override
-			public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-				// Ссылки на приложения (intent:, market: …) не открывать
-				String scheme = request.getUrl().getScheme();
-				return !"https".equals(scheme) && !"http".equals(scheme);
-			}
-
-			@Override
-			public void onPageFinished(WebView view, String url) {
-				Log.i("[QWEN] page loaded: ", url);
-				loaded = true;
-				inject();
-				CookieManager.getInstance().flush();
-			}
-		});
-		web.setWebChromeClient(new WebChromeClient() {
-			@Override
-			public boolean onConsoleMessage(ConsoleMessage m) {
-				if (m.message().startsWith("[QWEN]")) Log.i(m.message());
-				return true;
-			}
-		});
+		super(ctx, ChatPlan.Site.QWEN, "qwen_chat.js");
+		migrate(ctx);
 	}
 
-	/**
-	 * Загрузить страницу, если ещё не начали. Не сразу при открытии вкладки:
-	 * загрузка сайта на несколько секунд задерживала «Слушаю» (журнал
-	 * 22.10.2026, 13:17:47 — «Слушаю» через 7 с, микрофон через 26 с).
-	 */
-	void load() {
-		if (loadStarted) return;
-		loadStarted = true;
-		Log.i("[QWEN] loading page");
-		web.loadUrl(URL);
+	@Override
+	String url() {
+		return URL;
 	}
 
-	WebView getView() {
-		return web;
+	@Override
+	String loginUrl() {
+		return LOGIN_URL;
 	}
 
-	/** Задать вопрос; ответ — в главном потоке через cb. Предыдущий вопрос отменяется. */
-	void ask(@NonNull String text, @NonNull Callback cb) {
-		cancel();
-		pending = cb;
-		lastText = null;
-		String q = started ? text : FIRST_PREFIX + text;
-		Log.i("[QWEN] ask «", text, "», loaded=", loaded);
-		load();
-		long loadUntil = System.currentTimeMillis() + LOAD_WAIT_MS;
-		sendWhenReady(cb, q, loadUntil);
+	@Override
+	String js() {
+		return "__jq";
 	}
 
-	private void sendWhenReady(Callback cb, String q, long until) {
-		if (pending != cb) return;
-		if (!loaded) {
-			if (System.currentTimeMillis() > until) {
-				fail(cb, "страница Qwen не загрузилась");
-				return;
-			}
-			main.postDelayed(() -> sendWhenReady(cb, q, until), 500);
-			return;
-		}
-		inject();
-		web.evaluateJavascript("window.__jq ? __jq.send(" + JSONObject.quote(q) + ", " + wanted() +
-				") : null", r -> {
-			if (pending != cb) return;
-			JSONObject o = parse(r);
-			if (o == null) {
-				// Скрипт ещё не встал (страница перезагружалась) — повторить
-				if (System.currentTimeMillis() > until) fail(cb, "страница Qwen не отвечает");
-				else main.postDelayed(() -> sendWhenReady(cb, q, until), 500);
-				return;
-			}
-			if (!o.optBoolean("ok")) {
-				Log.i("[QWEN] send failed: ", o);
-				if (o.optBoolean("login")) login(cb);
-				else if (System.currentTimeMillis() > until) fail(cb, "нет поля для вопроса");
-				else main.postDelayed(() -> sendWhenReady(cb, q, until), 1000);
-				return;
-			}
-			started = true;
-			deadline = System.currentTimeMillis() + REPLY_WAIT_MS;
-			main.postDelayed(() -> poll(cb), POLL_MS);
-		});
+	@Override
+	String email(PreferenceStore ps) {
+		return ps.getStringPref(ChatPlan.QWEN_EMAIL);
 	}
 
-	private void poll(Callback cb) {
-		if (pending != cb) return;
-		web.evaluateJavascript("window.__jq ? __jq.poll() : null", r -> {
-			if (pending != cb) return;
-			JSONObject o = parse(r);
-			String state = (o == null) ? "" : o.optString("state");
-			if ("login".equals(state)) {
-				login(cb);
-				return;
-			}
-			String text = (o == null) ? "" : o.optString("text");
-			if (!text.isEmpty()) lastText = text;
-			if ("done".equals(state)) {
-				pending = null;
-				Log.i("[QWEN] reply via ", o.optString("how"), ", ", text.length(), " chars: «",
-						shorten(text, 300), "»");
-				cb.onReply(text);
-				return;
-			}
-			if (System.currentTimeMillis() > deadline) {
-				pending = null;
-				String t = lastText;
-				Log.i("[QWEN] reply timeout, have ", (t == null) ? 0 : t.length(), " chars, last poll ", o);
-				if (t != null) cb.onReply(t);
-				else cb.onError("Qwen не ответил");
-				return;
-			}
-			main.postDelayed(() -> poll(cb), POLL_MS);
-		});
+	@Override
+	String loginScript(String email, String password) {
+		return fillForm(email, password, "/^(Войти с паролем|Sign in with password|Log in with password)$/i",
+				"/^(Войти|Sign in|Log in)$/i");
 	}
 
-	private void login(Callback cb) {
-		pending = null;
-		started = false;
-		Log.i("[QWEN] login required");
-		cb.onLogin();
-	}
-
-	private void fail(Callback cb, String why) {
-		pending = null;
-		Log.i("[QWEN] error: ", why);
-		cb.onError(why);
-	}
-
-	/**
-	 * Что пользователь выбрал на странице Qwen: модель, режим мышления, поиск в
-	 * сети (пожелание 22.10.2026: «каждый раз сбрасывается на модель по
-	 * умолчанию», «мышление быстрое, поиск в интернете — не сохраняет»). Новый
-	 * разговор сайт начинает по умолчанию — перед вопросом скрипт ставит это.
-	 *
-	 * @return объект для __jq.send: {model, thinking, search}
-	 */
-	private String wanted() {
-		android.content.SharedPreferences sp = web.getContext().getApplicationContext()
-				.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+	/** {model, thinking, search} для qwen_chat.js: пустое — как выбрано на сайте. */
+	@Override
+	JSONObject wanted() {
+		PreferenceStore ps = prefs();
 		JSONObject o = new JSONObject();
 		try {
-			o.put("model", sp.getString(KEY_MODEL, null));
-			o.put("thinking", sp.getString(KEY_THINKING, null));
-			if (sp.contains(KEY_SEARCH)) o.put("search", sp.getBoolean(KEY_SEARCH, false));
+			String m = ps.getStringPref(ChatPlan.QWEN_MODEL).trim();
+			String t = ps.getStringPref(ChatPlan.QWEN_MODE).trim();
+			String s = ps.getStringPref(ChatPlan.QWEN_SEARCH).trim();
+			if (!m.isEmpty()) o.put("model", m);
+			if (!t.isEmpty()) o.put("thinking", t);
+			if (!s.isEmpty()) o.put("search", "on".equals(s));
 		} catch (Exception ignore) {
 		}
-		return o.toString();
+		return o;
 	}
 
-	/** Запомнить выбранное сейчас на странице (после того как страницу спрятали). */
-	void rememberModel() {
-		web.evaluateJavascript("window.__jq ? __jq.settings() : null", r -> {
-			JSONObject o = parse(r);
-			if (o == null) return;
-			android.content.SharedPreferences.Editor e = web.getContext().getApplicationContext()
-					.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
-			String m = o.optString("model").trim();
-			if (!m.isEmpty()) e.putString(KEY_MODEL, m);
-			String t = o.isNull("thinking") ? "" : o.optString("thinking").trim();
-			if (!t.isEmpty()) e.putString(KEY_THINKING, t);
-			if (!o.isNull("search")) e.putBoolean(KEY_SEARCH, o.optBoolean("search"));
-			e.apply();
-			Log.i("[QWEN] remembered: model ", m, ", thinking ", t.isEmpty() ? "(unchanged)" : t,
-					", web search ", o.isNull("search") ? "(unchanged)" : o.optBoolean("search"));
-		});
+	/** Выбранное на странице Qwen — в настройки (модель всегда; режим и поиск — если их меняли). */
+	@Override
+	void remember(@NonNull JSONObject o) {
+		PreferenceStore ps = prefs();
+		String m = o.optString("model").trim();
+		if (!m.isEmpty()) ps.applyStringPref(ChatPlan.QWEN_MODEL, m);
+		String t = o.isNull("thinking") ? "" : o.optString("thinking").trim();
+		if (!t.isEmpty()) ps.applyStringPref(ChatPlan.QWEN_MODE, t);
+		if (!o.isNull("search")) ps.applyStringPref(ChatPlan.QWEN_SEARCH, o.optBoolean("search") ? "on" : "off");
+		Log.i("[QWEN] remembered: model ", m, ", thinking ", t.isEmpty() ? "(unchanged)" : t,
+				", web search ", o.isNull("search") ? "(unchanged)" : o.optBoolean("search"));
 	}
 
-	private static final String PREFS = "jarvis_qwen";
-	private static final String KEY_MODEL = "model";
-	private static final String KEY_THINKING = "thinking";
-	private static final String KEY_SEARCH = "search";
-
-	void cancel() {
-		pending = null;
-		main.removeCallbacksAndMessages(null);
+	/** Выбор, запомненный до 30.10.2026 (свой файл настроек), — в настройки JARVIS Auto, один раз. */
+	private static void migrate(Context ctx) {
+		android.content.SharedPreferences sp = ctx.getApplicationContext()
+				.getSharedPreferences("jarvis_qwen", Context.MODE_PRIVATE);
+		if (sp.getAll().isEmpty()) return;
+		PreferenceStore ps = prefs();
+		String m = sp.getString("model", "");
+		String t = sp.getString("thinking", "");
+		if ((m != null) && !m.isEmpty() && ps.getStringPref(ChatPlan.QWEN_MODEL).isEmpty())
+			ps.applyStringPref(ChatPlan.QWEN_MODEL, m);
+		if ((t != null) && !t.isEmpty() && ps.getStringPref(ChatPlan.QWEN_MODE).isEmpty())
+			ps.applyStringPref(ChatPlan.QWEN_MODE, t);
+		if (sp.contains("search") && ps.getStringPref(ChatPlan.QWEN_SEARCH).isEmpty())
+			ps.applyStringPref(ChatPlan.QWEN_SEARCH, sp.getBoolean("search", false) ? "on" : "off");
+		sp.edit().clear().apply();
+		Log.i("[QWEN] settings moved to JARVIS Auto settings: model ", m, ", thinking ", t);
 	}
 
-	void destroy() {
-		cancel();
-		CookieManager.getInstance().flush();
-		web.destroy();
-	}
-
-	private void inject() {
-		if (script != null) web.evaluateJavascript(script, null);
-	}
-
-	@Nullable
-	private static JSONObject parse(@Nullable String r) {
-		if ((r == null) || "null".equals(r)) return null;
-		try {
-			Object v = new JSONTokener(r).nextValue();
-			return (v instanceof String) ? new JSONObject((String) v) : null;
-		} catch (Exception ex) {
-			Log.i("[QWEN] bad script result: ", shorten(r, 200));
-			return null;
-		}
-	}
-
-	@Nullable
-	private static String readScript(Context ctx) {
-		try (InputStream in = dynCtx(ctx).getAssets().open("qwen_chat.js")) {
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
-			byte[] buf = new byte[8192];
-			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-			return out.toString(UTF_8.name());
-		} catch (Exception ex) {
-			Log.e(ex, "[QWEN] failed to load qwen_chat.js");
-			return null;
-		}
-	}
-
-	private static String shorten(String s, int max) {
-		return (s.length() <= max) ? s : s.substring(0, max) + "…";
+	/** Ответ ИИ — в текст для синтезатора: без разметки, ссылок и кода, не длиннее MAX_SPEECH. */
+	@VisibleForTesting
+	static String forSpeech(@Nullable String text) {
+		return speech(text);
 	}
 
 	private static final Pattern CODE_BLOCK = Pattern.compile("```[\\s\\S]*?(```|$)");
@@ -315,9 +127,7 @@ final class QwenChat {
 	private static final Pattern BULLET = Pattern.compile("(?m)^\\s*([-•]|\\d+[.)])\\s+");
 	private static final Pattern SPACES = Pattern.compile("\\s+");
 
-	/** Ответ Qwen — в текст для синтезатора: без разметки, ссылок и кода, не длиннее MAX_SPEECH. */
-	@VisibleForTesting
-	static String forSpeech(@Nullable String text) {
+	private static String speech(@Nullable String text) {
 		if (text == null) return "";
 		String t = CODE_BLOCK.matcher(text).replaceAll(" ");
 		t = LINK.matcher(t).replaceAll("$1");
