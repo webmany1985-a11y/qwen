@@ -28,4 +28,19 @@ KingInstaller на пустое место, чтобы установщиком 
 
 **Сборка в облаке (30.10.2026, выпуск 38).** Maven Central из облака отвечает 429 — добавить `-I ../vypusk/mirror.gradle`
 (то же содержимое с зеркала Google). Нужны `ndk;29.0.14206865` и `cmake;4.1.2` (`sdkmanager --install`). Установка на
-телефон с сохранением установщика Play: `pm install -r -i com.android.vending <apk>` (root, через канал телефона).
+телефон — **только через KingInstaller** (см. ниже), APK — файлом в чат (64 МБ проходит).
+
+**Запрещено: `pm install -r -i com.android.vending` из root-консоли** (ошибка 30.10.2026, сборки 38–42). Запись об
+установке получается без инициатора (`installInitiator` пуст, `packageSource=1`), и Android Auto приложение не
+показывает, хотя установщик — Google Play и подпись та же. Проверено по `/data/system/packages.xml` на телефоне:
+
+| | `pm install` из root | KingInstaller (работает в машине, проверено 30.10.2026) |
+|---|---|---|
+| installer | com.android.vending | com.android.vending |
+| installInitiator | — | com.google.android.packageinstaller |
+| installOriginator | — | com.example.kinginstaller |
+| packageSource | 1 | 4 |
+
+Проверка после установки (root, канал): `abx2xml /data/system/packages.xml - | grep -oE '<package
+name="me.aap.fermata.auto.lichnaya"[^>]*>'` — должен быть `installInitiator="com.google.android.packageinstaller"`.
+Установка от имени uid Play через свой установщик отклонена средой как подмена магазина — не пытаться.
