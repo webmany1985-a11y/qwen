@@ -66,6 +66,18 @@ public class JarvisHudView extends View {
 	 */
 	@Nullable
 	private final Bitmap sfera;
+	/**
+	 * Значок Opel в огне — покой круга (пожелание пользователя 30.10.2026, вырезан из присланного им фото):
+	 * res/drawable-nodpi/jarvis_opel.webp. Нет файла — в покое прежний круг.
+	 */
+	@Nullable
+	private final Bitmap opel;
+	@Nullable
+	private final EmblemMorph.Sparks sparks;
+	private final float[] opelMesh = new float[(MESH + 1) * (MESH + 1) * 2];
+	private final float[] sparkPos = new float[2];
+	/** Превращение: 0 — значок, 1 — сфера; меньше 0 — ещё не задано (первый кадр). */
+	private float morph = -1f;
 	private final float[] pt = new float[3];
 	private final float[] pt2 = new float[3];
 	private final String title;
@@ -86,6 +98,8 @@ public class JarvisHudView extends View {
 		thinking = ctx.getString(R.string.jarvis_hud_thinking);
 		setContentDescription(ctx.getString(R.string.jarvis_hud_description));
 		sfera = loadSfera(ctx);
+		opel = loadBitmap(ctx, R.drawable.jarvis_opel);
+		sparks = (opel == null) ? null : sparksOf(opel);
 		PorterDuffXfermode add = new PorterDuffXfermode(PorterDuff.Mode.ADD);
 		plus.setXfermode(add);
 		stroke.setXfermode(add);
@@ -128,6 +142,7 @@ public class JarvisHudView extends View {
 	public void restart() {
 		start = -1L;
 		prev = -1L;
+		morph = -1f;
 		invalidate();
 	}
 
@@ -150,20 +165,32 @@ public class JarvisHudView extends View {
 		animator.advance(phase, real, t, dt);
 		prev = now;
 		since = t;
+		boolean idle = phase == HudMath.Phase.IDLE;
+		// При показе вкладки — сразу нужный вид, без превращения
+		morph = (morph < 0f) ? (idle ? 0f : 1f) : EmblemMorph.step(morph, idle, dt);
 
-		drawHud(c);
+		if (opel == null) {
+			drawHud(c, 1f);
+		} else {
+			float vis = EmblemMorph.hudVisibility(morph);
+			if (vis > 0f) drawHud(c, vis);
+			else c.drawColor(BACKDROP);
+			drawEmblem(c, EmblemMorph.emblemAlpha(morph));
+			drawSparks(c, morph);
+		}
 
 		if (isShown()) postInvalidateOnAnimation();
 	}
 
-	private void drawHud(Canvas c) {
+	/** Круг со сферой и кольцами; vis — видимость 0..1 (проявление из значка). */
+	private void drawHud(Canvas c, float vis) {
 		float w = getWidth();
 		float h = getHeight();
 		float cx = w / 2f;
 		float cy = h / 2f;
 		float s = Math.min(w, h);
 		float t = since;
-		float open = HudMath.open(t);
+		float open = HudMath.open(t) * vis;
 		float level = animator.getLevel();
 
 		c.drawColor(BACKDROP);
@@ -453,6 +480,81 @@ public class JarvisHudView extends View {
 		dots.setStrokeWidth(1.8f * dp * (1f + level * 0.6f));
 		dots.setColor(withAlpha(INK, 0.9f * open));
 		c.drawPoints(pts, 0, n, dots);
+	}
+
+	/**
+	 * Значок в огне: пульсирует и дышит яркостью; языки пламени снаружи огненного кольца колышутся по сетке
+	 * ({@link EmblemMorph#flame}), сам значок неподвижен.
+	 */
+	private void drawEmblem(Canvas c, float alpha) {
+		Bitmap b = opel;
+		if ((b == null) || (alpha <= 0.01f)) return;
+		float t = since;
+		float cx = getWidth() / 2f, cy = getHeight() / 2f;
+		float ringPx = Math.min(getWidth(), getHeight()) * EmblemMorph.RING_OF_VIEW * EmblemMorph.pulse(t);
+		float bw = b.getWidth(), bh = b.getHeight();
+		float sc = ringPx / (EmblemMorph.RING_OF_SIDE * bw);
+		float ringImg = EmblemMorph.RING_OF_SIDE * bw;
+		int k = 0;
+		for (int gy = 0; gy <= MESH; gy++) {
+			float dy = gy * bh / MESH - bh / 2f;
+			for (int gx = 0; gx <= MESH; gx++) {
+				float dx = gx * bw / MESH - bw / 2f;
+				float rn = (float) Math.sqrt(dx * dx + dy * dy) / ringImg;
+				float f = 1f + EmblemMorph.flame((float) Math.atan2(dy, dx), rn, t);
+				opelMesh[k++] = cx + dx * f * sc;
+				opelMesh[k++] = cy + dy * f * sc;
+			}
+		}
+		image.setAlpha(Math.round(255f * clamp(alpha * EmblemMorph.glow(t), 0f, 1f)));
+		c.drawBitmapMesh(b, MESH, MESH, opelMesh, 0, null, 0, image);
+	}
+
+	/** Искры значка посреди превращения: разлетаются из значка и садятся на сферу. */
+	private void drawSparks(Canvas c, float m) {
+		EmblemMorph.Sparks sp = sparks;
+		float a = EmblemMorph.sparksAlpha(m);
+		if ((sp == null) || (a <= 0.01f)) return;
+		float s = Math.min(getWidth(), getHeight());
+		float cx = getWidth() / 2f, cy = getHeight() / 2f;
+		float ringPx = s * EmblemMorph.RING_OF_VIEW;
+		float sphereR = HudMath.sphereRadius(s, 0f, 1f) * ((sfera != null) ? HudMath.IMAGE_SPHERE_SCALE : 1f) * 0.8f;
+		dots.setStrokeCap(Paint.Cap.ROUND);
+		for (int j = 0; j < sp.count; j++) {
+			EmblemMorph.position(sp, j, m, ringPx, sphereR, sparkPos);
+			float x = cx + sparkPos[0], y = cy + sparkPos[1];
+			// Ореол и ядро искры; цвет — свой, из значка, к концу золотится под сферу
+			dots.setStrokeWidth(4f * dp);
+			dots.setColor(withAlpha(ARC, a * 0.18f));
+			c.drawPoint(x, y, dots);
+			dots.setStrokeWidth(1.8f * dp);
+			dots.setColor(withAlpha(blend(sp.color[j], ARC, m), a));
+			c.drawPoint(x, y, dots);
+		}
+	}
+
+	private static EmblemMorph.Sparks sparksOf(Bitmap b) {
+		int w = b.getWidth(), h = b.getHeight();
+		int[] px = new int[w * h];
+		b.getPixels(px, 0, w, 0, 0, w, h);
+		return EmblemMorph.sparks(px, w, h, EmblemMorph.SPARKS);
+	}
+
+	private static int blend(int a, int b, float k) {
+		float q = clamp(k, 0f, 1f);
+		int r = Math.round(Color.red(a) * (1 - q) + Color.red(b) * q);
+		int g = Math.round(Color.green(a) * (1 - q) + Color.green(b) * q);
+		int bl = Math.round(Color.blue(a) * (1 - q) + Color.blue(b) * q);
+		return Color.rgb(r, g, bl);
+	}
+
+	@Nullable
+	private static Bitmap loadBitmap(Context ctx, int id) {
+		try {
+			return BitmapFactory.decodeResource(ctx.getResources(), id);
+		} catch (Throwable ex) {
+			return null;
+		}
 	}
 
 	@Nullable
