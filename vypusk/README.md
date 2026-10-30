@@ -25,3 +25,7 @@ README Fermata): голое `me.aap.fermata.auto` Android Auto отсеивае�
 схемами v2+v3: `apksigner sign --min-sdk-version 24`. Ставить через
 KingInstaller на пустое место, чтобы установщиком был Google Play, а
 инициатором — стандартный установщик пакетов.
+
+**Сборка в облаке (30.10.2026, выпуск 38).** Maven Central из облака отвечает 429 — добавить `-I ../vypusk/mirror.gradle`
+(то же содержимое с зеркала Google). Нужны `ndk;29.0.14206865` и `cmake;4.1.2` (`sdkmanager --install`). Установка на
+телефон с сохранением установщика Play: `pm install -r -i com.android.vending <apk>` (root, через канал телефона).

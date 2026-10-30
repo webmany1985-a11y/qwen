@@ -1,0 +1,9 @@
+// Maven Central из облака отвечает 429 — то же содержимое с зеркала Google
+def fix = { RepositoryHandler repos ->
+    repos.withType(MavenArtifactRepository).configureEach { r ->
+        if (r.url.toString().contains("repo.maven.apache.org") || r.url.toString().contains("repo1.maven.org"))
+            r.url = "https://maven-central.storage-download.googleapis.com/maven2/"
+    }
+}
+settingsEvaluated { s -> fix(s.pluginManagement.repositories); fix(s.dependencyResolutionManagement.repositories) }
+allprojects { p -> fix(p.buildscript.repositories); fix(p.repositories) }
