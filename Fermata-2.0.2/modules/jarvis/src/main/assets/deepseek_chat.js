@@ -23,9 +23,15 @@
 		return Array.from(document.querySelectorAll('button, [role="button"], div[tabindex]')).filter(visible);
 	}
 
+	/**
+	 * Элемент с подписью re: любой видимый (у DeepSeek переключатели — div без role, журнал 30.10.2026 13:31:
+	 * «DeepThink: no button»), самый внутренний с такой подписью; нажимать его — щелчок всплывает к обработчику.
+	 */
 	function byText(re) {
-		return buttons().filter(b => re.test((b.innerText || '').trim()))
-			.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length)[0] || null;
+		return Array.from(document.querySelectorAll('button, [role="button"], div, span'))
+			.filter(b => visible(b) && re.test((b.innerText || '').trim()) && (b.innerText || '').trim().length < 40)
+			.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length
+				|| b.querySelectorAll('*').length - a.querySelectorAll('*').length)[0] || null;
 	}
 
 	const THINK = /^(DeepThink|Глубок|深度思考|R1|Думать|Рассужд)/i;
@@ -34,6 +40,12 @@
 	/** Включён ли переключатель: aria-pressed / класс «selected/active/checked» / синий цвет текста. */
 	function isOn(el) {
 		if (!el) return null;
+		// Признак включения бывает у обёртки: смотрим сам элемент и два уровня вверх
+		for (let e = el, i = 0; e && i < 3; e = e.parentElement, i++) if (isOnOne(e)) return true;
+		return false;
+	}
+
+	function isOnOne(el) {
 		if (el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-checked') === 'true') return true;
 		const cls = (el.className && el.className.baseVal !== undefined) ? el.className.baseVal : (el.className || '');
 		if (/selected|active|checked|--on\b|_on\b/i.test(cls)) return true;
@@ -100,11 +112,12 @@
 	let thinkWanted = false;
 
 	document.addEventListener('click', e => {
-		const b = e.target.closest && e.target.closest('button, [role="button"], div[tabindex]');
-		if (!b || !e.isTrusted) return;
-		const t = (b.innerText || '').trim();
-		if (THINK.test(t)) setTimeout(() => { chosen.thinking = isOn(b); }, 300);
-		if (SEARCH.test(t)) setTimeout(() => { chosen.search = isOn(b); }, 300);
+		if (!e.isTrusted) return;
+		setTimeout(() => {
+			const th = byText(THINK), se = byText(SEARCH);
+			if (th && th.contains(e.target) || (th && e.target.contains && e.target.contains(th))) chosen.thinking = isOn(th);
+			if (se && se.contains(e.target) || (se && e.target.contains && e.target.contains(se))) chosen.search = isOn(se);
+		}, 300);
 	}, true);
 
 	function fallback() {
@@ -118,7 +131,7 @@
 	function setToggle(re, want, name) {
 		if (want === null || want === undefined) return;
 		const b = byText(re);
-		if (!b) { log(name + ': no button'); return; }
+		if (!b) { log(name + ': no button; ' + window.__jds.dump()); return; }
 		const on = isOn(b);
 		if (on !== want) {
 			b.click();
@@ -140,7 +153,10 @@
 			return JSON.stringify({
 				url: location.href, title: document.title, input: !!input(), send: !!sendButton(),
 				think: !!byText(THINK), search: !!byText(SEARCH), replies: replies().length,
-				buttons: buttons().map(b => (b.innerText || '').trim()).filter(x => x).slice(0, 15)
+				buttons: buttons().map(b => (b.innerText || '').trim()).filter(x => x).slice(0, 15),
+				labels: Array.from(document.querySelectorAll('div, span')).filter(e => visible(e) && !e.children.length)
+					.map(e => (e.innerText || '').trim()).filter(x => x && x.length < 25).slice(-25),
+				thinkOn: isOn(byText(THINK)), searchOn: isOn(byText(SEARCH))
 			});
 		},
 

@@ -284,7 +284,10 @@ abstract class WebChat {
 				manualLogin(cb, err);
 				return;
 			}
-			if (System.currentTimeMillis() > until) manualLogin(cb, "вход не завершился за 25 с");
+			if (System.currentTimeMillis() > until) {
+				web.evaluateJavascript(LOGIN_STATE, st -> manualLogin(cb, "вход не завершился за 25 с; " + st));
+				return;
+			}
 			else main.postDelayed(() -> checkLogin(cb, text, until), 1000);
 		});
 	}
@@ -310,6 +313,14 @@ abstract class WebChat {
 			".filter(vis).map(function(e){return (e.innerText||'').trim();}).filter(function(x){return x&&x.length<200;}).join(' ');" +
 			"if(robot)err='сайт просит подтвердить, что вы не робот';" +
 			"return JSON.stringify({input:!!ta,form:!!pw,err:err});})()";
+
+	/** Что на странице входа, когда вход не завершился: без значений полей — только что нашлось и нажалось. */
+	private static final String LOGIN_STATE = "(function(){" +
+			"function vis(e){var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}" +
+			"return JSON.stringify({url:location.pathname,login:window.__login||null," +
+			"inputs:[].slice.call(document.querySelectorAll('input')).filter(vis).map(function(i){return i.type+(i.value?':filled':':empty');})," +
+			"texts:[].slice.call(document.querySelectorAll('div,span,p,button')).filter(function(e){return vis(e)&&!e.children.length;})" +
+			".map(function(e){return (e.innerText||'').trim();}).filter(function(x){return x&&x.length<80;}).slice(0,25)});})()";
 
 	private void fail(Callback cb, String why) {
 		pending = null;
@@ -396,7 +407,13 @@ abstract class WebChat {
 				"if((!pw||!em)&&tries++<20){setTimeout(step,250);return;}" +
 				"if(!pw||!em)return;setv(em," + JSONObject.quote(email) + ");setv(pw," + JSONObject.quote(password) + ");" +
 				"[].slice.call(document.querySelectorAll('input[type=checkbox]')).forEach(function(c){if(!c.checked)c.click();});" +
-				"setTimeout(function(){var go=byText(" + buttons + ");if(go)go.click();},400);})();" +
+				// Согласие с условиями — бывает не полем, а div/span с ролью или рядом с подписью «agree/соглас»
+				"[].slice.call(document.querySelectorAll('[role=checkbox],[class*=checkbox],[class*=Checkbox]')).filter(vis)" +
+				".forEach(function(c){if(c.getAttribute('aria-checked')!=='true'&&!/checked/.test(c.className||''))c.click();});" +
+				"setTimeout(function(){var go=byText(" + buttons + ");" +
+				"window.__login={email:!!em,password:!!pw,button:go?(go.innerText||'').trim():'',disabled:go?" +
+				"(go.disabled||go.getAttribute('aria-disabled')==='true'||/disabled/.test(go.className||'')):null};" +
+				"if(go)go.click();},400);})();" +
 				"return (document.querySelector('input[type=password]')||document.querySelector('input'))?'sent':'no form';})()";
 	}
 }
