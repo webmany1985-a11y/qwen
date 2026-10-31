@@ -34,10 +34,17 @@ import androidx.annotation.Nullable;
  * Кадры идут, только пока вид показан на экране.
  */
 public class JarvisHudView extends View {
-	// Золото, как сфера JARVIS из фильма (в самом JARVIS круг голубой)
-	private static final int ARC = 0xFFFFB23A;
-	private static final int ARC_SOFT = 0xFFB5651D;
-	private static final int INK = 0xFFFFF1D0;
+	// Золото, как сфера JARVIS из фильма; пока слушает — бирюза (HudColor, пожелание 31.10.2026)
+	private int arc = HudColor.GOLD_ARC;
+	private int arcSoft = HudColor.GOLD_SOFT;
+	private int ink = HudColor.GOLD_INK;
+	private int hot = HudColor.GOLD_HOT;
+	private int flareHot = HudColor.GOLD_FLARE;
+	/** 0 — золото, 1 — бирюза. */
+	private float tealMix;
+	private float sphereMatrixMix = -1f;
+	@Nullable
+	private android.graphics.ColorFilter sphereTint;
 	/** Полупрозрачный: в теме JARVIS сквозь круг видно фото. */
 	private static final int BACKDROP = 0x8C000000;
 	private static final float RAD_TO_DEG = (float) (180.0 / Math.PI);
@@ -193,6 +200,7 @@ public class JarvisHudView extends View {
 		prev = now;
 		since = t;
 		boolean idle = phase == HudMath.Phase.IDLE;
+		applyColor(HudColor.step(tealMix, HudColor.listening(phase), dt));
 		// При показе вкладки — сразу нужный вид, без превращения
 		morph = (morph < 0f) ? (idle ? 0f : 1f) : EmblemMorph.step(morph, idle, dt);
 
@@ -207,6 +215,20 @@ public class JarvisHudView extends View {
 		}
 
 		if (isShown()) postInvalidateOnAnimation();
+	}
+
+	/** Цвета кадра по смешению золото/бирюза; фильтр сферы-картинки — только когда смешение изменилось. */
+	private void applyColor(float mix) {
+		tealMix = mix;
+		arc = HudColor.lerp(HudColor.GOLD_ARC, HudColor.TEAL_ARC, mix);
+		arcSoft = HudColor.lerp(HudColor.GOLD_SOFT, HudColor.TEAL_SOFT, mix);
+		ink = HudColor.lerp(HudColor.GOLD_INK, HudColor.TEAL_INK, mix);
+		hot = HudColor.lerp(HudColor.GOLD_HOT, HudColor.TEAL_HOT, mix);
+		flareHot = HudColor.lerp(HudColor.GOLD_FLARE, HudColor.TEAL_FLARE, mix);
+		if (mix == sphereMatrixMix) return;
+		sphereMatrixMix = mix;
+		sphereTint = (mix <= 0f) ? null :
+				new android.graphics.ColorMatrixColorFilter(HudColor.sphereMatrix(mix));
 	}
 
 	/** Круг со сферой и кольцами; vis — видимость 0..1 (проявление из значка). */
@@ -225,8 +247,8 @@ public class JarvisHudView extends View {
 		// Свечение ядра. Под сферой-картинкой — меньше: иначе центр засвечен и мутный
 		float coreR = HudMath.coreRadius(s, level, open) * ((sfera != null) ? 1.6f : 2.6f);
 		plus.setShader(new RadialGradient(cx, cy, coreR,
-				new int[]{argb(clamp(0.55f + level * 0.45f, 0f, 1f), 255, 228, 170),
-						withAlpha(ARC, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(ARC, 0f)},
+				new int[]{withAlpha(hot, clamp(0.55f + level * 0.45f, 0f, 1f)),
+						withAlpha(arc, clamp(0.35f + level * 0.4f, 0f, 1f)), withAlpha(arc, 0f)},
 				new float[]{0f, 0.18f, 1f}, Shader.TileMode.CLAMP));
 		c.drawCircle(cx, cy, coreR, plus);
 		plus.setShader(null);
@@ -236,8 +258,8 @@ public class JarvisHudView extends View {
 		if (flare > 0.01f) {
 			float half = s * 0.006f * (1f + flare * 2f);
 			plus.setShader(new LinearGradient(cx - s * 0.5f, 0f, cx + s * 0.5f, 0f,
-					new int[]{withAlpha(ARC, 0f), argb(clamp(flare, 0f, 1f), 255, 236, 190),
-							withAlpha(ARC, 0f)},
+					new int[]{withAlpha(arc, 0f), withAlpha(flareHot, clamp(flare, 0f, 1f)),
+							withAlpha(arc, 0f)},
 					new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
 			c.drawRect(cx - s * 0.5f, cy - half, cx + s * 0.5f, cy + half, plus);
 			plus.setShader(null);
@@ -255,9 +277,9 @@ public class JarvisHudView extends View {
 			HudMath.Node m = NODES[(i + 3) % NODES.length];
 			double ma = m.a + drift;
 			float md = HudMath.nodeDistance(s, m, open);
-			stroke.setColor(withAlpha(ARC_SOFT, 0.18f * open));
+			stroke.setColor(withAlpha(arcSoft, 0.18f * open));
 			c.drawLine(px, py, cx + (float) Math.cos(ma) * md, cy + (float) Math.sin(ma) * md, stroke);
-			plus.setColor(withAlpha(ARC, 0.5f * open));
+			plus.setColor(withAlpha(arc, 0.5f * open));
 			c.drawCircle(px, py, Math.max(0f, s * n.s * 0.15f), plus);
 		}
 
@@ -274,7 +296,7 @@ public class JarvisHudView extends View {
 			if (appear <= 0f) continue;
 			float r = HudMath.ringRadius(s, ring, i, level, appear);
 			float base = animator.rotations[i] * TWO_PI;
-			int color = (i % 3 == 0) ? ARC_SOFT : ARC;
+			int color = (i % 3 == 0) ? arcSoft : arc;
 			// Кольца — рамка, главная — сфера: приглушены
 			float alpha = HudMath.ringAlpha(ring, appear, level) * ((sfera != null) ? 0.2f : 0.35f);
 			float width = ring.w * dp;
@@ -327,7 +349,7 @@ public class JarvisHudView extends View {
 			c.save();
 			c.rotate((t * 4f * RAD_TO_DEG) % 360f, cx, cy);
 			plus.setShader(new SweepGradient(cx, cy,
-					new int[]{withAlpha(ARC, 0.35f), withAlpha(ARC, 0f), withAlpha(ARC, 0f)},
+					new int[]{withAlpha(arc, 0.35f), withAlpha(arc, 0f), withAlpha(arc, 0f)},
 					new float[]{0f, 0.12f, 1f}));
 			c.drawCircle(cx, cy, s * 0.3f, plus);
 			plus.setShader(null);
@@ -337,8 +359,8 @@ public class JarvisHudView extends View {
 		// Надпись в центре. Размер привязан к кругу, а не к масштабу шрифта системы
 		text.setTypeface(titleFace);
 		text.setTextSize(s * 0.05f);
-		text.setColor(withAlpha(INK, open));
-		text.setShadowLayer(12f * dp, 0f, 0f, ARC);
+		text.setColor(withAlpha(ink, open));
+		text.setShadowLayer(12f * dp, 0f, 0f, arc);
 		drawCentered(c, title, cx, cy - s * 0.015f);
 		text.clearShadowLayer();
 
@@ -347,7 +369,7 @@ public class JarvisHudView extends View {
 		if (!word.isEmpty()) {
 			text.setTypeface(wordFace);
 			text.setTextSize(s * 0.032f);
-			text.setColor(withAlpha(ARC, open * 0.85f));
+			text.setColor(withAlpha(arc, open * 0.85f));
 			drawCentered(c, word, cx, cy + s * 0.05f);
 		}
 
@@ -357,7 +379,7 @@ public class JarvisHudView extends View {
 			float bw = s * 0.007f;
 			float gap = s * 0.006f;
 			float x0 = cx - (bars * (bw + gap)) / 2f;
-			fill.setColor(withAlpha(ARC, 0.9f));
+			fill.setColor(withAlpha(arc, 0.9f));
 			for (int k = 0; k < bars; k++) {
 				float bh = HudMath.equalizerHeight(s, level, t, k);
 				float x = x0 + k * (bw + gap);
@@ -411,10 +433,10 @@ public class JarvisHudView extends View {
 				float a = da * (0.25f + 0.25f * tw) * open * (0.75f + 0.25f * level);
 				// Ореол: крупная тусклая точка под яркой
 				dots.setStrokeWidth(size * 2.6f);
-				dots.setColor(withAlpha(ARC, a * 0.22f));
+				dots.setColor(withAlpha(arc, a * 0.22f));
 				c.drawPoints(bucketPts[bkt], 0, bucketSize[bkt], dots);
 				dots.setStrokeWidth(size);
-				dots.setColor(withAlpha((tw == 3 && depth == 2) ? INK : ARC, a));
+				dots.setColor(withAlpha((tw == 3 && depth == 2) ? ink : arc, a));
 				c.drawPoints(bucketPts[bkt], 0, bucketSize[bkt], dots);
 			}
 		}
@@ -425,13 +447,13 @@ public class JarvisHudView extends View {
 			HudMath.project(b.lat, b.lon + b.len, rot, pt2);
 			float a = HudMath.bitAlpha(b, t, pt[2], level) * open * 0.8f;
 			stroke.setStrokeWidth(b.w * 0.8f * dp * (1f + level * 0.6f));
-			stroke.setColor(withAlpha((b.phase > 3f) ? INK : ARC, a));
+			stroke.setColor(withAlpha((b.phase > 3f) ? ink : arc, a));
 			c.drawLine(cx + pt[0] * rs, cy + pt[1] * rs, cx + pt2[0] * rs, cy + pt2[1] * rs, stroke);
 		}
 
 		// Мягкое свечение контура
 		stroke.setStrokeWidth(10f * dp);
-		stroke.setColor(withAlpha(ARC, 0.07f * open * (0.7f + level)));
+		stroke.setColor(withAlpha(arc, 0.07f * open * (0.7f + level)));
 		c.drawCircle(cx, cy, rs, stroke);
 
 		// Вихрь в центре: дуга навстречу вращению сферы
@@ -439,10 +461,10 @@ public class JarvisHudView extends View {
 		float va = (-t * 1.3f * RAD_TO_DEG) % 360f;
 		box.set(cx - vr, cy - vr * 0.6f, cx + vr, cy + vr * 0.6f);
 		stroke.setStrokeWidth(8f * dp);
-		stroke.setColor(withAlpha(ARC, 0.14f * open));
+		stroke.setColor(withAlpha(arc, 0.14f * open));
 		c.drawArc(box, va, 240f, false, stroke);
 		stroke.setStrokeWidth(1.8f * dp);
-		stroke.setColor(withAlpha(INK, 0.6f * open));
+		stroke.setColor(withAlpha(ink, 0.6f * open));
 		c.drawArc(box, va, 240f, false, stroke);
 	}
 
@@ -482,7 +504,9 @@ public class JarvisHudView extends View {
 		// Один слой: второй, увеличенный слой-свечение двоил картинку — сфера
 		// выглядела размытой (замечание 16.10.2026: «должно быть чётче»)
 		image.setAlpha(Math.round(255f * clamp(open * (0.85f + 0.15f * level), 0f, 1f)));
+		image.setColorFilter(sphereTint);
 		c.drawBitmapMesh(b, MESH, MESH, mesh, 0, null, 0, image);
+		image.setColorFilter(null);
 
 		// Искры: каждая пятая точка поверхности, только на пике мерцания и спереди
 		float cr = (float) Math.cos(rot), sr = (float) Math.sin(rot);
@@ -502,10 +526,10 @@ public class JarvisHudView extends View {
 		if (n == 0) return;
 		dots.setStrokeCap(Paint.Cap.ROUND);
 		dots.setStrokeWidth(4.5f * dp * (1f + level));
-		dots.setColor(withAlpha(ARC, 0.25f * open));
+		dots.setColor(withAlpha(arc, 0.25f * open));
 		c.drawPoints(pts, 0, n, dots);
 		dots.setStrokeWidth(1.8f * dp * (1f + level * 0.6f));
-		dots.setColor(withAlpha(INK, 0.9f * open));
+		dots.setColor(withAlpha(ink, 0.9f * open));
 		c.drawPoints(pts, 0, n, dots);
 	}
 
@@ -598,10 +622,10 @@ public class JarvisHudView extends View {
 			float x = cx + sparkPos[0], y = cy + sparkPos[1];
 			// Ореол и ядро искры; цвет — свой, из значка, к концу золотится под сферу
 			dots.setStrokeWidth(4f * dp);
-			dots.setColor(withAlpha(ARC, a * 0.18f));
+			dots.setColor(withAlpha(arc, a * 0.18f));
 			c.drawPoint(x, y, dots);
 			dots.setStrokeWidth(1.8f * dp);
-			dots.setColor(withAlpha(blend(sp.color[j], ARC, m), a));
+			dots.setColor(withAlpha(blend(sp.color[j], arc, m), a));
 			c.drawPoint(x, y, dots);
 		}
 	}
@@ -657,7 +681,4 @@ public class JarvisHudView extends View {
 		return (color & 0x00FFFFFF) | (a << 24);
 	}
 
-	private static int argb(float alpha, int r, int g, int b) {
-		return Color.argb(Math.round(clamp(alpha, 0f, 1f) * 255f), r, g, b);
-	}
 }
