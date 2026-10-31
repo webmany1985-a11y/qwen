@@ -49,6 +49,13 @@ public final class JarvisVoice {
 	public static final PreferenceStore.Pref<DoubleSupplier> VOLUME =
 			PreferenceStore.Pref.f("JARVIS_VOLUME", 1f);
 	static final float MAX_VOLUME = 4f;
+	/**
+	 * Голос на полной громкости телефона (пожелание 31.10.2026): на время речи громкость поднимается до максимума и
+	 * затем возвращается ({@link FullVolume}). По умолчанию включено.
+	 */
+	public static final PreferenceStore.Pref<me.aap.utils.function.BooleanSupplier> FULL_VOLUME =
+			PreferenceStore.Pref.b("JARVIS_FULL_VOLUME", true);
+	private static final FullVolume fullVolume = new FullVolume();
 
 	/** Где лежали значения, прочитанные у JARVIS через root (сборки до 34). */
 	private static final String LEGACY_STORE = "jarvis_voice";
@@ -118,6 +125,56 @@ public final class JarvisVoice {
 			if (s != 0) b.putInt(android.speech.tts.TextToSpeech.Engine.KEY_PARAM_SESSION_ID, s);
 		}
 		return b;
+	}
+
+	/**
+	 * Произнести текст голосом JARVIS: с громкостью из настроек ({@link #speakParams}) и, если включено
+	 * ({@link #FULL_VOLUME}), на полной громкости телефона на время речи.
+	 */
+	public static <T> me.aap.utils.async.FutureSupplier<T> speak(@NonNull TextToSpeech tts, @NonNull CharSequence text) {
+		boolean raised = raise();
+		me.aap.utils.async.FutureSupplier<T> f = tts.speak(text, null, speakParams());
+		if (raised) f.onCompletion((r, e) -> lower());
+		return f;
+	}
+
+	@Nullable
+	private static android.media.AudioManager audio() {
+		return (android.media.AudioManager) FermataApplication.get().getSystemService(Context.AUDIO_SERVICE);
+	}
+
+	/** Поднять громкость речи до максимума; true — нужно потом вызвать {@link #lower}. */
+	private static boolean raise() {
+		if (!prefs().getBooleanPref(FULL_VOLUME)) return false;
+		try {
+			android.media.AudioManager am = audio();
+			if (am == null) return false;
+			int s = android.media.AudioManager.STREAM_MUSIC;
+			int v = fullVolume.begin(am.getStreamVolume(s), am.getStreamMaxVolume(s));
+			if (v >= 0) {
+				am.setStreamVolume(s, v, 0);
+				Log.i("JARVIS voice: full volume ", v);
+			}
+			return true;
+		} catch (Throwable ex) {
+			Log.e(ex, "JARVIS voice: full volume failed");
+			fullVolume.end(-1);
+			return false;
+		}
+	}
+
+	private static void lower() {
+		try {
+			android.media.AudioManager am = audio();
+			int s = android.media.AudioManager.STREAM_MUSIC;
+			int v = fullVolume.end((am == null) ? -1 : am.getStreamVolume(s));
+			if ((v >= 0) && (am != null)) {
+				am.setStreamVolume(s, v, 0);
+				Log.i("JARVIS voice: volume restored ", v);
+			}
+		} catch (Throwable ex) {
+			Log.e(ex, "JARVIS voice: volume not restored");
+		}
 	}
 
 	/** Подъём в мБ (1/100 дБ): ×2 — +6 дБ, ×4 — +12 дБ. */

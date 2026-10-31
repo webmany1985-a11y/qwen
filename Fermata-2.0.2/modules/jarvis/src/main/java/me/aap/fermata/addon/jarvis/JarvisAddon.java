@@ -94,6 +94,13 @@ public class JarvisAddon implements FermataFragmentAddon {
 			o.seekMax = 40;
 			o.visibility = visibility;
 		});
+		set.addBooleanPref(o -> {
+			o.store = store;
+			o.pref = me.aap.fermata.jarvis.JarvisVoice.FULL_VOLUME;
+			o.title = R.string.jarvis_voice_full;
+			o.subtitle = R.string.jarvis_voice_full_sub;
+			o.visibility = visibility;
+		});
 		set.addButton(o -> {
 			o.title = R.string.jarvis_voice_test;
 			o.onClick = () -> me.aap.utils.voice.TextToSpeech.create(ctx, new java.util.Locale("ru"))
@@ -103,8 +110,7 @@ public class JarvisAddon implements FermataFragmentAddon {
 							return;
 						}
 						me.aap.fermata.jarvis.JarvisVoice.apply(t);
-						t.speak("Слушаю. Так звучит голос JARVIS.", null,
-								me.aap.fermata.jarvis.JarvisVoice.speakParams()).onCompletion((r, e) -> t.close());
+						me.aap.fermata.jarvis.JarvisVoice.speak(t, "Слушаю. Так звучит голос JARVIS.").onCompletion((r, e) -> t.close());
 					});
 			o.visibility = visibility;
 		});

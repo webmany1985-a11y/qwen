@@ -176,7 +176,7 @@ public final class JarvisBridge {
 			JarvisVoice.apply(tts);
 			Cancellable interrupt = a.interruptPlayback();
 			speaking[0] = tts;
-			tts.speak(text, null, JarvisVoice.speakParams()).onCompletion((r, serr) -> {
+			JarvisVoice.speak(tts, text).onCompletion((r, serr) -> {
 				speaking[0] = null;
 				if (stopped[0]) Log.i("JARVIS: reply stopped");
 				else if (serr != null) Log.e(serr, "JARVIS: reply TTS speak failed");

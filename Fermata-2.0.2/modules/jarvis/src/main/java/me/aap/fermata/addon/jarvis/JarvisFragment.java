@@ -580,7 +580,7 @@ public class JarvisFragment extends MainActivityFragment
 			greeting = tts;
 			me.aap.fermata.jarvis.JarvisVoice.apply(tts);
 			Log.i("JARVIS tab: saying «", text, "», lang=", locale);
-			tts.speak(text, null, me.aap.fermata.jarvis.JarvisVoice.speakParams())
+			me.aap.fermata.jarvis.JarvisVoice.speak(tts, text)
 					.onCompletion((r, serr) -> main.post(() -> {
 				if (greeting != tts) return; // запись уже отменена
 				if (serr != null) Log.e(serr, "JARVIS tab: TTS «Слушаю» failed");
