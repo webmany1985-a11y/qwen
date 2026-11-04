@@ -28,6 +28,19 @@
   var text = function (el) { return (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); };
   var all = function (sel) { return [].slice.call(document.querySelectorAll(sel)); };
   var CLICKABLE = 'button,a,[role=button],[onclick]';
+  // Касание целиком: веб-Telegram на сенсорных устройствах слушает у кнопок mousedown, а не click
+  // (tweb src/helpers/dom/clickEvent.ts: CLICK_EVENT_NAME = IS_TOUCH_SUPPORTED ? 'mousedown' : 'click');
+  // журнал 04.11.2026 15:00: el.click() по «Открыть» приложение не открывал
+  var tap = function (el) {
+    var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    var o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
+    try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'touch', isPrimary: true }, o))); } catch (e) { }
+    el.dispatchEvent(new MouseEvent('mousedown', o));
+    o.buttons = 0;
+    try { el.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'touch', isPrimary: true }, o))); } catch (e) { }
+    el.dispatchEvent(new MouseEvent('mouseup', o));
+    el.dispatchEvent(new MouseEvent('click', o));
+  };
 
   if (window === window.top && isTg) topFrame();
   else if (window !== window.top && !isTg) appFrame();
@@ -82,7 +95,7 @@
         if (!menuClicked) {
           menuClicked = true;
           log('tg: open app button «' + text(menu).slice(0, 30) + '»');
-          menu.click();
+          tap(menu);
           setTimeout(function () {
             if (!opened && !revealed) {
               log('tg: app did not report in 25 s' + (tgPopup() ? ' (a popup is open — terms?)' : ''));
@@ -95,7 +108,7 @@
       var start = all('.chat-input-control-button').filter(function (b) {
         return visible(b) && /^(start|запустить|начать|старт)$/i.test(text(b));
       })[0];
-      if (start && !started) { started = true; log('tg: start bot'); start.click(); }
+      if (start && !started) { started = true; log('tg: start bot'); tap(start); }
     }, 700);
 
     // Окно веб-Telegram поверх — оболочку на время спрятать, затем вернуть

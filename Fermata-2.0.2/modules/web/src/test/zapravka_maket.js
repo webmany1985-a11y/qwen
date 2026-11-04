@@ -21,10 +21,10 @@ ${login ? '' : `<script>setTimeout(()=>{document.body.classList.remove('has-auth
 document.body.insertAdjacentHTML('beforeend',document.getElementById('chatTpl').innerHTML);boot();},1500);</script><template id="chatTpl"><div class="chat-input">
 <button class="chat-input-control-button" id="start" style="color:#fff">START</button>
 <div class="new-message-bot-commands" role="button" id="menu" style="color:#fff">Открыть</div></div></template>`}
-<script>window.startClicked=0;function boot(){if(window.start)start.onclick=()=>{startClicked++;};
-if(window.menu)menu.onclick=()=>{const host=document.createElement('div');host.style.cssText='position:fixed;left:210px;top:10px';document.body.append(host);
+<script>window.startClicked=0;function boot(){if(window.start)start.addEventListener('mousedown',()=>{startClicked++;});
+if(window.menu)menu.addEventListener('mousedown',()=>{const host=document.createElement('div');host.style.cssText='position:fixed;left:210px;top:10px';document.body.append(host);
 const root=host.attachShadow({mode:'closed'});const f=document.createElement('iframe');f.src='https://tgminiapp.a-100.by/#tgWebAppData=x';
-f.style.cssText='width:380px;height:380px;border:0;background:#fff';root.append(f);};}
+f.style.cssText='width:380px;height:380px;border:0;background:#fff';root.append(f);});}
 // мини-приложение просит местоположение — веб-Telegram спрашивает человека (один раз)
 window.addEventListener('message',e=>{if(e.data==='need-location'){const p=document.createElement('div');p.className='popup';
 p.innerHTML='<div>Разрешить доступ к местоположению?</div><button id="allow">Разрешить</button>';document.body.append(p);
