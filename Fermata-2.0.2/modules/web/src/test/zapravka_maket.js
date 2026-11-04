@@ -34,7 +34,10 @@ const APP = (delay, mapDelay) => `<!doctype html><body style="margin:0;font-fami
 <nav><span id="nav">Заправка</span></nav>
 <script>
 window.trail=[];const T=(x)=>trail.push(x);let center=1,qtyMode='l',qtyVal='',full=false;
-const show=(h)=>{page.innerHTML=h;bind();};const go=(n,h)=>setTimeout(()=>{T(n);show(h());},${delay});
+const show=(h)=>{page.innerHTML=h;bind();};
+// Переход экрана ждёт кадров отрисовки (как анимации и карта на настоящем сайте): в спрятанном окне их нет
+const frames=(k,cb)=>{let i=0;const f=()=>{if(++i>=k)cb();else requestAnimationFrame(f);};requestAnimationFrame(f);};
+const go=(n,h)=>setTimeout(()=>frames(10,()=>{T(n);show(h());}),${delay});
 const HOME=()=>'<div data-k="tile"><span>Заправить авто</span></div><div>Помыть авто</div>';
 const MAP=()=>'<button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const CARD=()=>'<div class="card"><div><div class="name">АЗС №14</div><div class="addr">ул. Тростенецкая, 16</div></div><div>❤</div>'+
@@ -55,7 +58,7 @@ function bind(){
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
 addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');go('card',CARD);}});
-nav.onclick=()=>{T('click:nav');setTimeout(()=>{T('map');show(MAP());},${mapDelay || delay});};show(HOME());T('home');
+nav.onclick=()=>{T('click:nav');setTimeout(()=>frames(10,()=>{T('map');show(MAP());}),${mapDelay || delay});};show(HOME());T('home');
 </script></body>`;
 
 // Контроль мелькания: в каждом кадре отрисовки — не виден ли чат веб-Telegram без заставки (кроме окна веб-Telegram)

@@ -73,7 +73,7 @@
       '.popup,.popup *{visibility:visible!important}';
     var addHide = function () {
       var root = document.head || document.documentElement;
-      if (root && !hideEl.isConnected && !revealed) root.appendChild(hideEl);
+      if (root && !hideEl.isConnected && !revealed && !opened) root.appendChild(hideEl);
       return hideEl.isConnected;
     };
     var early = new MutationObserver(function () {
@@ -112,14 +112,16 @@
     }, 700);
 
     // Окно веб-Telegram поверх — оболочку на время спрятать, затем вернуть
-    var pv = setInterval(function () {
-      if (revealed) { clearInterval(pv); return; }
-      if (!ov) return;
+    // Окно закрылось — заставка сразу, при изменении страницы (до следующего кадра); и каждый кадр — на всякий случай
+    var popCheck = function () {
+      if (revealed || !ov) return;
       var pop = !!tgPopup();
-      if (pop && ov.style.display !== 'none') { ov.style.display = 'none'; log('tg: telegram popup — splash hidden'); lastMsg = Date.now(); }
+      if (pop && ov.style.display !== 'none') { ov.style.display = 'none'; log('tg: telegram popup — splash hidden'); }
       else if (!pop && ov.style.display === 'none') { ov.style.display = ''; }
       if (pop) lastMsg = Date.now();
-    }, 300);
+    };
+    new MutationObserver(popCheck).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    (function pv() { if (revealed) return; popCheck(); requestAnimationFrame(pv); })();
 
     // Нет вестей от приложения 40 с — оболочку убрать: человек видит веб-Telegram как есть
     var lastMsg = Date.now();
@@ -136,7 +138,17 @@
       if (APP_ORIGINS.indexOf(e.origin) < 0) { log('tg: message from other site ignored: ' + e.origin); return; }
       appWin = e.source;
       lastMsg = Date.now();
-      if (!opened) { opened = true; log('tg: app opened'); showLoading(); watchdog(); }
+      if (!opened) {
+        opened = true;
+        // Окно приложения не прятать: спрятанное окно чужого сайта браузер не отрисовывает, и переходы приложения
+        // (анимации, карта) стоят (журнал 04.11.2026 15:13: застряло на «Заправка»; в 14:47 без скрытия путь прошёл).
+        // Экран закрывает непрозрачная заставка, список чатов не мелькнёт
+        try { early.disconnect(); } catch (x) { }
+        hideEl.remove();
+        log('tg: app opened');
+        showLoading();
+        watchdog();
+      }
       if (d.type === 'station') { st.station = d.station || ''; st.address = d.address || ''; st.near = !!d.near; }
       else if (d.type === 'pumps') {
         st.pumps = (d.pumps || []).filter(function (n) { return /^\d{1,2}$/.test(String(n)); });
@@ -264,6 +276,16 @@
     };
     var reveal = function (why) { log('app ' + host + ': reveal (' + why + ')'); post({ type: 'reveal', why: why }); };
     post({ type: 'hello' }); // вкладка узнаёт, что приложение открылось
+    // Для журнала: идут ли кадры отрисовки (в спрятанном окне браузер их останавливает)
+    var rafCount = 0;
+    (function rf() { rafCount++; requestAnimationFrame(rf); })();
+    var diag = function () {
+      var c0 = rafCount, t = Date.now();
+      setTimeout(function () {
+        log('app ' + host + ': diag — frames/s ' + Math.round((rafCount - c0) * 1000 / (Date.now() - t)) +
+          ', visibility ' + document.visibilityState + ', size ' + innerWidth + 'x' + innerHeight + ', labels: ' + labels());
+      }, 1000);
+    };
 
     var TARGET = /выбор номера колонки/i;
     var STEPS = [
@@ -296,11 +318,12 @@
     };
 
     var t1 = Date.now(), lastClick = 0, lastStep = null, level = 0, tries = {}, done = [];
+    setTimeout(diag, 3000);
     var iv = setInterval(function () {
       var now = Date.now();
       if (find(TARGET)) { clearInterval(iv); log('app ' + host + ': pump choice reached; steps: ' + done.join(' → ')); onPumpScreen(); return; }
       if (find(/^азс\s*№\s*\d+/i, 'div,span,h1,h2,h3,h4,p,b,strong') && !station) readStation();
-      if (now - t1 > 60000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 60 s; labels: ' + labels()); reveal('timeout'); return; }
+      if (now - t1 > 60000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 60 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
       if (now - lastClick < 1500) return;
       for (var i = 0; i < STEPS.length; i++) {
         var s = STEPS[i];
@@ -308,7 +331,7 @@
         var el = find(s.re);
         if (!el) continue;
         if (s.name === lastStep && now - lastClick < (s.wait || 4000)) return;
-        if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); reveal('stuck'); return; }
+        if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); diag(); setTimeout(function () { reveal('stuck'); }, 1200); return; }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
         if (s.name === 'Ближайшая АЗС') near = true;
