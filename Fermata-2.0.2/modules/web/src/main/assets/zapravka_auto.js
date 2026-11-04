@@ -284,6 +284,12 @@
     };
     var reveal = function (why) { log('app ' + host + ': reveal (' + why + ')'); post({ type: 'reveal', why: why }); };
     post({ type: 'hello' }); // вкладка узнаёт, что приложение открылось
+    // Журнал 18:00–18:02: окно приложения начиналось заново раз в ~10 с — пишем путь страницы (без ?, # и данных Telegram)
+    try {
+      var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || {};
+      log('app ' + host + ': frame start, path ' + location.pathname + ', navigation ' + (nav.type || '?'));
+      window.addEventListener('pagehide', function () { log('app ' + host + ': frame leaves, path ' + location.pathname); });
+    } catch (e) { }
     // Яндекс.Карты 2.1. Приложение А-100 (код tgminiapp.a-100.by, assets/index-*.js, 04.11.2026) грузит их библиотекой
     // react-yandex-maps без глобального имени: в адресе скрипта onload=__yandex-maps-api-onload__$$…, объект карт
     // приходит в эту функцию; части (Placemark и др.) докладываются позже (modules.require). Станции — Placemark с
@@ -475,7 +481,7 @@
     // После «Ближайшей АЗС» карта ставит станцию в центр, а карточка с «Заправиться» появляется только по нажатию
     // на значок станции (подсказка пользователя и скриншоты 04.11.2026; журнал 15:51 — «Ближайшая АЗС» ×3 без карточки).
     // Значок — отдельным элементом карты (ищем ближайший к центру) либо нарисован: тогда касание точки над центром
-    var markerTries = 0, lastMarker = 0, waitMoveLogged = false;
+    var markerTries = 0, lastMarker = 0, waitMoveLogged = false, nearSeen = 0;
     // Касание значка — запасной путь. Точка — по скриншоту пользователя (04.11.2026 15:52): значок станции после
     // «Ближайшей АЗС» — по центру окна по ширине, на ~41 % высоты (журнал 16:25: касания по «центру карты» уходили
     // на 25 px вправо и ниже, отдельных значков-элементов нет — карта Яндекса рисует их сама)
@@ -499,7 +505,8 @@
       if (now - t1 > 100000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 100 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
       if (now - lastClick < 700) return; // пауза между шагами (было 1,5 с — пожелание ускорить, 04.11.2026)
       // Станция в центре карты — нажать её значок (раз в 3,5 с, до 8 раз), пока не появится карточка с «Заправиться»
-      if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 1000 && now - lastMarker > 2500 && markerTries < 10) {
+      if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 1000 && now - lastMarker > 2500 && markerTries < 10 &&
+        (YM.maps.length || now - lastClick > 8000)) {
         if (mapCenter() && !mapMoved()) {
           // карта ещё не сдвинулась к ближайшей станции — ждём (не дольше срока шага «Ближайшая АЗС»)
           if (!waitMoveLogged) { waitMoveLogged = true; log('app ' + host + ': waiting for the map to move to the nearest station'); }
@@ -513,6 +520,12 @@
         if (s.level < level) continue; // только вперёд: нижняя «Заправка» видна на всех экранах
         var el = find(s.re);
         if (!el) continue;
+        // Карты ещё не загружены — «Ближайшую АЗС» не нажимать: приложение начинает грузить их заново, а повторное
+        // нажатие — снова (журнал 18:02: +10 с на круг). Ждём карту до 20 с, дальше — как есть
+        if (s.name === 'Ближайшая АЗС' && !YM.maps.length) {
+          if (!nearSeen) { nearSeen = now; log('app ' + host + ': waiting for yandex maps before «Ближайшая АЗС»'); }
+          if (now - nearSeen < 20000) return;
+        }
         if (s.name === lastStep && now - lastClick < (s.wait || 4000)) return;
         if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); diag(); setTimeout(function () { reveal('stuck'); }, 1200); return; }
         if (tries[s.name]) { log('app ' + host + ': «' + s.name + '» again'); diag(); }
