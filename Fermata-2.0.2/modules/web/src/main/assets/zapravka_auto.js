@@ -307,6 +307,16 @@
       if (!y || (typeof y !== 'object' && typeof y !== 'function') || y.__jzp) return;
       y.__jzp = 1;
       YM.y = y; // объект карт — глобального ymaps у приложения нет
+      // Настоящее событие карт: модуль Event (приложение его не грузит — журнал 17:28 «y.Event is not a constructor»,
+      // 17:49 — самодельное событие без isPropagationStopped внутри карт падает)
+      var needEvent = function () {
+        try {
+          if (YM.Event || !y.modules || !y.modules.require) return;
+          y.modules.require(['Event']).done(function (m) { YM.Event = m[0]; log('app ' + host + ': yandex maps event module ready'); });
+        } catch (e) { }
+      };
+      needEvent();
+      try { if (typeof y.ready === 'function') y.ready(needEvent); } catch (e) { }
       [['Map', 'maps'], ['Placemark', 'pms'], ['ObjectManager', 'oms']].forEach(function (nl) {
         var cur = wrapCtor(y[nl[0]], nl[1]);
         try {
@@ -362,7 +372,7 @@
       var same = lastC && Math.abs(c[0] - lastC[0]) < 1e-7 && Math.abs(c[1] - lastC[1]) < 1e-7;
       if (!same) { lastC = c; stillSince = Date.now(); }
       var moved = Math.abs(c[0] - centerAtNear[0]) > 1e-6 || Math.abs(c[1] - centerAtNear[1]) > 1e-6;
-      return moved && Date.now() - stillSince >= 1000;
+      return moved && Date.now() - stillSince >= 600;
     };
     var clickStationByApi = function () {
       try {
@@ -396,8 +406,17 @@
         if (!best) return false;
         // ymaps.Event приложение не загружает (журнал 17:28: «y.Event is not a constructor») — событие с методом get
         var ev = function (o, t) {
-          if (typeof y.Event === 'function') { try { return new y.Event(o, t); } catch (e) { } }
-          return { get: function (k) { return o[k]; }, originalEvent: o, preventDefault: function () { }, stopPropagation: function () { } };
+          var E = YM.Event || y.Event;
+          if (typeof E === 'function') { try { return new E(o, t); } catch (e) { } }
+          // Запасное событие — со всеми методами, которые карты вызывают при доставке
+          var stopped = false, prevented = false, immediate = false;
+          return {
+            get: function (k) { return o[k]; }, originalEvent: o, callMethod: function () { },
+            stopPropagation: function () { stopped = true; }, isPropagationStopped: function () { return stopped; },
+            preventDefault: function () { prevented = true; }, isDefaultPrevented: function () { return prevented; },
+            stopImmediatePropagation: function () { immediate = true; stopped = true; },
+            isImmediatePropagationStopped: function () { return immediate; }
+          };
         };
         if (best.pm) {
           best.pm.events.fire('click', ev({ type: 'click', target: best.pm }, best.pm));
@@ -478,9 +497,9 @@
       if (find(TARGET)) { clearInterval(iv); log('app ' + host + ': pump choice reached; steps: ' + done.join(' → ')); onPumpScreen(); return; }
       if (find(/^азс\s*№\s*\d+/i, 'div,span,h1,h2,h3,h4,p,b,strong') && !station) readStation();
       if (now - t1 > 100000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 100 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
-      if (now - lastClick < 1500) return;
+      if (now - lastClick < 700) return; // пауза между шагами (было 1,5 с — пожелание ускорить, 04.11.2026)
       // Станция в центре карты — нажать её значок (раз в 3,5 с, до 8 раз), пока не появится карточка с «Заправиться»
-      if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 3500 && now - lastMarker > 3500 && markerTries < 8) {
+      if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 1000 && now - lastMarker > 2500 && markerTries < 10) {
         if (mapCenter() && !mapMoved()) {
           // карта ещё не сдвинулась к ближайшей станции — ждём (не дольше срока шага «Ближайшая АЗС»)
           if (!waitMoveLogged) { waitMoveLogged = true; log('app ' + host + ': waiting for the map to move to the nearest station'); }

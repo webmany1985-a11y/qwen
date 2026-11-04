@@ -88,12 +88,12 @@ const FLASH = `if (location.hostname === 'web.telegram.org') { window.__flash = 
     requestAnimationFrame(f); })(); }`;
 
 // Скрипт игрушечных Яндекс.Карт: вызывает функцию из onload= с объектом карт (без глобального имени)
-const YMAPS = `(function(){const evm=()=>{const h={};return{add:(t,f)=>{(h[t]=h[t]||[]).push(f)},fire:(t,e)=>{(h[t]||[]).forEach(f=>f(e))}};};
+const YMAPS = `(function(){const evm=()=>{const h={};return{add:(t,f)=>{(h[t]=h[t]||[]).push(f)},fire:(t,e)=>{(h[t]||[]).forEach(f=>{if(!e.isPropagationStopped())f(e);})}};};
   const opt=(o)=>({get:(k)=>(o||{})[k]});
   function Placemark(c,props,o){this.geometry={getCoordinates:()=>c};this.events=evm();this.options=opt(o);}
-  const Y={ready:(cb)=>setTimeout(cb,50),modules:{require:(n)=>({done:(cb)=>setTimeout(()=>cb([Placemark]),100)})}};
+  function Ev(o,t){this.o=o;this.s=false;}Ev.prototype.get=function(k){return this.o[k];};Ev.prototype.isPropagationStopped=function(){return this.s;};Ev.prototype.stopPropagation=function(){this.s=true;};
+  const Y={ready:(cb)=>setTimeout(cb,50),modules:{require:(n)=>({done:(cb)=>setTimeout(()=>cb(n.map(x=>x==='Event'?Ev:Placemark)),100)})}};
   Y.Map=function(el,st){this.c=st.center;};Y.Map.prototype.getCenter=function(){return this.c;};Y.Map.prototype.setCenter=function(c){this.c=c;};
-  Y.Event=function(o,t){this.o=o;};Y.Event.prototype.get=function(k){return this.o[k];};
   const m=/onload=([^&]+)/.exec(document.currentScript.src);window[decodeURIComponent(m[1])](Y);})();`;
 
 async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
