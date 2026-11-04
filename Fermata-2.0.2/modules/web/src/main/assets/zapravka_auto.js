@@ -254,10 +254,16 @@
   // ---------------------------------------------------------------- приложение заправки
   function appFrame() {
     var post = function (o) { o.jzp = 1; try { window.top.postMessage(o, '*'); } catch (e) { } };
+    // Только то, что на экране: «Заправка» есть и за краем экрана (карусель) — нажатие туда ничего не даёт
+    // (журнал 04.11.2026 15:31: дважды «Заправка», приложение осталось на главной)
+    var onScreen = function (el) {
+      var r = el.getBoundingClientRect();
+      return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+    };
     var find = function (re, sel) {
       var c = all(sel || 'button,a,[role=button],[onclick],li,div,span,h1,h2,h3').filter(function (el) {
         var s = text(el);
-        return s && s.length <= 40 && re.test(s) && visible(el);
+        return s && s.length <= 40 && re.test(s) && visible(el) && onScreen(el);
       });
       c.sort(function (a, b) { return text(a).length - text(b).length; });
       return c[0];
@@ -290,7 +296,7 @@
     var TARGET = /выбор номера колонки/i;
     var STEPS = [
       { name: 'Заправиться', re: /^заправиться$/i, level: 2 },
-      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, wait: 15000 }, // веб-Telegram может спросить местоположение
+      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, wait: 35000 }, // местоположение определяется до 35 с (журнал 14:47, 15:32)
       { name: 'Заправка', re: /^заправка$/i, level: 0, wait: 10000 }, // карта (Яндекс) грузится не сразу
       { name: 'Заправить авто', re: /^заправить авто$/i, level: 0 }
     ];
@@ -317,13 +323,15 @@
       return true;
     };
 
-    var t1 = Date.now(), lastClick = 0, lastStep = null, level = 0, tries = {}, done = [];
+    var t1 = Date.now(), lastClick = 0, lastStep = null, level = 0, tries = {}, done = [], lastAlive = 0;
     setTimeout(diag, 3000);
     var iv = setInterval(function () {
       var now = Date.now();
+      // «Я работаю» — вкладка не снимет заставку, пока ждём местоположение
+      if (now - lastAlive > 5000) { lastAlive = now; post({ type: 'alive' }); }
       if (find(TARGET)) { clearInterval(iv); log('app ' + host + ': pump choice reached; steps: ' + done.join(' → ')); onPumpScreen(); return; }
       if (find(/^азс\s*№\s*\d+/i, 'div,span,h1,h2,h3,h4,p,b,strong') && !station) readStation();
-      if (now - t1 > 60000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 60 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
+      if (now - t1 > 100000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 100 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
       if (now - lastClick < 1500) return;
       for (var i = 0; i < STEPS.length; i++) {
         var s = STEPS[i];
@@ -332,6 +340,7 @@
         if (!el) continue;
         if (s.name === lastStep && now - lastClick < (s.wait || 4000)) return;
         if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); diag(); setTimeout(function () { reveal('stuck'); }, 1200); return; }
+        if (tries[s.name]) { log('app ' + host + ': «' + s.name + '» again'); diag(); }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
         if (s.name === 'Ближайшая АЗС') near = true;

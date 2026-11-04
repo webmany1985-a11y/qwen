@@ -30,7 +30,7 @@ window.addEventListener('message',e=>{if(e.data==='need-location'){const p=docum
 p.innerHTML='<div>Разрешить доступ к местоположению?</div><button id="allow">Разрешить</button>';document.body.append(p);
 allow.onclick=()=>{p.remove();e.source.postMessage('location-ok','*');};}});</script></body>`;
 
-const APP = (delay, mapDelay) => `<!doctype html><body style="margin:0;font-family:sans-serif"><div id="page"></div>
+const APP = (delay, mapDelay, locDelay) => `<!doctype html><body style="margin:0;font-family:sans-serif"><div id="page"></div>
 <nav><span id="nav">Заправка</span></nav>
 <script>
 window.trail=[];const T=(x)=>trail.push(x);let center=1,qtyMode='l',qtyVal='',full=false;
@@ -38,7 +38,7 @@ const show=(h)=>{page.innerHTML=h;bind();};
 // Переход экрана ждёт кадров отрисовки (как анимации и карта на настоящем сайте): в спрятанном окне их нет
 const frames=(k,cb)=>{let i=0;const f=()=>{if(++i>=k)cb();else requestAnimationFrame(f);};requestAnimationFrame(f);};
 const go=(n,h)=>setTimeout(()=>frames(10,()=>{T(n);show(h());}),${delay});
-const HOME=()=>'<div data-k="tile"><span>Заправить авто</span></div><div>Помыть авто</div>';
+const HOME=()=>'<div style="position:absolute;left:-2000px;top:40px;width:200px"><div class="slide" data-k="banner">Заправка</div></div><div data-k="tile"><span>Заправить авто</span></div><div>Помыть авто</div>';
 const MAP=()=>'<button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const CARD=()=>'<div class="card"><div><div class="name">АЗС №14</div><div class="addr">ул. Тростенецкая, 16</div></div><div>❤</div>'+
   '<button>Открыть в Яндекс картах</button><button data-k="fuel">Заправиться</button></div>';
@@ -51,13 +51,14 @@ const QTY=()=>'<h2>ВЫБЕРИТЕ КОЛИЧЕСТВО</h2><div>количес
 const WARN=()=>'<h2>ПРЕДУПРЕЖДЕНИЕ</h2><div>Судя по геолокации Вы находитесь далеко от заправки</div><button data-k="ok">Всё хорошо, заправлюсь тут</button><button>Выбрать другую</button>';
 function bind(){
   page.querySelectorAll('[data-k]').forEach(e=>e.onclick=()=>{const k=e.dataset.k;T('click:'+k);
-    if(k==='tile')go('map',MAP);if(k==='near'){if(window.locOk)go('card',CARD);else{T('ask-location');parent.postMessage('need-location','*');}}if(k==='fuel')go('pump',PUMP);if(k==='toqty')go('qty',QTY);
+    if(k==='tile')go('map',MAP);if(k==='near'){if(window.locOk)locate();else{T('ask-location');parent.postMessage('need-location','*');}}if(k==='fuel')go('pump',PUMP);if(k==='toqty')go('qty',QTY);
     if(k==='ml'){qtyMode='l';}if(k==='ms'){qtyMode='s';}if(k==='full'){full=true;show(QTY());}
     if(k==='pay'){T('pay:'+qtyMode+':'+(full?'full':qtyVal)+':pump'+center);go('warn',WARN);}if(k==='ok')T('GEO-OK-PRESSED');});
   page.querySelectorAll('.tile').forEach(e=>e.onclick=()=>{const n=+e.dataset.n;T('tile:'+n);center+=Math.sign(n-center);show(PUMP());});
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
-addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');go('card',CARD);}});
+let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');go('card',CARD);},${locDelay || 0});};
+addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');locate();}});
 nav.onclick=()=>{T('click:nav');setTimeout(()=>frames(10,()=>{T('map');show(MAP());}),${mapDelay || delay});};show(HOME());T('home');
 </script></body>`;
 
@@ -68,12 +69,12 @@ const FLASH = `if (location.hostname === 'web.telegram.org') { window.__flash = 
     if (c && !pop && getComputedStyle(c).visibility === 'visible' && (!o || o.style.display === 'none') && !window.__revealedOk) window.__flash++;
     requestAnimationFrame(f); })(); }`;
 
-async function run(name, delay, actions, expect, mapDelay) {
+async function run(name, delay, actions, expect, mapDelay, locDelay) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 800, height: 400 } }); const logs = [];
   await ctx.addInitScript(FLASH);
   await ctx.addInitScript(js);
   await ctx.route('https://web.telegram.org/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: TG(false) }));
-  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay) }));
+  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay, locDelay) }));
   const p = await ctx.newPage();
   p.on('pageerror', e => logs.push('ERR ' + e.message));
   p.on('console', m => { if (m.text().startsWith('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] ', '')); });
@@ -86,7 +87,7 @@ async function run(name, delay, actions, expect, mapDelay) {
   await p.click('.popup #allow', { timeout: 3000 });
   await p.waitForTimeout(400);
   if (shots) await p.screenshot({ path: path.join(shots, name + '-1-zagruzka.png') });
-  await p.waitForSelector('#__jzp .z-pumps', { timeout: 20000 });
+  await p.waitForSelector('#__jzp .z-pumps', { timeout: 60000 });
   await p.waitForTimeout(600);
   const hdr = await p.$eval('#__jzp .z-hdr', e => e.innerText.replace(/\s+/g, ' '));
   const pumps = await p.$$eval('#__jzp .z-p', a => a.map(e => e.textContent).join(','));
@@ -104,7 +105,7 @@ async function run(name, delay, actions, expect, mapDelay) {
   const trail = await fr.evaluate(() => window.trail.join(' > '));
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
-    trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
+    !trail.includes('click:banner') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
     trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
   console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);
@@ -130,7 +131,7 @@ async function login() {
 (async () => {
   const r = [];
   r.push(await login());
-  r.push(await run('litry', 300, ['#__jzp [data-p="7"]', '#__jzp [data-a="kb"]', '#__jzp [data-k="3"]', '#__jzp [data-k="5"]', '#__jzp [data-a="kbok"]'], 'pay:l:35:pump7'));
+  r.push(await run('litry', 300, ['#__jzp [data-p="7"]', '#__jzp [data-a="kb"]', '#__jzp [data-k="3"]', '#__jzp [data-k="5"]', '#__jzp [data-a="kbok"]'], 'pay:l:35:pump7', 0, 25000)); // местоположение определяется 25 с
   r.push(await run('summa-medlenno', 1500, ['#__jzp [data-p="3"]', '#__jzp [data-m="s"]', '#__jzp [data-q="50"]'], 'pay:s:50:pump3', 6000)); // и карта открывается 6 с
   r.push(await run('polnyj', 300, ['#__jzp [data-p="1"]', '#__jzp [data-a="full"]'], 'pay:l:full:pump1'));
   process.exit(r.every(Boolean) ? 0 : 1);
