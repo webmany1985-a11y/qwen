@@ -201,7 +201,7 @@
         '<div class="z-bg" style="background-image:url(' + (window.__JZP_BG || '') + ')"></div><div class="z-shade"></div>' +
         '<div class="z-g z-hdr">' + KLEVER + '<div><div class="z-st">' +
         esc(st.station || 'АЗС не определена') + '</div><div class="z-ad">' + esc(st.address || 'проверьте станцию в приложении') + '</div></div></div>' +
-        (st.near ? '<div class="z-g z-near">✓ ближайшая по местоположению</div>' : '') +
+        (st.near ? '<div class="z-g z-near">✓ ближайшая к вам</div>' : '') +
         '<div class="z-g z-app" data-a="app">Приложение</div>' +
         '<div class="z-pumps">' + st.pumps.map(function (n) {
           return '<div class="z-p' + (String(n) === String(st.pump) ? ' sel' : '') + '" data-p="' + esc(n) + '">' + esc(n) + '</div>';
@@ -394,11 +394,16 @@
           } catch (e) { }
         });
         if (!best) return false;
+        // ymaps.Event приложение не загружает (журнал 17:28: «y.Event is not a constructor») — событие с методом get
+        var ev = function (o, t) {
+          if (typeof y.Event === 'function') { try { return new y.Event(o, t); } catch (e) { } }
+          return { get: function (k) { return o[k]; }, originalEvent: o, preventDefault: function () { }, stopPropagation: function () { } };
+        };
         if (best.pm) {
-          best.pm.events.fire('click', new y.Event({ type: 'click', target: best.pm }, best.pm));
+          best.pm.events.fire('click', ev({ type: 'click', target: best.pm }, best.pm));
           log('app ' + host + ': station clicked via map (placemark of ' + YM.pms.length + ')');
         } else {
-          best.om.objects.events.fire('click', new y.Event({ type: 'click', objectId: best.id, target: best.om.objects }, best.om.objects));
+          best.om.objects.events.fire('click', ev({ type: 'click', objectId: best.id, target: best.om.objects }, best.om.objects));
           log('app ' + host + ': station clicked via map (object of manager)');
         }
         return true;
@@ -621,7 +626,7 @@
     '.z-near{right:2vw;top:3vh;border-radius:12px;padding:6px 10px;font-size:12px;background:#7cc24240;border-color:#7cc242}' +
     '.z-app{right:2vw;top:calc(3vh + 38px);border-radius:12px;padding:6px 12px;font-size:13px}' +
     '.z-pumps{position:absolute;left:2vw;right:2vw;top:39vh;display:flex;gap:1vw}' +
-    '.z-p{flex:1;height:17.5vh;min-height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:clamp(22px,8.5vh,36px);font-weight:800;' +
+    '.z-p{flex:1;max-width:24vw;height:17.5vh;min-height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:clamp(22px,8.5vh,36px);font-weight:800;' +
     'background:#00000033;border:1.5px solid #ffffffaa;text-shadow:0 2px 8px #000c;box-shadow:0 4px 16px #0006;transition:transform .25s,background .25s}' +
     '.z-p.sel{background:#f15a22d0;border-color:#ffd2bf;box-shadow:0 0 26px #f15a22,0 6px 18px #0008;transform:translateY(-8px) scale(1.06);animation:zps 1.6s ease-in-out infinite}' +
     '@keyframes zps{50%{box-shadow:0 0 40px #f15a22,0 6px 18px #0008;transform:translateY(-11px) scale(1.07)}}' +
@@ -635,12 +640,25 @@
     'display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5vh,22px);font-weight:900;letter-spacing:3px;box-shadow:0 6px 24px #f15a2299;overflow:hidden;transition:opacity .2s}' +
     '.z-go:after{content:"";position:absolute;top:0;bottom:0;width:70px;background:linear-gradient(90deg,transparent,#fff7,transparent);animation:zsh 2.6s infinite}' +
     '@keyframes zsh{from{left:-70px}to{left:110%}}.z-go.off{opacity:.45;filter:grayscale(.6)}.z-go.off:after{display:none}' +
-    '.z-kbw{position:absolute;inset:0;background:#0007;display:flex;align-items:center;justify-content:center}' +
-    '.z-kb{position:relative;width:min(70vw,420px);border-radius:20px;padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#000000a0;animation:zin .2s ease-out}' +
+    '.z-kbw{position:absolute;inset:0;background:#000b;display:flex;align-items:center;justify-content:center}' +
+    '.z-kb{position:relative;width:min(70vw,420px);border-radius:20px;padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:#141618f2;animation:zin .2s ease-out}' +
     '@keyframes zin{from{transform:scale(.9);opacity:0}}' +
     '.z-kbd{grid-column:1/4;text-align:right;font-size:clamp(20px,9vh,36px);font-weight:800;padding:0 10px}' +
-    '.z-k{height:clamp(32px,10vh,48px);border-radius:12px;border:1.5px solid #ffffff88;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,6vh,24px);font-weight:800;background:#ffffff14}' +
+    '.z-k{height:clamp(32px,10vh,48px);border-radius:12px;border:1.5px solid #ffffff88;display:flex;align-items:center;justify-content:center;font-size:clamp(16px,6vh,24px);font-weight:800;background:#2a2d31}' +
     '.z-ok{grid-column:1/4;background:#f15a22d0;border-color:#ffd2bf}' +
-    '@media (orientation:portrait){.z-hdr{max-width:none;right:2vw}.z-near{top:auto;bottom:calc(3vh + 9vh + 10px);right:2vw}.z-app{top:auto;bottom:calc(3vh + 9vh + 46px);left:2vw;right:auto}' +
-    '.z-pumps{top:22vh;flex-wrap:wrap}.z-p{flex:0 0 calc(25% - 1vw);height:10vh}.z-row{top:48vh;height:9vh;flex-wrap:wrap}.z-go{height:9vh}}';
+    // Телефон (вертикально): шапка, под ней «ближайшая» и «Приложение», колонки сеткой по 4, «Литры/Сумма» и поле на
+    // всю ширину, быстрые 20/40/Полный в ряд, «Далее» внизу — правее не заходит под круглую кнопку JARVIS (скриншот 17:29)
+    '@media (orientation:portrait){' +
+    '.z-hdr{left:4vw;right:4vw;top:2vh;max-width:none;padding:1.4vh 4vw}' +
+    '.z-st{font-size:clamp(20px,4vh,30px)}.z-ad{font-size:clamp(14px,2.4vh,18px)}' +
+    '.z-near{left:4vw;right:auto;top:calc(2vh + 11.5vh);font-size:13px}' +
+    '.z-app{right:4vw;top:calc(2vh + 11.5vh)}' +
+    '.z-pumps{top:23vh;left:4vw;right:4vw;display:grid;grid-template-columns:repeat(4,1fr);gap:3vw}' +
+    '.z-p{max-width:none;height:10.5vh;font-size:clamp(24px,5.5vh,40px)}' +
+    '.z-row{top:auto;bottom:calc(3vh + 9vh + 2vh);left:4vw;right:4vw;height:auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2vw}' +
+    '.z-row .z-seg{grid-column:span 3;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}' +
+    '.z-row .z-inp{grid-column:span 6;height:10vh;font-size:clamp(30px,6vh,48px)}' +
+    '.z-row .z-q{grid-column:span 2;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}' +
+    '.z-go{left:4vw;right:26vw;bottom:3vh;height:9vh}' +
+    '.z-kb{width:92vw}.z-k{height:8vh}}';
 })();
