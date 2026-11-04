@@ -34,36 +34,61 @@
 
   // ---------------------------------------------------------------- веб-Telegram и оболочка
   function topFrame() {
-    var started = false, menuClicked = false, t0 = Date.now(), appWin = null, revealed = false;
+    // Сайт приложения заправки: только его сообщениям оболочка верит (АЗС и адрес — от настоящего приложения А-100)
+    var APP_ORIGINS = ['https://tgminiapp.a-100.by'];
+    var started = false, menuClicked = false, t0 = Date.now(), appWin = null, revealed = false, opened = false;
     var st = { phase: 'off', station: '', address: '', near: false, pumps: [], pump: 0, mode: 'l', value: '', full: false };
-    var appFrameEl = function () {
-      return all('iframe').filter(function (f) {
-        var s = f.getAttribute('src') || '';
-        return /^https:/i.test(s) && !/telegram\.org/i.test(s);
-      })[0];
+    // Вход в Telegram (страница входа веб-Telegram: класс has-auth-pages, блок #auth-pages) — заставку убрать
+    var loginShown = function () {
+      return document.body && (document.body.classList.contains('has-auth-pages') || !!document.getElementById('auth-pages'));
     };
+    // Окно веб-Telegram (разрешение на местоположение, условия мини-приложений) — заставка не должна его закрывать
+    var tgPopup = function () {
+      return all('.popup').filter(function (p) { return visible(p) && !p.querySelector('iframe'); })[0];
+    };
+    // Заставка — сразу при открытии вкладки, чтобы не мелькал список чатов (пожелание 04.11.2026)
+    var early = setInterval(function () {
+      if (revealed) { clearInterval(early); return; }
+      if (!document.body) return;
+      clearInterval(early);
+      if (!loginShown()) showLoading();
+    }, 50);
     var iv = setInterval(function () {
-      if (Date.now() - t0 > 60000) { clearInterval(iv); if (!menuClicked) log('tg: app button not found in 60 s'); return; }
-      var f = appFrameEl();
-      if (f) { clearInterval(iv); log('tg: app opened'); showLoading(); watchdog(); return; }
+      if (revealed) { clearInterval(iv); return; }
+      if (loginShown()) { log('tg: login page — splash removed'); clearInterval(iv); reveal('login'); return; }
+      if (opened) { clearInterval(iv); return; }
+      if (Date.now() - t0 > 60000) { clearInterval(iv); log('tg: app button not found in 60 s'); reveal('no app'); return; }
+      // Сначала кнопка приложения; «Старт» — только если её нет (иначе боту каждый раз уходит лишний /start)
+      var menu = document.querySelector('.new-message-bot-commands');
+      if (menu && visible(menu) && text(menu)) {
+        if (!menuClicked) {
+          menuClicked = true;
+          log('tg: open app button «' + text(menu).slice(0, 30) + '»');
+          menu.click();
+          setTimeout(function () {
+            if (!opened && !revealed) {
+              log('tg: app did not report in 25 s' + (tgPopup() ? ' (a popup is open — terms?)' : ''));
+              reveal('no app');
+            }
+          }, 25000);
+        }
+        return;
+      }
       var start = all('.chat-input-control-button').filter(function (b) {
         return visible(b) && /^(start|запустить|начать|старт)$/i.test(text(b));
       })[0];
-      if (start && !started) { started = true; log('tg: start bot'); start.click(); return; }
-      var menu = document.querySelector('.new-message-bot-commands');
-      if (menu && visible(menu) && text(menu) && !menuClicked && !document.querySelector('.popup-web-app')) {
-        menuClicked = true;
-        log('tg: open app button «' + text(menu).slice(0, 30) + '»');
-        menu.click();
-        showLoading();
-        setTimeout(function () {
-          if (!appFrameEl()) {
-            log('tg: app frame not shown in 20 s' + (document.querySelector('.popup') ? ' (a popup is open — terms?)' : ''));
-            reveal('no app frame');
-          }
-        }, 20000);
-      }
+      if (start && !started) { started = true; log('tg: start bot'); start.click(); }
     }, 700);
+
+    // Окно веб-Telegram поверх — оболочку на время спрятать, затем вернуть
+    var pv = setInterval(function () {
+      if (revealed) { clearInterval(pv); return; }
+      if (!ov) return;
+      var pop = !!tgPopup();
+      if (pop && ov.style.display !== 'none') { ov.style.display = 'none'; log('tg: telegram popup — splash hidden'); lastMsg = Date.now(); }
+      else if (!pop && ov.style.display === 'none') { ov.style.display = ''; }
+      if (pop) lastMsg = Date.now();
+    }, 300);
 
     // Нет вестей от приложения 40 с — оболочку убрать: человек видит веб-Telegram как есть
     var lastMsg = Date.now();
@@ -76,11 +101,11 @@
 
     window.addEventListener('message', function (e) {
       var d = e.data;
-      if (!d || d.jzp !== 1 || revealed) return;
-      var f = appFrameEl();
-      if (!f || e.source !== f.contentWindow) return;
+      if (!d || d.jzp !== 1 || revealed || e.source === window) return;
+      if (APP_ORIGINS.indexOf(e.origin) < 0) { log('tg: message from other site ignored: ' + e.origin); return; }
       appWin = e.source;
       lastMsg = Date.now();
+      if (!opened) { opened = true; log('tg: app opened'); showLoading(); watchdog(); }
       if (d.type === 'station') { st.station = d.station || ''; st.address = d.address || ''; st.near = !!d.near; }
       else if (d.type === 'pumps') {
         st.pumps = (d.pumps || []).filter(function (n) { return /^\d{1,2}$/.test(String(n)); });
@@ -205,11 +230,12 @@
       }).slice(0, 25).join(' | ');
     };
     var reveal = function (why) { log('app ' + host + ': reveal (' + why + ')'); post({ type: 'reveal', why: why }); };
+    post({ type: 'hello' }); // вкладка узнаёт, что приложение открылось
 
     var TARGET = /выбор номера колонки/i;
     var STEPS = [
       { name: 'Заправиться', re: /^заправиться$/i, level: 2 },
-      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1 },
+      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, wait: 15000 }, // веб-Telegram может спросить местоположение
       { name: 'Заправка', re: /^заправка$/i, level: 0 },
       { name: 'Заправить авто', re: /^заправить авто$/i, level: 0 }
     ];
@@ -241,14 +267,14 @@
       var now = Date.now();
       if (find(TARGET)) { clearInterval(iv); log('app ' + host + ': pump choice reached; steps: ' + done.join(' → ')); onPumpScreen(); return; }
       if (find(/^азс\s*№\s*\d+/i, 'div,span,h1,h2,h3,h4,p,b,strong') && !station) readStation();
-      if (now - t1 > 30000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 30 s; labels: ' + labels()); reveal('timeout'); return; }
+      if (now - t1 > 60000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 60 s; labels: ' + labels()); reveal('timeout'); return; }
       if (now - lastClick < 1500) return;
       for (var i = 0; i < STEPS.length; i++) {
         var s = STEPS[i];
         if (s.level < level) continue; // только вперёд: нижняя «Заправка» видна на всех экранах
         var el = find(s.re);
         if (!el) continue;
-        if (s.name === lastStep && now - lastClick < 4000) return;
+        if (s.name === lastStep && now - lastClick < (s.wait || 4000)) return;
         if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); reveal('stuck'); return; }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
