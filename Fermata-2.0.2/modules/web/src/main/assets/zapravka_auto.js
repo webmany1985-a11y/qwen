@@ -4,8 +4,9 @@
 //     мини-приложение. Классы — по исходникам morethanwords/tweb (src/components/chat/input.ts):
 //     .chat-input-control-button («BotStart»), .new-message-bot-commands (botMenuButton → chat.openWebApp).
 //     Окно согласия с условиями мини-приложений (первый запуск) не нажимается — согласие даёт человек.
-//  2) приложение заправки (кадр внутри веб-Telegram, чужой сайт): пункт «Заправка» (иначе со словом «Заправ…») — один раз.
-//     Не нашёлся за 45 с — в журнал только короткие надписи кнопок (без цифр: суммы, номера карт не пишутся).
+//  2) приложение заправки (кадр внутри веб-Telegram, чужой сайт): скрыто, пока сценарий проходит «Заправка» →
+//     «Ближайшая АЗС» → «Заправиться»; показывается на «Выборе номера колонки» (за 30 с не дошло — как есть,
+//     в журнал — короткие надписи кнопок без цифр). Колонку, сумму и оплату сценарий не нажимает.
 (function () {
   if (window.__jarvisZp) return;
   window.__jarvisZp = 1;
@@ -50,33 +51,98 @@
   }
 
   if (window !== window.top && !isTg) {
-    var t1 = Date.now(), done = false;
+    // Цепочка приложения А-100 (скриншоты пользователя 04.11.2026): главная («Заправить авто», внизу «Заправка»)
+    // → карта («Ближайшая АЗС», «Заправка по QR коду») → карточка станции («Заправиться») → «Выбор номера колонки».
+    // Пользователь видит сразу выбор колонки (пожелание: «чтобы вкладка сразу открывалась, где выведены номер
+    // колонки и литры, а все промежуточные этапы проходил скрипт»). Колонку, сумму, литры и оплату выбирает
+    // человек — на странице колонки сценарий ничего не нажимает. Пока идёт цепочка, приложение скрыто
+    // (visibility: раскладка остаётся, нажатия работают) под надписью «Открываю заправку…».
+    var TARGET = /выбор номера колонки/i;
+    var STEPS = [
+      { name: 'Заправиться', re: /^заправиться$/i, level: 2 },
+      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1 },
+      { name: 'Заправка', re: /^заправка$/i, level: 0 },
+      { name: 'Заправить авто', re: /^заправить авто$/i, level: 0 }
+    ];
+    var style = document.createElement('style');
+    style.textContent = 'html{background:#fff!important}body{visibility:hidden!important}' +
+      '#__jarvisZpCover{visibility:visible!important;position:fixed;inset:0;display:flex;align-items:center;' +
+      'justify-content:center;font:600 22px sans-serif;color:#555;background:#fff;z-index:2147483647}';
+    // В начале загрузки кадра корня документа ещё нет: стиль — как только он появится, до первой отрисовки
+    var addStyle = function () {
+      var root = document.head || document.documentElement;
+      if (root && !style.isConnected) root.appendChild(style);
+      return style.isConnected;
+    };
+    if (!addStyle()) {
+      var mo = new MutationObserver(function () { if (addStyle()) mo.disconnect(); });
+      mo.observe(document, { childList: true, subtree: true });
+    }
+    var cover = null, shown = false;
+    var addCover = function () {
+      if (cover || shown || !document.body) return;
+      cover = document.createElement('div');
+      cover.id = '__jarvisZpCover';
+      cover.textContent = 'Открываю заправку…';
+      document.body.appendChild(cover);
+    };
+    document.addEventListener('DOMContentLoaded', addCover);
+    var done = [];
+    var reveal = function (why) {
+      if (shown) return;
+      shown = true;
+      if (cover) cover.remove();
+      style.remove();
+      log('app ' + host + ': shown (' + why + (done.length ? '; steps: ' + done.join(' → ') : '') + ')');
+    };
+    var mine = function (el) { return cover && (el === cover || cover.contains(el) || el.contains(cover)); };
+    var find = function (re) {
+      var c = all('button,a,[role=button],[onclick],li,div,span,h1,h2,h3').filter(function (el) {
+        var s = text(el);
+        return s && s.length <= 40 && re.test(s) && visible(el) && !mine(el);
+      });
+      c.sort(function (a, b) { return text(a).length - text(b).length; });
+      return c[0];
+    };
+    var t1 = Date.now(), lastClick = 0, lastStep = null, level = 0, tries = {};
     var iv2 = setInterval(function () {
-      if (done) return;
-      if (Date.now() - t1 > 45000) {
+      addCover();
+      var now = Date.now();
+      if (find(TARGET)) { clearInterval(iv2); reveal('pump choice'); return; }
+      // Всё — не дольше 30 с; одна и та же кнопка — не чаще раза в 4 с (ждём, пока откроется следующий экран)
+      if (now - t1 > 30000) {
         clearInterval(iv2);
-        var labels = all('button,a,[role=button],[onclick]').filter(visible).map(text).filter(function (s) {
-          return s && s.length <= 30 && !/\d{3,}/.test(s);
-        }).slice(0, 25);
-        log('app ' + host + ': «Заправ» not found; labels: ' + labels.join(' | '));
+        var labels = all('button,a,[role=button],[onclick]').filter(visible).filter(function (el) { return !mine(el); })
+          .map(text).filter(function (s) { return s && s.length <= 30 && !/\d{3,}/.test(s); }).slice(0, 25);
+        log('app ' + host + ': pump choice not reached in 30 s; labels: ' + labels.join(' | '));
+        reveal('timeout');
         return;
       }
-      var cands = all('button,a,[role=button],[onclick],li,div,span').filter(function (el) {
-        var s = text(el);
-        return s && s.length <= 40 && /заправ/i.test(s) && visible(el);
-      });
-      if (!cands.length) return;
-      // Сначала пункт ровно «Заправка» (нижняя вкладка А-100 — карта, «Ближайшая АЗС», «Заправка по QR коду»;
-      // скриншоты пользователя 04.11.2026), иначе самая короткая надпись («Заправить авто» на главной).
-      // Нажимается ближайший кликабельный предок.
-      var exact = function (el) { return /^заправка$/i.test(text(el)) ? 0 : 1; };
-      cands.sort(function (a, b) { return (exact(a) - exact(b)) || (text(a).length - text(b).length); });
-      var el = cands[0];
-      var target = (el.closest && el.closest('button,a,[role=button],[onclick]')) || el;
-      done = true;
-      clearInterval(iv2);
-      log('app ' + host + ': click «' + text(el) + '»');
-      target.click();
-    }, 700);
+      if (now - lastClick < 1500) return;
+      for (var i = 0; i < STEPS.length; i++) {
+        var st = STEPS[i];
+        // Только вперёд: нижняя «Заправка» видна на всех экранах — назад к карте не возвращаться
+        if (st.level < level) continue;
+        var el = find(st.re);
+        if (!el) continue;
+        if (st.name === lastStep && now - lastClick < 4000) return;
+        // Дважды нажали — следующий экран не открылся (нет местоположения, ошибка сайта): показать как есть
+        if ((tries[st.name] || 0) >= 2) {
+          clearInterval(iv2);
+          log('app ' + host + ': stuck at «' + st.name + '» after 2 clicks');
+          reveal('stuck');
+          return;
+        }
+        tries[st.name] = (tries[st.name] || 0) + 1;
+        var target = (el.closest && el.closest('button,a,[role=button],[onclick]')) || el;
+        lastStep = st.name;
+        level = st.level;
+        lastClick = now;
+        done.push(st.name);
+        log('app ' + host + ': click «' + st.name + '»');
+        target.click();
+        return;
+      }
+    }, 300);
   }
 })();
