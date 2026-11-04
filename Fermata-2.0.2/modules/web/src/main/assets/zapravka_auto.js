@@ -284,13 +284,15 @@
     };
     var reveal = function (why) { log('app ' + host + ': reveal (' + why + ')'); post({ type: 'reveal', why: why }); };
     post({ type: 'hello' }); // вкладка узнаёт, что приложение открылось
-    // Яндекс.Карты (API 2.1: элементы <ymaps> в журнале 16:25). Сценарий стоит в начале страницы, раньше карты:
-    // при появлении window.ymaps оборачиваем Map, Placemark, ObjectManager и запоминаем созданные объекты. Тогда
-    // станцию у центра карты можно «нажать» событием карты (events.fire('click')), без координат на экране
+    // Яндекс.Карты 2.1. Приложение А-100 (код tgminiapp.a-100.by, assets/index-*.js, 04.11.2026) грузит их библиотекой
+    // react-yandex-maps без глобального имени: в адресе скрипта onload=__yandex-maps-api-onload__$$…, объект карт
+    // приходит в эту функцию; части (Placemark и др.) докладываются позже (modules.require). Станции — Placemark с
+    // iconLayout "default#image" и обработчиком click (открывает карточку); местоположение — Placemark
+    // "islands#redCircleDotIcon". Сценарий стоит в начале страницы: ловим добавление скрипта карт, оборачиваем
+    // функцию onload и конструкторы Map/Placemark/ObjectManager — запоминаем созданные объекты
     var YM = { maps: [], pms: [], oms: [] };
-    var wrapCtor = function (y, name, list) {
-      var C = y[name];
-      if (typeof C !== 'function' || C.__jzpW) return;
+    var wrapCtor = function (C, list) {
+      if (typeof C !== 'function' || C.__jzpW) return C;
       var W = function () {
         var o = new (Function.prototype.bind.apply(C, [null].concat([].slice.call(arguments))))();
         YM[list].push(o);
@@ -299,18 +301,25 @@
       W.prototype = C.prototype;
       for (var k in C) { try { if (Object.prototype.hasOwnProperty.call(C, k)) W[k] = C[k]; } catch (e) { } }
       W.__jzpW = 1;
-      y[name] = W;
+      return W;
     };
     var hookYmaps = function (y) {
-      if (!y || typeof y !== 'object' || y.__jzp || typeof y.ready !== 'function') return;
+      if (!y || (typeof y !== 'object' && typeof y !== 'function') || y.__jzp) return;
       y.__jzp = 1;
-      try {
-        y.ready(function () {
-          wrapCtor(y, 'Map', 'maps'); wrapCtor(y, 'Placemark', 'pms'); wrapCtor(y, 'ObjectManager', 'oms');
-          log('app ' + host + ': yandex maps hooked');
-        });
-      } catch (e) { log('app ' + host + ': yandex maps hook failed: ' + e.message); }
+      YM.y = y; // объект карт — глобального ymaps у приложения нет
+      [['Map', 'maps'], ['Placemark', 'pms'], ['ObjectManager', 'oms']].forEach(function (nl) {
+        var cur = wrapCtor(y[nl[0]], nl[1]);
+        try {
+          Object.defineProperty(y, nl[0], {
+            configurable: true, enumerable: true,
+            get: function () { return cur; },
+            set: function (v) { cur = wrapCtor(v, nl[1]); }
+          });
+        } catch (e) { y[nl[0]] = cur; }
+      });
+      log('app ' + host + ': yandex maps hooked');
     };
+    // Глобальное имя (если вдруг будет)
     try {
       var ymapsVal = window.ymaps;
       Object.defineProperty(window, 'ymaps', {
@@ -320,7 +329,25 @@
       });
       if (ymapsVal) hookYmaps(ymapsVal);
     } catch (e) { }
-    var ymapsPoll = setInterval(function () { if (window.ymaps) { hookYmaps(window.ymaps); if (window.ymaps.__jzp) clearInterval(ymapsPoll); } }, 200);
+    // Скрипт карт с onload=… — обернуть эту функцию до её вызова
+    var watchScript = function (node) {
+      try {
+        if (!node || node.tagName !== 'SCRIPT' || !/api-maps\.yandex\.ru/.test(node.src || '')) return;
+        var m = /[?&]onload=([^&]+)/.exec(node.src);
+        var name = m && decodeURIComponent(m[1]);
+        log('app ' + host + ': yandex maps script' + (name ? ' (onload callback)' : ''));
+        if (!name || typeof window[name] !== 'function' || window[name].__jzpW) return;
+        var orig = window[name];
+        var w = function (y) { hookYmaps(y); return orig.apply(this, arguments); };
+        w.__jzpW = 1;
+        window[name] = w;
+      } catch (e) { log('app ' + host + ': maps script hook failed: ' + e.message); }
+    };
+    ['appendChild', 'insertBefore'].forEach(function (fn) {
+      var o = Node.prototype[fn];
+      Node.prototype[fn] = function (n) { watchScript(n); return o.apply(this, arguments); };
+    });
+    var ymapsPoll = setInterval(function () { if (window.ymaps) { hookYmaps(window.ymaps); clearInterval(ymapsPoll); } }, 200);
     // Центр карты в момент «Ближайшей АЗС»: станция нажимается, только когда карта сдвинулась к ближайшей —
     // иначе у центра чужая станция (макет 04.11.2026: пока определялось местоположение, «нажималась» другая АЗС)
     var centerAtNear = null;
@@ -339,13 +366,24 @@
     };
     var clickStationByApi = function () {
       try {
-        var y = window.ymaps, map = YM.maps[YM.maps.length - 1];
+        var y = YM.y || window.ymaps, map = YM.maps[YM.maps.length - 1];
         if (!y || !map || !map.getCenter) return false;
         var c = map.getCenter();
         var d2 = function (p) { return (p[0] - c[0]) * (p[0] - c[0]) + (p[1] - c[1]) * (p[1] - c[1]); };
         var best = null;
+        // Только станции: метка с картинкой (default#image), не точка местоположения (islands#redCircleDotIcon)
+        var station = function (pm) {
+          try {
+            var o = pm.options, preset = o && o.get && o.get('preset'), layout = o && o.get && o.get('iconLayout');
+            if (preset && /CircleDot/i.test(String(preset))) return false;
+            return !layout || /image/i.test(String(layout));
+          } catch (e) { return true; }
+        };
         YM.pms.forEach(function (pm) {
-          try { var p = pm.geometry.getCoordinates(); if (p && (!best || d2(p) < best.d)) best = { d: d2(p), pm: pm }; } catch (e) { }
+          try {
+            if (!station(pm)) return;
+            var p = pm.geometry.getCoordinates(); if (p && (!best || d2(p) < best.d)) best = { d: d2(p), pm: pm };
+          } catch (e) { }
         });
         YM.oms.forEach(function (om) {
           try {
@@ -456,7 +494,8 @@
         if (tries[s.name]) { log('app ' + host + ': «' + s.name + '» again'); diag(); }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
-        if (s.name === 'Ближайшая АЗС') { near = true; centerAtNear = mapCenter(); waitMoveLogged = false; }
+        // положение карты — при первом нажатии: при повторном карта уже может стоять на станции
+        if (s.name === 'Ближайшая АЗС') { near = true; if (!centerAtNear) centerAtNear = mapCenter(); waitMoveLogged = false; }
         lastStep = s.name; lastClick = now; level = s.level; done.push(s.name);
         log('app ' + host + ': click «' + s.name + '»');
         press(el);

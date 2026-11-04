@@ -60,21 +60,21 @@ function bind(){
   page.querySelectorAll('.tile').forEach(e=>e.onclick=()=>{const n=+e.dataset.n;T('tile:'+n);center+=Math.sign(n-center);show(PUMP());});
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
-let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');if(window.ymap){const a=ymap.getCenter(),b=[53.8455,27.6341];let k=0;const iv=setInterval(()=>{k++;ymap.setCenter([a[0]+(b[0]-a[0])*k/20,a[1]+(b[1]-a[1])*k/20]);if(k>=20)clearInterval(iv);},100);}go('focus',FOCUS);},${locDelay || 0});};
+let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');if(window.ymap){const a=ymap.getCenter(),b=[53.8455,27.63415];let k=0;const iv=setInterval(()=>{k++;ymap.setCenter([a[0]+(b[0]-a[0])*k/20,a[1]+(b[1]-a[1])*k/20]);if(k>=20)clearInterval(iv);},100);}go('focus',FOCUS);},${locDelay || 0});};
 // нарисованный значок: карта сама проверяет точку касания — значок по центру окна по ширине, на 41 % высоты
 // (как на скриншоте пользователя 04.11.2026 15:52)
 addEventListener('mousedown',e=>{if(!document.getElementById('ymap')||'${marker}'!=='canvas')return;
   const cx=innerWidth/2,cy=innerHeight*0.41;if(Math.abs(e.clientX-cx)<22&&Math.abs(e.clientY-cy)<22){T('click:pin');go('card',CARD);}else T('map-miss');},true);
-// Игрушечные Яндекс.Карты 2.1: появляются позже страницы; карта, метки станций, событие click у метки
-if('${marker}'==='api')setTimeout(()=>{const evm=()=>{const h={};return{add:(t,f)=>{(h[t]=h[t]||[]).push(f)},fire:(t,e)=>{(h[t]||[]).forEach(f=>f(e))}};};
-  const Y={ready:(cb)=>setTimeout(cb,50)};
-  Y.Map=function(el,st){this.c=st.center;};Y.Map.prototype.getCenter=function(){return this.c;};Y.Map.prototype.setCenter=function(c){this.c=c;};
-  Y.Placemark=function(c){this.geometry={getCoordinates:()=>c};this.events=evm();};
-  Y.Event=function(o,t){this.o=o;};Y.Event.prototype.get=function(k){return this.o[k];};
-  window.ymaps=Y;
-  ymaps.ready(()=>{window.ymap=new ymaps.Map('ymap',{center:[53.90,27.56]});
-    window.pm14=new ymaps.Placemark([53.8455,27.6341]);const other=new ymaps.Placemark([53.93,27.50]);
-    pm14.events.add('click',e=>{if(e.get('target')===pm14){T('click:pin');go('card',CARD);}});other.events.add('click',()=>T('click:other-station'));});
+// Игрушечные Яндекс.Карты 2.1 — как в приложении А-100 (react-yandex-maps): без глобального ymaps, скрипт
+// api-maps.yandex.ru с onload=__yandex-maps-api-onload__$$…, Placemark докладывается позже (modules.require);
+// точка местоположения (redCircleDotIcon) — прямо на станции; карточку открывает только click метки станции №14
+if('${marker}'==='api')setTimeout(()=>{const name='__yandex-maps-api-onload__$$t1';
+  window[name]=(y)=>{y.ready(()=>{y.modules.require(['Placemark']).done(([P])=>{y.Placemark=y.Placemark||P;
+    window.ymap=new y.Map('ymap',{center:[53.90,27.56]});
+    const dot=new y.Placemark([53.8455,27.6341],{},{preset:'islands#redCircleDotIcon'});dot.events.add('click',()=>T('click:userdot'));
+    window.pm14=new y.Placemark([53.8455,27.63415],{},{iconLayout:'default#image'});const other=new y.Placemark([53.93,27.50],{},{iconLayout:'default#image'});
+    pm14.events.add('click',e=>{T('click:pin');go('card',CARD);});other.events.add('click',()=>T('click:other-station'));});});};
+  const sc=document.createElement('script');sc.src='https://api-maps.yandex.ru/2.1/?onload='+encodeURIComponent(name)+'&lang=ru_RU&ns=';document.head.appendChild(sc);
 },300);
 addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');locate();}});
 nav.onclick=()=>{T('click:nav');setTimeout(()=>frames(10,()=>{T('map');show(MAP());}),${mapDelay || delay});};show(HOME());T('home');
@@ -87,11 +87,21 @@ const FLASH = `if (location.hostname === 'web.telegram.org') { window.__flash = 
     if (c && !pop && getComputedStyle(c).visibility === 'visible' && (!o || o.style.display === 'none') && !window.__revealedOk) window.__flash++;
     requestAnimationFrame(f); })(); }`;
 
+// Скрипт игрушечных Яндекс.Карт: вызывает функцию из onload= с объектом карт (без глобального имени)
+const YMAPS = `(function(){const evm=()=>{const h={};return{add:(t,f)=>{(h[t]=h[t]||[]).push(f)},fire:(t,e)=>{(h[t]||[]).forEach(f=>f(e))}};};
+  const opt=(o)=>({get:(k)=>(o||{})[k]});
+  function Placemark(c,props,o){this.geometry={getCoordinates:()=>c};this.events=evm();this.options=opt(o);}
+  const Y={ready:(cb)=>setTimeout(cb,50),modules:{require:(n)=>({done:(cb)=>setTimeout(()=>cb([Placemark]),100)})}};
+  Y.Map=function(el,st){this.c=st.center;};Y.Map.prototype.getCenter=function(){return this.c;};Y.Map.prototype.setCenter=function(c){this.c=c;};
+  Y.Event=function(o,t){this.o=o;};Y.Event.prototype.get=function(k){return this.o[k];};
+  const m=/onload=([^&]+)/.exec(document.currentScript.src);window[decodeURIComponent(m[1])](Y);})();`;
+
 async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 800, height: 400 } }); const logs = [];
   await ctx.addInitScript(FLASH);
   await ctx.addInitScript(js);
   await ctx.route('https://web.telegram.org/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: TG(false) }));
+  await ctx.route('https://api-maps.yandex.ru/**', r => r.fulfill({ contentType: 'text/javascript', body: YMAPS }));
   await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay, locDelay, marker || 'api') }));
   const p = await ctx.newPage();
   p.on('pageerror', e => logs.push('ERR ' + e.message));
@@ -105,7 +115,12 @@ async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   await p.click('.popup #allow', { timeout: 3000 });
   await p.waitForTimeout(400);
   if (shots) await p.screenshot({ path: path.join(shots, name + '-1-zagruzka.png') });
-  await p.waitForSelector('#__jzp .z-pumps', { timeout: 60000 });
+  try { await p.waitForSelector('#__jzp .z-pumps', { timeout: 60000 }); } catch (e) {
+    const f = p.frames().find(f => f.url().startsWith('https://tgminiapp.a-100.by'));
+    const tr = f ? await f.evaluate(() => window.trail.join(' > ')).catch(() => '?') : 'нет кадра';
+    console.log('FAIL ' + name + ' | оболочка не появилась за 60 с\n     приложение: ' + tr + '\n     журнал: ' + logs.join(' / '));
+    await b.close(); return false;
+  }
   await p.waitForTimeout(600);
   const hdr = await p.$eval('#__jzp .z-hdr', e => e.innerText.replace(/\s+/g, ' '));
   const pumps = await p.$$eval('#__jzp .z-p', a => a.map(e => e.textContent).join(','));
@@ -123,7 +138,7 @@ async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   const trail = await fr.evaluate(() => window.trail.join(' > '));
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
-    !trail.includes('click:banner') && trail.includes('click:tile') && trail.includes('click:pin') && !trail.includes('click:other-station') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
+    !trail.includes('click:banner') && trail.includes('click:tile') && trail.includes('click:pin') && !trail.includes('click:other-station') && !trail.includes('click:userdot') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
     trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
   console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);
