@@ -39,8 +39,14 @@
     var started = false, menuClicked = false, t0 = Date.now(), appWin = null, revealed = false, opened = false;
     var st = { phase: 'off', station: '', address: '', near: false, pumps: [], pump: 0, mode: 'l', value: '', full: false };
     // Вход в Telegram (страница входа веб-Telegram: класс has-auth-pages, блок #auth-pages) — заставку убрать
+    // Пока веб-Telegram загружается, признак страницы входа стоит и у вошедшего (снимается в bootstrapIm.ts) —
+    // вход признаётся, только если признак держится дольше 5 с и чата так и не появилось (журнал 04.11.2026, 14:47:
+    // ложный «вход» отключил вкладку)
     var loginShown = function () {
-      return document.body && (document.body.classList.contains('has-auth-pages') || !!document.getElementById('auth-pages'));
+      if (!document.body || Date.now() - t0 < 5000) return false;
+      var auth = document.body.classList.contains('has-auth-pages') || !!document.getElementById('auth-pages');
+      var chat = document.querySelector('.chat-input,.new-message-bot-commands,#column-center .chat');
+      return auth && !chat;
     };
     // Окно веб-Telegram (разрешение на местоположение, условия мини-приложений) — заставка не должна его закрывать
     var tgPopup = function () {
@@ -60,10 +66,7 @@
     var early = new MutationObserver(function () {
       if (revealed) { early.disconnect(); return; }
       addHide();
-      if (document.body && !ov) {
-        if (loginShown()) { early.disconnect(); log('tg: login page — splash removed'); reveal('login'); return; }
-        showLoading();
-      }
+      if (document.body && !ov) showLoading();
       if (hideEl.isConnected && ov) early.disconnect();
     });
     early.observe(document, { childList: true, subtree: true });
@@ -253,7 +256,7 @@
     var STEPS = [
       { name: 'Заправиться', re: /^заправиться$/i, level: 2 },
       { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, wait: 15000 }, // веб-Telegram может спросить местоположение
-      { name: 'Заправка', re: /^заправка$/i, level: 0 },
+      { name: 'Заправка', re: /^заправка$/i, level: 0, wait: 10000 }, // карта (Яндекс) грузится не сразу
       { name: 'Заправить авто', re: /^заправить авто$/i, level: 0 }
     ];
     var station = '', address = '', near = false;

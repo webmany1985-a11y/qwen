@@ -14,20 +14,23 @@ const js = 'window.__JZP_BG="data:image/jpeg;base64,' +
   'window.__JZP_KLEVER="data:image/png;base64,' + fs.readFileSync(path.join(dir, '../main/assets/zapravka_klever.png')).toString('base64') + '";\n' +
   fs.readFileSync(path.join(dir, '../main/assets/zapravka_auto.js'), 'utf8');
 
-const TG = (login) => `<!doctype html><body style="margin:0;background:#17212b" class="${login ? 'has-auth-pages' : ''}">
-${login ? '<div id="auth-pages">Вход: номер телефона</div>' : `<div class="chat-input">
+// Как в настоящем веб-Telegram: при загрузке признак страницы входа стоит и у вошедшего, затем снимается (1,5 с)
+const TG = (login) => `<!doctype html><body style="margin:0;background:#17212b" class="has-auth-pages">
+<div id="auth-pages" style="${login ? '' : 'display:none'}">Вход: номер телефона</div>
+${login ? '' : `<script>setTimeout(()=>{document.body.classList.remove('has-auth-pages');document.getElementById('auth-pages').remove();
+document.body.insertAdjacentHTML('beforeend',document.getElementById('chatTpl').innerHTML);boot();},1500);</script><template id="chatTpl"><div class="chat-input">
 <button class="chat-input-control-button" id="start" style="color:#fff">START</button>
-<div class="new-message-bot-commands" role="button" id="menu" style="color:#fff">Открыть</div></div>`}
-<script>window.startClicked=0;if(window.start)start.onclick=()=>{startClicked++;};
+<div class="new-message-bot-commands" role="button" id="menu" style="color:#fff">Открыть</div></div></template>`}
+<script>window.startClicked=0;function boot(){if(window.start)start.onclick=()=>{startClicked++;};
 if(window.menu)menu.onclick=()=>{const host=document.createElement('div');host.style.cssText='position:fixed;left:210px;top:10px';document.body.append(host);
 const root=host.attachShadow({mode:'closed'});const f=document.createElement('iframe');f.src='https://tgminiapp.a-100.by/#tgWebAppData=x';
-f.style.cssText='width:380px;height:380px;border:0;background:#fff';root.append(f);};
+f.style.cssText='width:380px;height:380px;border:0;background:#fff';root.append(f);};}
 // мини-приложение просит местоположение — веб-Telegram спрашивает человека (один раз)
 window.addEventListener('message',e=>{if(e.data==='need-location'){const p=document.createElement('div');p.className='popup';
 p.innerHTML='<div>Разрешить доступ к местоположению?</div><button id="allow">Разрешить</button>';document.body.append(p);
 allow.onclick=()=>{p.remove();e.source.postMessage('location-ok','*');};}});</script></body>`;
 
-const APP = (delay) => `<!doctype html><body style="margin:0;font-family:sans-serif"><div id="page"></div>
+const APP = (delay, mapDelay) => `<!doctype html><body style="margin:0;font-family:sans-serif"><div id="page"></div>
 <nav><span id="nav">Заправка</span></nav>
 <script>
 window.trail=[];const T=(x)=>trail.push(x);let center=1,qtyMode='l',qtyVal='',full=false;
@@ -52,7 +55,7 @@ function bind(){
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
 addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');go('card',CARD);}});
-nav.onclick=()=>{T('click:nav');go('map',MAP);};show(HOME());T('home');
+nav.onclick=()=>{T('click:nav');setTimeout(()=>{T('map');show(MAP());},${mapDelay || delay});};show(HOME());T('home');
 </script></body>`;
 
 // Контроль мелькания: в каждом кадре отрисовки — не виден ли чат веб-Telegram без заставки (кроме окна веб-Telegram)
@@ -62,17 +65,17 @@ const FLASH = `if (location.hostname === 'web.telegram.org') { window.__flash = 
     if (c && !pop && getComputedStyle(c).visibility === 'visible' && (!o || o.style.display === 'none') && !window.__revealedOk) window.__flash++;
     requestAnimationFrame(f); })(); }`;
 
-async function run(name, delay, actions, expect) {
+async function run(name, delay, actions, expect, mapDelay) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 800, height: 400 } }); const logs = [];
   await ctx.addInitScript(FLASH);
   await ctx.addInitScript(js);
   await ctx.route('https://web.telegram.org/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: TG(false) }));
-  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay) }));
+  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay) }));
   const p = await ctx.newPage();
   p.on('pageerror', e => logs.push('ERR ' + e.message));
   p.on('console', m => { if (m.text().startsWith('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] ', '')); });
   await p.goto('https://web.telegram.org/k/');
-  await p.waitForSelector('#__jzp .z-load', { timeout: 3000 }); // заставка — сразу при открытии вкладки
+  await p.waitForSelector('#__jzp .z-load', { timeout: 1000 }); // заставка — сразу при открытии вкладки
   // окно разрешения местоположения: заставка должна уйти в сторону, человек нажимает «Разрешить»
   await p.waitForSelector('.popup #allow', { timeout: 20000 });
   await p.waitForTimeout(500);
@@ -114,7 +117,7 @@ async function login() {
   const p = await ctx.newPage();
   p.on('console', m => { if (m.text().startsWith('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] ', '')); });
   await p.goto('https://web.telegram.org/k/');
-  await p.waitForTimeout(2500);
+  await p.waitForTimeout(7000);
   const gone = await p.evaluate(() => !document.getElementById('__jzp'));
   console.log((gone ? 'OK   ' : 'FAIL ') + 'vhod | страница входа видна, заставки нет: ' + gone + ' | ' + logs.join(' / '));
   await b.close();
@@ -125,7 +128,7 @@ async function login() {
   const r = [];
   r.push(await login());
   r.push(await run('litry', 300, ['#__jzp [data-p="7"]', '#__jzp [data-a="kb"]', '#__jzp [data-k="3"]', '#__jzp [data-k="5"]', '#__jzp [data-a="kbok"]'], 'pay:l:35:pump7'));
-  r.push(await run('summa-medlenno', 1500, ['#__jzp [data-p="3"]', '#__jzp [data-m="s"]', '#__jzp [data-q="50"]'], 'pay:s:50:pump3'));
+  r.push(await run('summa-medlenno', 1500, ['#__jzp [data-p="3"]', '#__jzp [data-m="s"]', '#__jzp [data-q="50"]'], 'pay:s:50:pump3', 6000)); // и карта открывается 6 с
   r.push(await run('polnyj', 300, ['#__jzp [data-p="1"]', '#__jzp [data-a="full"]'], 'pay:l:full:pump1'));
   process.exit(r.every(Boolean) ? 0 : 1);
 })();
