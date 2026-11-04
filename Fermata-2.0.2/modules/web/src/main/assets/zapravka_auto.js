@@ -56,11 +56,15 @@
     // Пока веб-Telegram загружается, признак страницы входа стоит и у вошедшего (снимается в bootstrapIm.ts) —
     // вход признаётся, только если признак держится дольше 5 с и чата так и не появилось (журнал 04.11.2026, 14:47:
     // ложный «вход» отключил вкладку)
+    // Признак has-auth-pages держится и у вошедшего, пока веб-Telegram грузится (на телефоне — дольше 5 с; журнал 16:00
+    // и 16:10). Вход — только если видна сама форма: в #auth-pages поле ввода (номер, код, пароль) или QR-код
+    // (tweb src/pages/cards/SignInCard.tsx, SignQRCard.tsx), и чата нет
     var loginShown = function () {
-      if (!document.body || Date.now() - t0 < 5000) return false;
-      var auth = document.body.classList.contains('has-auth-pages') || !!document.getElementById('auth-pages');
-      var chat = document.querySelector('.chat-input,.new-message-bot-commands,#column-center .chat');
-      return auth && !chat;
+      var auth = document.getElementById('auth-pages');
+      if (!auth || document.querySelector('.chat-input,.new-message-bot-commands')) return false;
+      return [].slice.call(auth.querySelectorAll('input,canvas')).some(function (el) {
+        var r = el.getBoundingClientRect(); return r.width > 20 && r.height > 10;
+      });
     };
     // Окно веб-Telegram (разрешение на местоположение, условия мини-приложений) — заставка не должна его закрывать
     var tgPopup = function () {
@@ -106,10 +110,7 @@
         }
         return;
       }
-      var start = all('.chat-input-control-button').filter(function (b) {
-        return visible(b) && /^(start|запустить|начать|старт)$/i.test(text(b));
-      })[0];
-      if (start && !started) { started = true; log('tg: start bot'); tap(start); }
+      // «Старт» бота не нажимается: кнопка «Открыть» есть и без него, а /start засорял чат (скриншот 04.11.2026 16:10)
     }, 700);
 
     // Окно веб-Telegram поверх — оболочку на время спрятать, затем вернуть

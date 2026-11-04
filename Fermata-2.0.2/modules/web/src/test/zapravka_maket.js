@@ -14,11 +14,12 @@ const js = 'window.__JZP_BG="data:image/jpeg;base64,' +
   'window.__JZP_KLEVER="data:image/png;base64,' + fs.readFileSync(path.join(dir, '../main/assets/zapravka_klever.png')).toString('base64') + '";\n' +
   fs.readFileSync(path.join(dir, '../main/assets/zapravka_auto.js'), 'utf8');
 
-// Как в настоящем веб-Telegram: при загрузке признак страницы входа стоит и у вошедшего, затем снимается (1,5 с)
+// Как в настоящем веб-Telegram: при загрузке признак страницы входа стоит и у вошедшего, затем снимается (7 с —
+// на телефоне веб-Telegram грузится дольше 5 с, журнал 04.11.2026 16:00)
 const TG = (login) => `<!doctype html><body style="margin:0;background:#17212b" class="has-auth-pages">
-<div id="auth-pages" style="${login ? '' : 'display:none'}">Вход: номер телефона</div>
+<main id="auth-pages">${login ? 'Вход: <input type="tel" style="width:200px;height:30px">' : ''}</main>
 ${login ? '' : `<script>setTimeout(()=>{document.body.classList.remove('has-auth-pages');document.getElementById('auth-pages').remove();
-document.body.insertAdjacentHTML('beforeend',document.getElementById('chatTpl').innerHTML);boot();},1500);</script><template id="chatTpl"><div class="chat-input">
+document.body.insertAdjacentHTML('beforeend',document.getElementById('chatTpl').innerHTML);boot();},7000);</script><template id="chatTpl"><div class="chat-input">
 <button class="chat-input-control-button" id="start" style="color:#fff">START</button>
 <div class="new-message-bot-commands" role="button" id="menu" style="color:#fff">Открыть</div></div></template>`}
 <script>window.startClicked=0;function boot(){if(window.start)start.addEventListener('mousedown',()=>{startClicked++;});
