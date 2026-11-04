@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 import me.aap.fermata.addon.AddonManager;
 import me.aap.fermata.ui.activity.MainActivityDelegate;
 import me.aap.utils.log.Log;
+import me.aap.utils.ui.view.ToolBarView;
 
 /**
  * Экран вкладки «Заправка» — как вкладка «Кинопоиск»: обычная страница под размер экрана, без версии для
@@ -46,6 +47,15 @@ public class ZapravkaFragment extends WebBrowserFragment {
 	@Override
 	protected WebBrowserAddon getAddon() {
 		return AddonManager.get().getAddon(ZapravkaAddon.class);
+	}
+
+	/**
+	 * Без верхней полосы с адресом web.telegram.org, крестиком и закладкой (пожелание 04.11.2026: «не нравится верхняя
+	 * строка с адресом, убери её»); нижние вкладки остаются. Так же сделано у вкладки YouTube.
+	 */
+	@Override
+	public ToolBarView.Mediator getToolBarMediator() {
+		return ToolBarView.Mediator.Invisible.instance;
 	}
 
 	@Override
