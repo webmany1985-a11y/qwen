@@ -10,6 +10,8 @@ const dir = __dirname;
 const shots = process.argv[2];
 const js = 'window.__JZP_BG="data:image/jpeg;base64,' +
   fs.readFileSync(path.join(dir, '../main/assets/zapravka_fon.jpg')).toString('base64') + '";\n' +
+  'window.__JZP_LOGO="data:image/png;base64,' + fs.readFileSync(path.join(dir, '../main/assets/zapravka_logo.png')).toString('base64') + '";' +
+  'window.__JZP_KLEVER="data:image/png;base64,' + fs.readFileSync(path.join(dir, '../main/assets/zapravka_klever.png')).toString('base64') + '";\n' +
   fs.readFileSync(path.join(dir, '../main/assets/zapravka_auto.js'), 'utf8');
 
 const TG = (login) => `<!doctype html><body style="margin:0;background:#17212b" class="${login ? 'has-auth-pages' : ''}">
@@ -76,6 +78,7 @@ async function run(name, delay, actions, expect) {
   await p.waitForTimeout(500);
   if (shots) await p.screenshot({ path: path.join(shots, name + '-0-mestopolozhenie.png') });
   await p.click('.popup #allow', { timeout: 3000 });
+  await p.waitForTimeout(400);
   if (shots) await p.screenshot({ path: path.join(shots, name + '-1-zagruzka.png') });
   await p.waitForSelector('#__jzp .z-pumps', { timeout: 20000 });
   await p.waitForTimeout(600);

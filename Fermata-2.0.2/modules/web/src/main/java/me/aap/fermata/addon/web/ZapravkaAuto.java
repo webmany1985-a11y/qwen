@@ -54,7 +54,10 @@ final class ZapravkaAuto {
 			String js = new String(read(ctx, "zapravka_auto.js"), StandardCharsets.UTF_8);
 			// Фон оболочки — фото АЗС (assets/zapravka_fon.jpg), строкой data: перед сценарием
 			String bg = "data:image/jpeg;base64," + Base64.encodeToString(read(ctx, "zapravka_fon.jpg"), Base64.NO_WRAP);
-			return script = "window.__JZP_BG='" + bg + "';\n" + js;
+			// Логотип А-100 (от пользователя 04.11.2026): целиком — на заставке, клевер — в шапке оболочки
+			String logo = "data:image/png;base64," + Base64.encodeToString(read(ctx, "zapravka_logo.png"), Base64.NO_WRAP);
+			String klever = "data:image/png;base64," + Base64.encodeToString(read(ctx, "zapravka_klever.png"), Base64.NO_WRAP);
+			return script = "window.__JZP_BG='" + bg + "';window.__JZP_LOGO='" + logo + "';window.__JZP_KLEVER='" + klever + "';\n" + js;
 		} catch (Exception ex) {
 			Log.e(ex, "failed to load zapravka_auto.js");
 			return null;

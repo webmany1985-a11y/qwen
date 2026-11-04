@@ -169,7 +169,7 @@
       var quick = st.mode === 'l' ? ['20', '40'] : ['50', '100'];
       o.innerHTML =
         '<div class="z-bg" style="background-image:url(' + (window.__JZP_BG || '') + ')"></div><div class="z-shade"></div>' +
-        '<div class="z-g z-hdr"><div class="z-logo"><i></i><i></i><i></i><i></i></div><div><div class="z-st">' +
+        '<div class="z-g z-hdr">' + KLEVER + '<div><div class="z-st">' +
         esc(st.station || 'АЗС не определена') + '</div><div class="z-ad">' + esc(st.address || 'проверьте станцию в приложении') + '</div></div></div>' +
         (st.near ? '<div class="z-g z-near">✓ ближайшая по местоположению</div>' : '') +
         '<div class="z-g z-app" data-a="app">Приложение</div>' +
@@ -395,20 +395,20 @@
   }
 
   // ---------------------------------------------------------------- оформление (утверждено 04.11.2026)
-  // Логотип А-100 на загрузке (пожелание 04.11.2026: «во время загрузки замени надпись на логотип а100»):
-  // красная надпись курсивом и зелёный лист над последним «0», как на вывеске АЗС. textLength — ширина надписи
-  // не зависит от шрифта телефона, не обрежется
-  var LOGO = '<svg class="z-a100" viewBox="0 0 330 120" xmlns="http://www.w3.org/2000/svg">' +
-    '<text x="22" y="96" font-family="Roboto, DejaVu Sans, sans-serif" font-weight="900" font-style="italic" font-size="88" ' +
-    'fill="#e3262b" textLength="270" lengthAdjust="spacingAndGlyphs" transform="skewX(-6)">А-100</text>' +
-    '<path d="M268 26 C280 10 300 6 312 9 C309 25 294 37 276 34 Z" fill="#7cc242"/></svg>';
+  // Логотип А-100 на загрузке — картинка от пользователя (04.11.2026: «логотип поменяй на этот»), без белого фона;
+  // нет картинки — надпись
+  var LOGO = window.__JZP_LOGO ? '<img class="z-a100" alt="А-100" src="' + window.__JZP_LOGO + '">' :
+    '<div class="z-a100" style="font:900 italic 64px sans-serif;color:#e3262b">А-100</div>';
+  var KLEVER = window.__JZP_KLEVER ? '<img class="z-kl" alt="" src="' + window.__JZP_KLEVER + '">' :
+    '<div class="z-logo"><i></i><i></i><i></i><i></i></div>';
   var CSS = '#__jzp{position:fixed;inset:0;z-index:2147483647;overflow:hidden;font-family:"Roboto","DejaVu Sans",sans-serif;color:#fff;background:#0b0d10;' +
     '-webkit-user-select:none;user-select:none}' +
     '#__jzp *{box-sizing:border-box}' +
     '.z-load{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,#ffffff 0,#f4f4f4 60%,#e9e9e9)}' +
-    '.z-a100{width:min(46vw,300px);animation:zpl 1.4s ease-in-out infinite}' +
-    '@keyframes zpl{50%{transform:scale(1.06);filter:drop-shadow(0 0 14px #e3262b66)}}' +
-    '.z-ring{position:absolute;width:min(60vw,380px);height:min(60vw,380px);border-radius:50%;border:3px solid #e3262b22;border-top-color:#e3262b;animation:zrot 1.1s linear infinite}' +
+    '.z-a100{height:min(56vh,250px);width:auto;animation:zpl 1.4s ease-in-out infinite}' +
+    '.z-kl{width:clamp(30px,10vh,42px);height:auto;flex:none;filter:drop-shadow(0 0 6px #7cc24299)}' +
+    '@keyframes zpl{50%{transform:scale(1.05);filter:drop-shadow(0 0 14px #7cc24288)}}' +
+    '.z-ring{position:absolute;width:min(60vw,380px);height:min(60vw,380px);border-radius:50%;border:3px solid #7cc24233;border-top-color:#e3262b;animation:zrot 1.1s linear infinite}' +
     '@keyframes zrot{to{transform:rotate(360deg)}}' +
     '.z-bg{position:absolute;inset:-6px;background:center 30%/cover;animation:zkb 16s ease-in-out infinite alternate}' +
     '@keyframes zkb{to{transform:scale(1.025) translate(-4px,-2px)}}' +
