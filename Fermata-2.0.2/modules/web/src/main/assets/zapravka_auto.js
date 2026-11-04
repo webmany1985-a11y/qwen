@@ -46,13 +46,28 @@
     var tgPopup = function () {
       return all('.popup').filter(function (p) { return visible(p) && !p.querySelector('iframe'); })[0];
     };
-    // Заставка — сразу при открытии вкладки, чтобы не мелькал список чатов (пожелание 04.11.2026)
-    var early = setInterval(function () {
-      if (revealed) { clearInterval(early); return; }
-      if (!document.body) return;
-      clearInterval(early);
-      if (!loginShown()) showLoading();
-    }, 50);
+    // Список чатов не должен мелькнуть ни на миг (пожелание 04.11.2026): содержимое веб-Telegram скрыто с первой
+    // же отрисовки (стиль — как только появится корень документа), видны только заставка и окна веб-Telegram
+    // (.popup: разрешение местоположения, условия). Вход в Telegram или показ приложения — стиль снимается.
+    var hideEl = document.createElement('style');
+    hideEl.textContent = 'html,body{background:#f4f4f4!important}body>*:not(#__jzp){visibility:hidden!important}' +
+      '.popup,.popup *{visibility:visible!important}';
+    var addHide = function () {
+      var root = document.head || document.documentElement;
+      if (root && !hideEl.isConnected && !revealed) root.appendChild(hideEl);
+      return hideEl.isConnected;
+    };
+    var early = new MutationObserver(function () {
+      if (revealed) { early.disconnect(); return; }
+      addHide();
+      if (document.body && !ov) {
+        if (loginShown()) { early.disconnect(); log('tg: login page — splash removed'); reveal('login'); return; }
+        showLoading();
+      }
+      if (hideEl.isConnected && ov) early.disconnect();
+    });
+    early.observe(document, { childList: true, subtree: true });
+    addHide();
     var iv = setInterval(function () {
       if (revealed) { clearInterval(iv); return; }
       if (loginShown()) { log('tg: login page — splash removed'); clearInterval(iv); reveal('login'); return; }
@@ -133,6 +148,8 @@
     function reveal(why) {
       if (revealed) return;
       revealed = true;
+      try { early.disconnect(); } catch (e) { }
+      if (hideEl) hideEl.remove();
       if (ov) ov.remove();
       if (styleEl) styleEl.remove();
       ov = null;

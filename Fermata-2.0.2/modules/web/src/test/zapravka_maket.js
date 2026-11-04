@@ -53,8 +53,16 @@ addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('loca
 nav.onclick=()=>{T('click:nav');go('map',MAP);};show(HOME());T('home');
 </script></body>`;
 
+// Контроль мелькания: в каждом кадре отрисовки — не виден ли чат веб-Telegram без заставки (кроме окна веб-Telegram)
+const FLASH = `if (location.hostname === 'web.telegram.org') { window.__flash = 0; window.__frames = 0;
+  (function f() { window.__frames++; const c = document.querySelector('.chat-input'), o = document.getElementById('__jzp');
+    const pop = document.querySelector('.popup');
+    if (c && !pop && getComputedStyle(c).visibility === 'visible' && (!o || o.style.display === 'none') && !window.__revealedOk) window.__flash++;
+    requestAnimationFrame(f); })(); }`;
+
 async function run(name, delay, actions, expect) {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 800, height: 400 } }); const logs = [];
+  await ctx.addInitScript(FLASH);
   await ctx.addInitScript(js);
   await ctx.route('https://web.telegram.org/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: TG(false) }));
   await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay) }));
@@ -75,19 +83,21 @@ async function run(name, delay, actions, expect) {
   const pumps = await p.$$eval('#__jzp .z-p', a => a.map(e => e.textContent).join(','));
   for (const a of actions) { await p.click(a); await p.waitForTimeout(150); }
   if (shots) await p.screenshot({ path: path.join(shots, name + '-2-obolochka.png') });
+  await p.evaluate(() => { window.__flashBeforeGo = window.__flash; });
   await p.click('#__jzp [data-a="go"]');
   await p.waitForFunction(() => !document.getElementById('__jzp'), null, { timeout: 30000 }).catch(() => { });
   const gone = await p.evaluate(() => !document.getElementById('__jzp'));
   const fr = p.frames().find(f => f.url().startsWith('https://tgminiapp.a-100.by'));
   const startClicked = await p.evaluate(() => window.startClicked);
+  const flash = await p.evaluate(() => [window.__flashBeforeGo, window.__frames]);
   await fr.waitForFunction(() => window.trail[window.trail.length - 1] === 'warn', null, { timeout: 5000 }).catch(() => { });
   await p.waitForTimeout(500);
   const trail = await fr.evaluate(() => window.trail.join(' > '));
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
-    trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 &&
+    trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
     trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
-  console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked);
+  console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);
   if (!ok) console.log('     журнал: ' + logs.join(' / '));
   await b.close();
