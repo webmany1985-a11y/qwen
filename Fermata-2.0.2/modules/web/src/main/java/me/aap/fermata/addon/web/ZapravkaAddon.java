@@ -29,7 +29,9 @@ import me.aap.utils.ui.fragment.ActivityFragment;
 public class ZapravkaAddon extends WebBrowserAddon {
 	@NonNull
 	private static final AddonInfo info = FermataAddon.findAddonInfo(ZapravkaAddon.class.getName());
-	static final Pref<Supplier<String>> ZP_LINK = Pref.s("ZP_LINK", "");
+	/** Бот сети АЗС «А-100» — ссылка от пользователя 04.11.2026; в настройках можно заменить. */
+	static final String DEFAULT_LINK = "https://t.me/A100_app_bot";
+	static final Pref<Supplier<String>> ZP_LINK = Pref.s("ZP_LINK", DEFAULT_LINK);
 	private static final Pref<IntSupplier> ZP_DARK_MODE = Pref.i("ZP_DARK_MODE", DARK_MODE_AUTO);
 	private static final Pref<BooleanSupplier> ZP_DESKTOP_VERSION = Pref.b("ZP_DESKTOP_VERSION", false);
 	private static final Pref<Supplier<String[]>> ZP_BOOKMARKS = Pref.sa("ZP_BOOKMARKS");

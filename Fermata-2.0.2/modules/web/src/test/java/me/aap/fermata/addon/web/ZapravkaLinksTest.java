@@ -39,6 +39,12 @@ public class ZapravkaLinksTest {
 	}
 
 	@Test
+	public void a100ByDefault() {
+		assertEquals("https://web.telegram.org/k/#?tgaddr=https%3A%2F%2Ft.me%2FA100_app_bot",
+				ZapravkaLinks.startUrl(ZapravkaAddon.DEFAULT_LINK));
+	}
+
+	@Test
 	public void telegramHosts() {
 		assertTrue(ZapravkaLinks.isTelegramHost("web.telegram.org"));
 		assertTrue(ZapravkaLinks.isTelegramHost("t.me"));
