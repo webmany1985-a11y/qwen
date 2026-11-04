@@ -35,6 +35,7 @@ public class ZapravkaFragment extends WebBrowserFragment {
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new ZapravkaWebClient(), chromeClient);
+		ZapravkaAuto.install(webView);
 		String url = addon.getLastUrl();
 		Log.i("Zapravka: open ", ZapravkaLinks.WEB_TELEGRAM.equals(url) ? "web telegram (no link)" : "fuel app link");
 		webView.loadUrl(url);
