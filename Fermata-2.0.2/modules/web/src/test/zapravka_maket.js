@@ -38,7 +38,7 @@ const show=(h)=>{page.innerHTML=h;bind();};
 // Переход экрана ждёт кадров отрисовки (как анимации и карта на настоящем сайте): в спрятанном окне их нет
 const frames=(k,cb)=>{let i=0;const f=()=>{if(++i>=k)cb();else requestAnimationFrame(f);};requestAnimationFrame(f);};
 const go=(n,h)=>setTimeout(()=>frames(10,()=>{T(n);show(h());}),${delay});
-const HOME=()=>'<div style="position:absolute;left:-2000px;top:40px;width:200px"><div class="slide" data-k="banner">Заправка</div></div><div data-k="tile"><span>Заправить авто</span></div><div>Помыть авто</div>';
+const HOME=()=>'<div style="position:absolute;left:-2000px;top:40px;width:200px"><div class="slide" data-k="banner">Заправка</div></div><div data-k="tile"><span>Заправить<br>авто</span></div><div>Помыть авто</div>';
 const MAP=()=>'<button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const CARD=()=>'<div class="card"><div><div class="name">АЗС №14</div><div class="addr">ул. Тростенецкая, 16</div></div><div>❤</div>'+
   '<button>Открыть в Яндекс картах</button><button data-k="fuel">Заправиться</button></div>';
@@ -105,7 +105,7 @@ async function run(name, delay, actions, expect, mapDelay, locDelay) {
   const trail = await fr.evaluate(() => window.trail.join(' > '));
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
-    !trail.includes('click:banner') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
+    !trail.includes('click:banner') && trail.includes('click:tile') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
     trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
   console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);
