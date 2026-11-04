@@ -42,7 +42,6 @@ const go=(n,h)=>setTimeout(()=>frames(10,()=>{T(n);show(h());}),${delay});
 const HOME=()=>'<div style="position:absolute;left:-2000px;top:40px;width:200px"><div class="slide" data-k="banner">Заправка</div></div><div data-k="tile"><span>Заправить<br>авто</span></div><div>Помыть авто</div>';
 const MAP=()=>'<button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const FOCUS=()=>'<div class="ymaps-2-1-79-map" id="ymap" style="position:relative;width:380px;height:260px;background:#e8e8e8">'+
-  ('${marker}'==='canvas' ? '' : '<div class="ymaps-2-1-79-placemark-overlay" data-k="pin" style="position:absolute;left:170px;top:70px;width:40px;height:56px"><img style="width:40px;height:40px;background:#7cc242;border-radius:50%"></div>')+
   '</div><button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const CARD=()=>'<div class="card"><div><div class="name">АЗС №14</div><div class="addr">ул. Тростенецкая, 16</div></div><div>❤</div>'+
   '<button>Открыть в Яндекс картах</button><button data-k="fuel">Заправиться</button></div>';
@@ -61,10 +60,22 @@ function bind(){
   page.querySelectorAll('.tile').forEach(e=>e.onclick=()=>{const n=+e.dataset.n;T('tile:'+n);center+=Math.sign(n-center);show(PUMP());});
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
-let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');go('focus',FOCUS);},${locDelay || 0});};
-// нарисованный значок: карта сама проверяет точку касания (значок 40×40 по центру, на 30 px выше центра карты)
-addEventListener('mousedown',e=>{const m=document.getElementById('ymap');if(!m||'${marker}'!=='canvas')return;const r=m.getBoundingClientRect();
-  const cx=r.left+r.width/2,cy=r.top+r.height/2-30;if(Math.abs(e.clientX-cx)<22&&Math.abs(e.clientY-cy)<22){T('click:pin');go('card',CARD);}else T('map-miss');},true);
+let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');if(window.ymap){const a=ymap.getCenter(),b=[53.8455,27.6341];let k=0;const iv=setInterval(()=>{k++;ymap.setCenter([a[0]+(b[0]-a[0])*k/20,a[1]+(b[1]-a[1])*k/20]);if(k>=20)clearInterval(iv);},100);}go('focus',FOCUS);},${locDelay || 0});};
+// нарисованный значок: карта сама проверяет точку касания — значок по центру окна по ширине, на 41 % высоты
+// (как на скриншоте пользователя 04.11.2026 15:52)
+addEventListener('mousedown',e=>{if(!document.getElementById('ymap')||'${marker}'!=='canvas')return;
+  const cx=innerWidth/2,cy=innerHeight*0.41;if(Math.abs(e.clientX-cx)<22&&Math.abs(e.clientY-cy)<22){T('click:pin');go('card',CARD);}else T('map-miss');},true);
+// Игрушечные Яндекс.Карты 2.1: появляются позже страницы; карта, метки станций, событие click у метки
+if('${marker}'==='api')setTimeout(()=>{const evm=()=>{const h={};return{add:(t,f)=>{(h[t]=h[t]||[]).push(f)},fire:(t,e)=>{(h[t]||[]).forEach(f=>f(e))}};};
+  const Y={ready:(cb)=>setTimeout(cb,50)};
+  Y.Map=function(el,st){this.c=st.center;};Y.Map.prototype.getCenter=function(){return this.c;};Y.Map.prototype.setCenter=function(c){this.c=c;};
+  Y.Placemark=function(c){this.geometry={getCoordinates:()=>c};this.events=evm();};
+  Y.Event=function(o,t){this.o=o;};Y.Event.prototype.get=function(k){return this.o[k];};
+  window.ymaps=Y;
+  ymaps.ready(()=>{window.ymap=new ymaps.Map('ymap',{center:[53.90,27.56]});
+    window.pm14=new ymaps.Placemark([53.8455,27.6341]);const other=new ymaps.Placemark([53.93,27.50]);
+    pm14.events.add('click',e=>{if(e.get('target')===pm14){T('click:pin');go('card',CARD);}});other.events.add('click',()=>T('click:other-station'));});
+},300);
 addEventListener('message',e=>{if(e.data==='location-ok'){window.locOk=1;T('location-ok');locate();}});
 nav.onclick=()=>{T('click:nav');setTimeout(()=>frames(10,()=>{T('map');show(MAP());}),${mapDelay || delay});};show(HOME());T('home');
 </script></body>`;
@@ -81,7 +92,7 @@ async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   await ctx.addInitScript(FLASH);
   await ctx.addInitScript(js);
   await ctx.route('https://web.telegram.org/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: TG(false) }));
-  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay, locDelay, marker || 'dom') }));
+  await ctx.route('https://tgminiapp.a-100.by/**', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: APP(delay, mapDelay, locDelay, marker || 'api') }));
   const p = await ctx.newPage();
   p.on('pageerror', e => logs.push('ERR ' + e.message));
   p.on('console', m => { if (m.text().startsWith('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] ', '')); });
@@ -112,7 +123,7 @@ async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   const trail = await fr.evaluate(() => window.trail.join(' > '));
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
-    !trail.includes('click:banner') && trail.includes('click:tile') && trail.includes('click:pin') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
+    !trail.includes('click:banner') && trail.includes('click:tile') && trail.includes('click:pin') && !trail.includes('click:other-station') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
     trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
   console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);

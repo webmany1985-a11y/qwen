@@ -284,6 +284,88 @@
     };
     var reveal = function (why) { log('app ' + host + ': reveal (' + why + ')'); post({ type: 'reveal', why: why }); };
     post({ type: 'hello' }); // вкладка узнаёт, что приложение открылось
+    // Яндекс.Карты (API 2.1: элементы <ymaps> в журнале 16:25). Сценарий стоит в начале страницы, раньше карты:
+    // при появлении window.ymaps оборачиваем Map, Placemark, ObjectManager и запоминаем созданные объекты. Тогда
+    // станцию у центра карты можно «нажать» событием карты (events.fire('click')), без координат на экране
+    var YM = { maps: [], pms: [], oms: [] };
+    var wrapCtor = function (y, name, list) {
+      var C = y[name];
+      if (typeof C !== 'function' || C.__jzpW) return;
+      var W = function () {
+        var o = new (Function.prototype.bind.apply(C, [null].concat([].slice.call(arguments))))();
+        YM[list].push(o);
+        return o;
+      };
+      W.prototype = C.prototype;
+      for (var k in C) { try { if (Object.prototype.hasOwnProperty.call(C, k)) W[k] = C[k]; } catch (e) { } }
+      W.__jzpW = 1;
+      y[name] = W;
+    };
+    var hookYmaps = function (y) {
+      if (!y || typeof y !== 'object' || y.__jzp || typeof y.ready !== 'function') return;
+      y.__jzp = 1;
+      try {
+        y.ready(function () {
+          wrapCtor(y, 'Map', 'maps'); wrapCtor(y, 'Placemark', 'pms'); wrapCtor(y, 'ObjectManager', 'oms');
+          log('app ' + host + ': yandex maps hooked');
+        });
+      } catch (e) { log('app ' + host + ': yandex maps hook failed: ' + e.message); }
+    };
+    try {
+      var ymapsVal = window.ymaps;
+      Object.defineProperty(window, 'ymaps', {
+        configurable: true, enumerable: true,
+        get: function () { return ymapsVal; },
+        set: function (v) { ymapsVal = v; hookYmaps(v); }
+      });
+      if (ymapsVal) hookYmaps(ymapsVal);
+    } catch (e) { }
+    var ymapsPoll = setInterval(function () { if (window.ymaps) { hookYmaps(window.ymaps); if (window.ymaps.__jzp) clearInterval(ymapsPoll); } }, 200);
+    // Центр карты в момент «Ближайшей АЗС»: станция нажимается, только когда карта сдвинулась к ближайшей —
+    // иначе у центра чужая станция (макет 04.11.2026: пока определялось местоположение, «нажималась» другая АЗС)
+    var centerAtNear = null;
+    var mapCenter = function () {
+      try { var m = YM.maps[YM.maps.length - 1]; return m && m.getCenter ? m.getCenter() : null; } catch (e) { return null; }
+    };
+    // Сдвинулась и стоит не меньше секунды: карта едет к станции плавно, на полпути у центра — чужая
+    var lastC = null, stillSince = 0;
+    var mapMoved = function () {
+      var c = mapCenter();
+      if (!centerAtNear || !c) return true;
+      var same = lastC && Math.abs(c[0] - lastC[0]) < 1e-7 && Math.abs(c[1] - lastC[1]) < 1e-7;
+      if (!same) { lastC = c; stillSince = Date.now(); }
+      var moved = Math.abs(c[0] - centerAtNear[0]) > 1e-6 || Math.abs(c[1] - centerAtNear[1]) > 1e-6;
+      return moved && Date.now() - stillSince >= 1000;
+    };
+    var clickStationByApi = function () {
+      try {
+        var y = window.ymaps, map = YM.maps[YM.maps.length - 1];
+        if (!y || !map || !map.getCenter) return false;
+        var c = map.getCenter();
+        var d2 = function (p) { return (p[0] - c[0]) * (p[0] - c[0]) + (p[1] - c[1]) * (p[1] - c[1]); };
+        var best = null;
+        YM.pms.forEach(function (pm) {
+          try { var p = pm.geometry.getCoordinates(); if (p && (!best || d2(p) < best.d)) best = { d: d2(p), pm: pm }; } catch (e) { }
+        });
+        YM.oms.forEach(function (om) {
+          try {
+            om.objects.each(function (o) {
+              var p = o.geometry && o.geometry.coordinates;
+              if (p && (!best || d2(p) < best.d)) best = { d: d2(p), om: om, id: o.id };
+            });
+          } catch (e) { }
+        });
+        if (!best) return false;
+        if (best.pm) {
+          best.pm.events.fire('click', new y.Event({ type: 'click', target: best.pm }, best.pm));
+          log('app ' + host + ': station clicked via map (placemark of ' + YM.pms.length + ')');
+        } else {
+          best.om.objects.events.fire('click', new y.Event({ type: 'click', objectId: best.id, target: best.om.objects }, best.om.objects));
+          log('app ' + host + ': station clicked via map (object of manager)');
+        }
+        return true;
+      } catch (e) { log('app ' + host + ': map click failed: ' + e.message); return false; }
+    };
     // Для журнала: идут ли кадры отрисовки (в спрятанном окне браузер их останавливает)
     var rafCount = 0;
     (function rf() { rafCount++; requestAnimationFrame(rf); })();
@@ -331,35 +413,18 @@
     // После «Ближайшей АЗС» карта ставит станцию в центр, а карточка с «Заправиться» появляется только по нажатию
     // на значок станции (подсказка пользователя и скриншоты 04.11.2026; журнал 15:51 — «Ближайшая АЗС» ×3 без карточки).
     // Значок — отдельным элементом карты (ищем ближайший к центру) либо нарисован: тогда касание точки над центром
-    var markerTries = 0, lastMarker = 0;
-    var MARKER_OFFSETS = [-30, -15, -45, 0, -60, -30, -20, -40];
+    var markerTries = 0, lastMarker = 0, waitMoveLogged = false;
+    // Касание значка — запасной путь. Точка — по скриншоту пользователя (04.11.2026 15:52): значок станции после
+    // «Ближайшей АЗС» — по центру окна по ширине, на ~41 % высоты (журнал 16:25: касания по «центру карты» уходили
+    // на 25 px вправо и ниже, отдельных значков-элементов нет — карта Яндекса рисует их сама)
+    var MARKER_Y = [0.41, 0.38, 0.44, 0.35, 0.47, 0.41, 0.39, 0.43];
     var tapMarker = function () {
-      var maps = all('[class*="ymaps"],[class*="map"],[class*="Map"],canvas').filter(function (el) {
-        var r = el.getBoundingClientRect(); return onScreen(el) && r.width * r.height > innerWidth * innerHeight * 0.3;
-      });
-      maps.sort(function (a, b) {
-        var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-        return ra.width * ra.height - rb.width * rb.height; // самый узкий из больших — сама карта
-      });
-      var btn = find(/^ближайшая азс$/i);
-      var mr = maps[0] ? maps[0].getBoundingClientRect() : { left: 0, top: 0, width: innerWidth, height: btn ? btn.getBoundingClientRect().top : innerHeight };
-      var cx = mr.left + mr.width / 2, cy = mr.top + Math.min(mr.height, btn ? btn.getBoundingClientRect().top - mr.top : mr.height) / 2;
-      var marks = all('[class*="placemark"],[class*="Placemark"],[class*="marker"],[class*="Marker"],ymaps img,ymaps svg,[class*="ymaps"] img').filter(function (el) {
-        var r = el.getBoundingClientRect();
-        return onScreen(el) && r.width >= 16 && r.width <= 140 && r.height >= 16 && r.height <= 160;
-      });
-      var dist = function (el) { var r = el.getBoundingClientRect(); return Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy); };
-      marks.sort(function (a, b) { return dist(a) - dist(b); });
       markerTries++; lastMarker = Date.now();
-      if (marks[0] && dist(marks[0]) < 120 && markerTries % 2 === 1) {
-        var m = marks[0];
-        log('app ' + host + ': tap station marker (element ' + m.tagName.toLowerCase() + ', ' + Math.round(dist(m)) + ' px from centre)');
-        tap(m);
-        return;
-      }
-      var x = cx, y = cy + MARKER_OFFSETS[(markerTries - 1) % MARKER_OFFSETS.length];
+      if (clickStationByApi()) return;
+      var x = innerWidth / 2, y = innerHeight * MARKER_Y[(markerTries - 1) % MARKER_Y.length];
       var at = document.elementFromPoint(x, y);
-      log('app ' + host + ': tap map at centre ' + Math.round(x) + ',' + Math.round(y) + ' (' + (at ? at.tagName.toLowerCase() : '—') + ', markers found ' + marks.length + ')');
+      log('app ' + host + ': tap map at ' + Math.round(x) + ',' + Math.round(y) + ' (' + (at ? at.tagName.toLowerCase() : '—') +
+        ', maps via API ' + YM.maps.length + ', placemarks ' + YM.pms.length + ', object managers ' + YM.oms.length + ')');
       if (at) tap(at, x, y);
     };
     setTimeout(diag, 3000);
@@ -373,8 +438,13 @@
       if (now - lastClick < 1500) return;
       // Станция в центре карты — нажать её значок (раз в 3,5 с, до 8 раз), пока не появится карточка с «Заправиться»
       if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 3500 && now - lastMarker > 3500 && markerTries < 8) {
-        tapMarker();
-        return;
+        if (mapCenter() && !mapMoved()) {
+          // карта ещё не сдвинулась к ближайшей станции — ждём (не дольше срока шага «Ближайшая АЗС»)
+          if (!waitMoveLogged) { waitMoveLogged = true; log('app ' + host + ': waiting for the map to move to the nearest station'); }
+        } else {
+          tapMarker();
+          return;
+        }
       }
       for (var i = 0; i < STEPS.length; i++) {
         var s = STEPS[i];
@@ -386,7 +456,7 @@
         if (tries[s.name]) { log('app ' + host + ': «' + s.name + '» again'); diag(); }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
-        if (s.name === 'Ближайшая АЗС') near = true;
+        if (s.name === 'Ближайшая АЗС') { near = true; centerAtNear = mapCenter(); waitMoveLogged = false; }
         lastStep = s.name; lastClick = now; level = s.level; done.push(s.name);
         log('app ' + host + ': click «' + s.name + '»');
         press(el);
