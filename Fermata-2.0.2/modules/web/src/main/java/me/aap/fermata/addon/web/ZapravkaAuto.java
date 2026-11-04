@@ -3,6 +3,7 @@ package me.aap.fermata.addon.web;
 import static me.aap.fermata.util.Utils.dynCtx;
 
 import android.content.Context;
+import android.util.Base64;
 import android.webkit.WebView;
 
 import androidx.annotation.Nullable;
@@ -17,8 +18,8 @@ import java.util.Collections;
 import me.aap.utils.log.Log;
 
 /**
- * Вкладка «Заправка»: само нажать кнопку бота и пункт «Заправка» в приложении (assets/zapravka_auto.js, во всех
- * кадрах страницы — приложение заправки открыто кадром чужого сайта внутри веб-Telegram). Записи сценария —
+ * Вкладка «Заправка»: сценарий assets/zapravka_auto.js во всех кадрах страницы (приложение заправки — кадр чужого
+ * сайта внутри веб-Telegram) — путь до выбора колонки и своя оболочка с фото АЗС (assets/zapravka_fon.jpg). Записи сценария —
  * в журнал с приставкой {@code [JARVIS-ZP]} ({@link FermataChromeClient#onConsoleMessage}).
  */
 final class ZapravkaAuto {
@@ -37,14 +38,23 @@ final class ZapravkaAuto {
 		WebViewCompat.addDocumentStartJavaScript(webView, js, Collections.singleton("*"));
 	}
 
+	private static byte[] read(Context ctx, String asset) throws java.io.IOException {
+		try (InputStream in = dynCtx(ctx).getAssets().open(asset)) {
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
+			byte[] buf = new byte[8192];
+			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+			return out.toByteArray();
+		}
+	}
+
 	@Nullable
 	private static String script(Context ctx) {
 		if (script != null) return script;
-		try (InputStream in = dynCtx(ctx).getAssets().open("zapravka_auto.js")) {
-			ByteArrayOutputStream out = new ByteArrayOutputStream();
-			byte[] buf = new byte[4096];
-			for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-			return script = out.toString(StandardCharsets.UTF_8.name());
+		try {
+			String js = new String(read(ctx, "zapravka_auto.js"), StandardCharsets.UTF_8);
+			// Фон оболочки — фото АЗС (assets/zapravka_fon.jpg), строкой data: перед сценарием
+			String bg = "data:image/jpeg;base64," + Base64.encodeToString(read(ctx, "zapravka_fon.jpg"), Base64.NO_WRAP);
+			return script = "window.__JZP_BG='" + bg + "';\n" + js;
 		} catch (Exception ex) {
 			Log.e(ex, "failed to load zapravka_auto.js");
 			return null;
