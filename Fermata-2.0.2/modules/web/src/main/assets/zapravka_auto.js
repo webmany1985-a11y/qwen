@@ -31,8 +31,9 @@
   // Касание целиком: веб-Telegram на сенсорных устройствах слушает у кнопок mousedown, а не click
   // (tweb src/helpers/dom/clickEvent.ts: CLICK_EVENT_NAME = IS_TOUCH_SUPPORTED ? 'mousedown' : 'click');
   // журнал 04.11.2026 15:00: el.click() по «Открыть» приложение не открывал
-  var tap = function (el) {
-    var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  var tap = function (el, px, py) {
+    var r = el.getBoundingClientRect();
+    var x = px != null ? px : r.left + r.width / 2, y = py != null ? py : r.top + r.height / 2;
     var o = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 };
     try { el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'touch', isPrimary: true }, o))); } catch (e) { }
     el.dispatchEvent(new MouseEvent('mousedown', o));
@@ -326,6 +327,40 @@
     };
 
     var t1 = Date.now(), lastClick = 0, lastStep = null, level = 0, tries = {}, done = [], lastAlive = 0;
+    // После «Ближайшей АЗС» карта ставит станцию в центр, а карточка с «Заправиться» появляется только по нажатию
+    // на значок станции (подсказка пользователя и скриншоты 04.11.2026; журнал 15:51 — «Ближайшая АЗС» ×3 без карточки).
+    // Значок — отдельным элементом карты (ищем ближайший к центру) либо нарисован: тогда касание точки над центром
+    var markerTries = 0, lastMarker = 0;
+    var MARKER_OFFSETS = [-30, -15, -45, 0, -60, -30, -20, -40];
+    var tapMarker = function () {
+      var maps = all('[class*="ymaps"],[class*="map"],[class*="Map"],canvas').filter(function (el) {
+        var r = el.getBoundingClientRect(); return onScreen(el) && r.width * r.height > innerWidth * innerHeight * 0.3;
+      });
+      maps.sort(function (a, b) {
+        var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return ra.width * ra.height - rb.width * rb.height; // самый узкий из больших — сама карта
+      });
+      var btn = find(/^ближайшая азс$/i);
+      var mr = maps[0] ? maps[0].getBoundingClientRect() : { left: 0, top: 0, width: innerWidth, height: btn ? btn.getBoundingClientRect().top : innerHeight };
+      var cx = mr.left + mr.width / 2, cy = mr.top + Math.min(mr.height, btn ? btn.getBoundingClientRect().top - mr.top : mr.height) / 2;
+      var marks = all('[class*="placemark"],[class*="Placemark"],[class*="marker"],[class*="Marker"],ymaps img,ymaps svg,[class*="ymaps"] img').filter(function (el) {
+        var r = el.getBoundingClientRect();
+        return onScreen(el) && r.width >= 16 && r.width <= 140 && r.height >= 16 && r.height <= 160;
+      });
+      var dist = function (el) { var r = el.getBoundingClientRect(); return Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy); };
+      marks.sort(function (a, b) { return dist(a) - dist(b); });
+      markerTries++; lastMarker = Date.now();
+      if (marks[0] && dist(marks[0]) < 120 && markerTries % 2 === 1) {
+        var m = marks[0];
+        log('app ' + host + ': tap station marker (element ' + m.tagName.toLowerCase() + ', ' + Math.round(dist(m)) + ' px from centre)');
+        tap(m);
+        return;
+      }
+      var x = cx, y = cy + MARKER_OFFSETS[(markerTries - 1) % MARKER_OFFSETS.length];
+      var at = document.elementFromPoint(x, y);
+      log('app ' + host + ': tap map at centre ' + Math.round(x) + ',' + Math.round(y) + ' (' + (at ? at.tagName.toLowerCase() : '—') + ', markers found ' + marks.length + ')');
+      if (at) tap(at, x, y);
+    };
     setTimeout(diag, 3000);
     var iv = setInterval(function () {
       var now = Date.now();
@@ -335,6 +370,11 @@
       if (find(/^азс\s*№\s*\d+/i, 'div,span,h1,h2,h3,h4,p,b,strong') && !station) readStation();
       if (now - t1 > 100000) { clearInterval(iv); log('app ' + host + ': pump choice not reached in 100 s'); diag(); setTimeout(function () { reveal('timeout'); }, 1200); return; }
       if (now - lastClick < 1500) return;
+      // Станция в центре карты — нажать её значок (раз в 3,5 с, до 8 раз), пока не появится карточка с «Заправиться»
+      if (lastStep === 'Ближайшая АЗС' && !find(/^заправиться$/i) && now - lastClick > 3500 && now - lastMarker > 3500 && markerTries < 8) {
+        tapMarker();
+        return;
+      }
       for (var i = 0; i < STEPS.length; i++) {
         var s = STEPS[i];
         if (s.level < level) continue; // только вперёд: нижняя «Заправка» видна на всех экранах
