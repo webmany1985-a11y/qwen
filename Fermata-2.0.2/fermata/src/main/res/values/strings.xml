@@ -28,6 +28,8 @@
     <string name="addon_name_youtube" translatable="false">Youtube</string>
     <string name="addon_name_tiktok" translatable="false">TikTok</string>
     <string name="addon_name_kinopoisk" translatable="false">Кинопоиск</string>
+    <string name="addon_name_zapravka" translatable="false">Заправка</string>
+    <string name="zapravka_link" translatable="false">Ссылка на приложение заправки в Telegram (t.me/…)</string>
     <string name="addon_name_video_sites" translatable="false">Видео</string>
     <string name="addon_name_felex" translatable="false">Felex</string>
     <string name="addon_name_cast" translatable="false">Google Cast</string>
