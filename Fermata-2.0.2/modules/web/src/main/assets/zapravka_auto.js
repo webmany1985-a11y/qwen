@@ -26,7 +26,7 @@
   var log = function (m) { try { console.log('[JARVIS-ZP] ' + m); } catch (e) { } };
   var visible = function (el) { var r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
   var text = function (el) { return (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); };
-  var all = function (sel) { return [].slice.call(document.querySelectorAll(sel)); };
+  var all = function (sel, root) { return [].slice.call((root || document).querySelectorAll(sel)); };
   var CLICKABLE = 'button,a,[role=button],[onclick]';
   // Касание целиком: веб-Telegram на сенсорных устройствах слушает у кнопок mousedown, а не click
   // (tweb src/helpers/dom/clickEvent.ts: CLICK_EVENT_NAME = IS_TOUCH_SUPPORTED ? 'mousedown' : 'click');
@@ -448,7 +448,7 @@
     var TARGET = /выбор номера колонки/i;
     var STEPS = [
       { name: 'Заправиться', re: /^заправиться$/i, level: 2 },
-      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, wait: 35000 }, // местоположение определяется до 35 с (журнал 14:47, 15:32)
+      { name: 'Ближайшая АЗС', re: /^ближайшая азс$/i, level: 1, waits: [6000, 15000, 30000] }, // местоположение определяется до 35 с (журнал 14:47, 15:32)
       // Первая страница после входа — плитка «Заправить авто» (так заправляется пользователь, напоминание 04.11.2026);
       // нижняя «Заправка» — запасной путь. Карта (Яндекс) грузится не сразу
       { name: 'Заправить авто', re: /^заправить\s+авто$/i, level: 0, wait: 10000 },
@@ -526,8 +526,11 @@
           if (!nearSeen) { nearSeen = now; log('app ' + host + ': waiting for yandex maps before «Ближайшая АЗС»'); }
           if (now - nearSeen < 20000) return;
         }
-        if (s.name === lastStep && now - lastClick < (s.wait || 4000)) return;
-        if ((tries[s.name] || 0) >= 2) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); diag(); setTimeout(function () { reveal('stuck'); }, 1200); return; }
+        // «Ближайшая АЗС»: после первого нажатия карта не сдвигалась, после второго — станция за 1–2 с (журнал 04.11.2026
+        // 18:36–18:40, оба раза ждали 35 с впустую) — повтор через 6 с, затем 15 и 30 с (местоположение бывает и долгим)
+        var nT = tries[s.name] || 0, w = s.waits ? s.waits[Math.max(0, nT - 1)] : (s.wait || 4000);
+        if (s.name === lastStep && now - lastClick < w) return;
+        if (nT >= (s.waits ? s.waits.length : 2)) { clearInterval(iv); log('app ' + host + ': stuck at «' + s.name + '»'); diag(); setTimeout(function () { reveal('stuck'); }, 1200); return; }
         if (tries[s.name]) { log('app ' + host + ': «' + s.name + '» again'); diag(); }
         tries[s.name] = (tries[s.name] || 0) + 1;
         if (s.name === 'Заправиться') readStation();
@@ -551,7 +554,33 @@
         return /^\d{1,2}$/.test(s) && r.width > 0 && r.height > 0 && r.top >= top - 5 && r.bottom <= bottom + 5;
       });
     };
+    // Лента колонок приложения — карусель Swiper (код А-100: UISwiper, loop при >4 колонок, выбор — onSlideChange по
+    // realIndex). Нажатие плитки выбор не меняло (журнал 04.11.2026 18:38, 18:40: «pump not selected»), поэтому
+    // карусель листается её же методом slideToLoop — так, как это делает обработчик нажатия плитки в приложении
+    var pumpSwiper = function () {
+      var els = all('.swiper').filter(function (el) { return el.swiper && visible(el); });
+      for (var i = 0; i < els.length; i++) {
+        var sl = all('.swiper-slide', els[i]);
+        if (sl.length && sl.every(function (x) { return /^\d{1,2}$/.test(text(x)); })) return els[i].swiper;
+      }
+      return null;
+    };
+    // Номер колонки → её номер в данных карусели (data-swiper-slide-index; без него — порядок слайдов)
+    var slideIndex = function (sw, pump) {
+      var sl = Array.prototype.slice.call(sw.slides || []);
+      for (var i = 0; i < sl.length; i++) {
+        if (text(sl[i]) !== pump) continue;
+        var a = sl[i].getAttribute('data-swiper-slide-index');
+        return a != null && a !== '' ? parseInt(a, 10) : i;
+      }
+      return -1;
+    };
     var selectedPump = function () {
+      var sw = pumpSwiper();
+      if (sw && sw.slides) {
+        var act = sw.slides[sw.activeIndex];
+        if (act && /^\d{1,2}$/.test(text(act))) return text(act);
+      }
       var m = (document.body.innerText || '').match(/Вы выбрали[\s\S]{0,80}?Номер колонки\s*(\d{1,2})/i);
       return m ? m[1] : '';
     };
@@ -590,6 +619,15 @@
     var go = async function (pump, mode, value) {
       post({ type: 'busy' });
       // 1) колонка: нажимать плитку с номером, пока «Вы выбрали — Номер колонки» не покажет её (лента двигается)
+      var sw = pumpSwiper();
+      if (sw) {
+        var idx = slideIndex(sw, pump);
+        log('app ' + host + ': pump carousel found' + (idx < 0 ? ', pump not in it' : ''));
+        for (var j = 0; j < 3 && idx >= 0 && selectedPump() !== pump; j++) {
+          try { if (sw.params && sw.params.loop && sw.slideToLoop) sw.slideToLoop(idx, 0); else sw.slideTo(idx, 0); } catch (e) { log('app ' + host + ': carousel error ' + e.name); }
+          await sleep(500);
+        }
+      } else log('app ' + host + ': pump carousel not found, pressing tiles');
       for (var i = 0; i < 10 && selectedPump() !== pump; i++) {
         var tiles = pumpTiles().filter(function (el) { return text(el) === pump; });
         if (!tiles.length) break;

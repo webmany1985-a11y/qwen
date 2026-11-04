@@ -45,9 +45,12 @@ const FOCUS=()=>'<div class="ymaps-2-1-79-map" id="ymap" style="position:relativ
   '</div><button data-k="near">Ближайшая АЗС</button><button>Заправка по QR коду</button>';
 const CARD=()=>'<div class="card"><div><div class="name">АЗС №14</div><div class="addr">ул. Тростенецкая, 16</div></div><div>❤</div>'+
   '<button>Открыть в Яндекс картах</button><button data-k="fuel">Заправиться</button></div>';
-const PUMP=()=>{let t='';for(let i=1;i<=8;i++){t+='<div class="tile" data-n="'+i+'" style="display:inline-block;width:40px;height:50px;margin:2px;background:'+(i===center?'#f15a22':'#f8b394')+'">'+i+'</div>';}
-  return '<h2>ВЫБОР НОМЕРА КОЛОНКИ</h2><div class="h">Номер колонки</div><div class="car" style="white-space:nowrap">'+t+'</div>'+
-  '<div class="h">Вы выбрали</div><div>Номер колонки</div><div id="sel">'+center+'</div><button>Назад</button><button data-k="toqty">Выбрать сумму/литры</button>';};
+// Как в А-100: карусель Swiper с loop (копии слайдов по краям), нажатие плитки выбор не меняет (так было на телефоне
+// 04.11.2026), выбор — только slideToLoop; подпись выбора — «Ваш выбор» (перевод приложения неизвестен)
+const PUMP=()=>{let t='';const sl=(i,dup)=>'<div class="swiper-slide'+(dup?' swiper-slide-duplicate':'')+'" data-swiper-slide-index="'+(i-1)+'" style="display:inline-block;width:40px;height:50px;margin:2px"><div class="tile" data-n="'+i+'" style="width:40px;height:50px;background:'+(i===center?'#f15a22':'#f8b394')+'">'+i+'</div></div>';
+  t+=sl(7,1)+sl(8,1);for(let i=1;i<=8;i++)t+=sl(i,0);t+=sl(1,1)+sl(2,1);
+  return '<h2>ВЫБОР НОМЕРА КОЛОНКИ</h2><div class="h">Номер колонки</div><div class="swiper" style="white-space:nowrap;overflow:hidden"><div class="swiper-wrapper">'+t+'</div></div>'+
+  '<div class="h">Ваш выбор</div><div>Номер колонки</div><div id="sel">'+center+'</div><button>Назад</button><button data-k="toqty">Выбрать сумму/литры</button>';};
 const QTY=()=>'<h2>ВЫБЕРИТЕ КОЛИЧЕСТВО</h2><div>количество</div><input id="q" type="text"><div><button data-k="ml">Литры</button><button data-k="ms">Сумма</button></div>'+
   '<button data-k="full">До полного бака</button><div>Вы выбрали</div><div>Тип топлива АИ-95</div><button>Назад</button>'+
   '<button id="pay" data-k="pay" '+((full||parseFloat(qtyVal)>0)?'':'disabled')+'>Перейти к оплате</button>';
@@ -57,10 +60,13 @@ function bind(){
     if(k==='tile')go('map',MAP);if(k==='near'&&'${marker}'==='api'&&!window.ymap){T('near-too-early');return;}if(k==='near'){if(window.locOk)locate();else{T('ask-location');parent.postMessage('need-location','*');}}if(k==='fuel')go('pump',PUMP);if(k==='pin')go('card',CARD);if(k==='toqty')go('qty',QTY);
     if(k==='ml'){qtyMode='l';}if(k==='ms'){qtyMode='s';}if(k==='full'){full=true;show(QTY());}
     if(k==='pay'){T('pay:'+qtyMode+':'+(full?'full':qtyVal)+':pump'+center);go('warn',WARN);}if(k==='ok')T('GEO-OK-PRESSED');});
-  page.querySelectorAll('.tile').forEach(e=>e.onclick=()=>{const n=+e.dataset.n;T('tile:'+n);center+=Math.sign(n-center);show(PUMP());});
+  page.querySelectorAll('.tile').forEach(e=>e.onclick=()=>{T('tile:'+e.dataset.n);});
+  const sw=page.querySelector('.swiper');if(sw){const slides=[].slice.call(sw.querySelectorAll('.swiper-slide'));
+    sw.swiper={params:{loop:true},slides,activeIndex:slides.findIndex(x=>!x.classList.contains('swiper-slide-duplicate')&&+x.dataset.swiperSlideIndex===center-1),
+      get realIndex(){return center-1;},slideToLoop(i){T('slideToLoop:'+i);center=i+1;show(PUMP());},slideTo(i){this.slideToLoop(i);}};}
   const q=document.getElementById('q');if(q)q.addEventListener('input',()=>{qtyVal=q.value;T('input:'+q.value);document.getElementById('pay').disabled=!(parseFloat(qtyVal)>0);});
 }
-let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');if(window.ymap){const a=ymap.getCenter(),b=[53.8455,27.63415];let k=0;const iv=setInterval(()=>{k++;ymap.setCenter([a[0]+(b[0]-a[0])*k/20,a[1]+(b[1]-a[1])*k/20]);if(k>=20)clearInterval(iv);},100);}go('focus',FOCUS);},${locDelay || 0});};
+let locTimer=null;const locate=()=>{clearTimeout(locTimer);locTimer=setTimeout(()=>{T('located');if(window.ymap&&window.ymap.getCenter){const a=ymap.getCenter(),b=[53.8455,27.63415];let k=0;const iv=setInterval(()=>{k++;ymap.setCenter([a[0]+(b[0]-a[0])*k/20,a[1]+(b[1]-a[1])*k/20]);if(k>=20)clearInterval(iv);},100);}go('focus',FOCUS);},${locDelay || 0});};
 // нарисованный значок: карта сама проверяет точку касания — значок по центру окна по ширине, на 41 % высоты
 // (как на скриншоте пользователя 04.11.2026 15:52)
 addEventListener('mousedown',e=>{if(!document.getElementById('ymap')||'${marker}'!=='canvas')return;
