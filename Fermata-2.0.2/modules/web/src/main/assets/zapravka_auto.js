@@ -255,6 +255,20 @@
 
   // ---------------------------------------------------------------- приложение заправки
   function appFrame() {
+    // Приложение А-100 на Android закрывает экран предупреждением «поверните устройство», если
+    // screen.orientation.type — альбомная (код: OrientationProvider, rotate_device). Экран машины всегда альбомный —
+    // пользователь 04.11.2026: «сказало выберите вертикальную раскладку». Для окна приложения сообщаем книжную
+    if (host === 'tgminiapp.a-100.by') {
+      try {
+        var was = (window.screen && screen.orientation && screen.orientation.type) || '?';
+        var SO = window.ScreenOrientation && ScreenOrientation.prototype;
+        if (SO) Object.defineProperty(SO, 'type', { configurable: true, get: function () { return 'portrait-primary'; } });
+        if (window.screen && screen.orientation && screen.orientation.type !== 'portrait-primary') {
+          Object.defineProperty(screen.orientation, 'type', { configurable: true, get: function () { return 'portrait-primary'; } });
+        }
+        log('app ' + host + ': orientation ' + was + ' → ' + screen.orientation.type);
+      } catch (e) { log('app ' + host + ': orientation patch failed ' + e.name); }
+    }
     var post = function (o) { o.jzp = 1; try { window.top.postMessage(o, '*'); } catch (e) { } };
     // Только то, что на экране: «Заправка» есть и за краем экрана (карусель) — нажатие туда ничего не даёт
     // (журнал 04.11.2026 15:31: дважды «Заправка», приложение осталось на главной)

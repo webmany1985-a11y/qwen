@@ -34,7 +34,7 @@ allow.onclick=()=>{p.remove();e.source.postMessage('location-ok','*');};}});</sc
 const APP = (delay, mapDelay, locDelay, marker) => `<!doctype html><body style="margin:0;font-family:sans-serif"><div id="page"></div>
 <nav><span id="nav">Заправка</span></nav>
 <script>
-window.trail=[];const T=(x)=>trail.push(x);let center=1,qtyMode='l',qtyVal='',full=false;
+window.trail=[];const T=(x)=>trail.push(x);if(!/portrait/.test(screen.orientation.type))T('ROTATE-WARNING');screen.orientation.addEventListener('change',()=>{if(!/portrait/.test(screen.orientation.type))T('ROTATE-WARNING');});let center=1,qtyMode='l',qtyVal='',full=false;
 const show=(h)=>{page.innerHTML=h;bind();};
 // Переход экрана ждёт кадров отрисовки (как анимации и карта на настоящем сайте): в спрятанном окне их нет
 const frames=(k,cb)=>{let i=0;const f=()=>{if(++i>=k)cb();else requestAnimationFrame(f);};requestAnimationFrame(f);};
@@ -145,7 +145,7 @@ async function run(name, delay, actions, expect, mapDelay, locDelay, marker) {
   if (shots) await p.screenshot({ path: path.join(shots, name + '-3-prilozhenie.png') });
   const ok = hdr.includes('АЗС №14') && hdr.includes('ул. Тростенецкая, 16') && pumps === '1,2,3,4,5,6,7,8' && gone &&
     !trail.includes('click:banner') && trail.includes('click:tile') && trail.includes('click:pin') && !trail.includes('near-too-early') && !trail.includes('click:other-station') && !trail.includes('click:userdot') && !trail.includes('click:nav') && trail.includes(expect) && trail.endsWith('warn') && !trail.includes('GEO-OK') && startClicked === 0 && flash[0] === 0 &&
-    trail.includes('location-ok') && !logs.some(l => l.startsWith('ERR'));
+    trail.includes('location-ok') && !trail.includes('ROTATE-WARNING') && !logs.some(l => l.startsWith('ERR'));
   console.log((ok ? 'OK   ' : 'FAIL ') + name + ' | шапка: ' + hdr + ' | колонки: ' + pumps + ' | оболочка убрана: ' + gone + ' | «Старт» нажат: ' + startClicked + ' | кадров с чатом без заставки: ' + flash[0] + ' из ' + flash[1]);
   console.log('     приложение: ' + trail);
   if (!ok) console.log('     журнал: ' + logs.join(' / '));
