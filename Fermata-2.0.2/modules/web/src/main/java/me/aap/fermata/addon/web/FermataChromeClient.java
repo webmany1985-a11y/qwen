@@ -365,7 +365,7 @@ public class FermataChromeClient extends WebChromeClient {
 	@Override
 	public boolean onConsoleMessage(ConsoleMessage m) {
 		// Записи скрипта вкладки TikTok — в журнал для разбора (по умолчанию он пишет от INFO)
-		if (m.message().startsWith("[JARVIS-TT]") || m.message().startsWith("[JARVIS-ZP]")) Log.i(m.message());
+		if (m.message().startsWith("[JARVIS-TT]") || m.message().startsWith("[JARVIS-ZP]") || m.message().startsWith("[JARVIS-KP]")) Log.i(m.message());
 		else Log.d("[JS:", m.lineNumber(), "] ", m.message());
 		return true;
 	}

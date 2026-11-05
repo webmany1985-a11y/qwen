@@ -37,6 +37,7 @@ public class KinopoiskFragment extends WebBrowserFragment {
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new KinopoiskWebClient(), chromeClient);
 		AutoFullScreen.install(webView, "Kinopoisk");
+		KinopoiskNoApp.install(webView);
 		webView.loadUrl(addon.getLastUrl());
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
@@ -45,6 +46,12 @@ public class KinopoiskFragment extends WebBrowserFragment {
 	@Override
 	protected WebBrowserAddon getAddon() {
 		return AddonManager.get().getAddon(KinopoiskAddon.class);
+	}
+
+	/** Без верхней строки с адресом (пожелание 05.11.2026), как у вкладок YouTube и «Заправка»; нижние вкладки остаются. */
+	@Override
+	public me.aap.utils.ui.view.ToolBarView.Mediator getToolBarMediator() {
+		return me.aap.utils.ui.view.ToolBarView.Mediator.Invisible.instance;
 	}
 
 	@Override

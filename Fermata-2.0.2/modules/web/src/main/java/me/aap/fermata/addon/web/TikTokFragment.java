@@ -97,4 +97,10 @@ public class TikTokFragment extends WebBrowserFragment {
 	protected String getSearchUrl() {
 		return "https://www.tiktok.com/search?q=";
 	}
+
+	/** Без верхней строки с адресом (пожелание 05.11.2026: «в соседней вкладке тоже убрать адресную строку»). */
+	@Override
+	public me.aap.utils.ui.view.ToolBarView.Mediator getToolBarMediator() {
+		return me.aap.utils.ui.view.ToolBarView.Mediator.Invisible.instance;
+	}
 }
