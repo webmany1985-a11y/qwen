@@ -244,4 +244,27 @@ public class FuelDialogTest {
 		assertEquals("1 рубль", FuelDialog.money(1));
 		assertEquals("11 рублей", FuelDialog.money(11));
 	}
+
+	@Test
+	public void fixesFromJarvisLogs() {
+		// «Opel» латиницей у Google (журнал 12:37), «за правь» у Vosk, отмены «закончи/заверши…заправку»
+		assertTrue(FuelPhrase.isStart(n("Opel хочет кушать")));
+		assertTrue(FuelPhrase.isStart(n("заправь Opel")));
+		assertTrue(FuelPhrase.isStart(n("за правь автомобиль")));
+		assertFalse(FuelPhrase.isStart(n("где ближайшая заправка")));
+		for (String s : new String[]{"закончи заправку", "заверши заправку", "отключи заправку", "выключи заправку", "останови заправку"}) {
+			assertTrue(s, FuelPhrase.isCancel(n(s)));
+		}
+		assertFalse(FuelPhrase.isCancel(n("выключи музыку")));
+		// «нет / отменить» на «Оплатить?» — не платить, заправка помнится
+		FuelDialog d = ready();
+		assertEquals("Хорошо, не оплачиваю. Скажите «оплатить» или «стоп заправка».", d.onPhrase("отменить", T + 3).say);
+		assertEquals(FuelDialog.State.ASK_PAY, d.state());
+		// без местоположения — предупреждение
+		FuelDialog e = new FuelDialog();
+		e.onPhrase("заправь колонку два на десять литров", T);
+		assertTrue(e.onPrepared(new FuelDialog.Prepared("1", "ДТ", 10, 27.3, -1), T + 1).say.startsWith("Внимание, не знаю, где вы"));
+		assertFalse(FuelGrammar.phrases(FuelDialog.State.ASK_AMOUNT).contains("включи"));
+		assertTrue(FuelGrammar.phrases(FuelDialog.State.ASK_PUMP).contains("заверши заправку"));
+	}
 }

@@ -26,6 +26,8 @@ final class FuelDialog {
 	static final int MAX_MISSES = 3;
 	static final int MAX_NET_RETRIES = 2;
 	static final int FAR_M = 1000;
+	static final java.util.Set<String> NOT_NOW = new java.util.HashSet<>(java.util.Arrays.asList("нет", "отмена", "отменить",
+			"отмени", "не надо", "не плати", "не оплачивай", "не надо платить", "не буду платить"));
 
 	enum State {IDLE, ASK_PUMP, ASK_AMOUNT, PREPARING, WAIT_READY, ASK_PAY, PAYING, OFFLINE}
 
@@ -163,6 +165,8 @@ final class FuelDialog {
 				}
 				return miss();
 			case ASK_PAY:
+				// «нет», «отмена» без слова «заправка» — не платить и не отменять заправку, коротко (как в JARVIS 255)
+				if (NOT_NOW.contains(n)) return new Step("Хорошо, не оплачиваю. Скажите «оплатить» или «стоп заправка».", false, Effect.NONE);
 				if (FuelPhrase.isPay(n)) {
 					state = State.PAYING;
 					misses = 0;
@@ -348,6 +352,7 @@ final class FuelDialog {
 		if (p == null) return prepare(null);
 		StringBuilder b = new StringBuilder();
 		if (p.distanceM > FAR_M) b.append("Внимание, вы в ").append(km(p.distanceM)).append(" от станции. ");
+		else if (p.distanceM < 0) b.append("Внимание, не знаю, где вы, — проверьте станцию. ");
 		b.append("АЗС ").append(p.station).append(", колонка ").append(pump);
 		if (p.fuel != null && !p.fuel.isEmpty()) b.append(", ").append(p.fuel);
 		b.append(", ").append(p.liters).append(' ').append(litWord(p.liters)).append(", ").append(money(p.amount)).append(". Оплатить?");

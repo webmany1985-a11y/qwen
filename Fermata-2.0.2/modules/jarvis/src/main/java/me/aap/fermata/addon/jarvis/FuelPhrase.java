@@ -30,16 +30,19 @@ final class FuelPhrase {
 		if (s == null) return "";
 		String p = s.toLowerCase(Locale.ROOT).replace('ё', 'е')
 				.replaceAll("[.,!?;:«»\"()\\-–—]+", " ").replaceAll("\\s+", " ").trim();
+		// «Opel» латиницей у Google (журнал 05.11.2026 12:37); Vosk разбивает слово: «за правь» (журнал JARVIS 16:20)
+		p = p.replaceAll("(^|\\s)opel(?=\\s|$)", "$1опель");
+		p = p.replaceAll("(^|\\s)за\\s+прав(ь|ить|иться|ка|ку|ься)(?=\\s|$)", "$1заправ$2");
 		p = p.replaceFirst("^(джарвис|джервис|jarvis)\\s*", "");
 		return p.trim();
 	}
 
 	private static final Pattern START = Pattern.compile(
 			"^(ну\\s+)?(давай(те)?\\s+|хочу\\s+|надо\\s+|нужно\\s+)?" +
-					"(заправка|заправь(те)?|заправить|заправиться|заправься|заправимся|заправим)(\\s.*)?$");
+					"(заправка|заправку|заправь(те)?|заправить|заправиться|заправься|заправимся|заправим|заправил)(\\s.*)?$");
 	private static final Pattern START_OPEL = Pattern.compile("^опель\\s+хочет\\s+(кушать|есть|кушать\\s.*)$");
 	private static final Pattern CANCEL = Pattern.compile(
-			"(^|\\s)(стоп|отмен[а-я]*|прекрат[а-я]*|не\\s+надо|хватит|отбой)(\\s|$)");
+			"(^|\\s)(стоп|отмен[а-я]*|прекрат[а-я]*|не\\s+надо|хватит|отбой|оконч[а-я]*|законч[а-я]*|заверш[а-я]*|отключ[а-я]*|выключ[а-я]*|останов[а-я]*)(\\s|$)");
 	private static final Pattern FUEL_WORD = Pattern.compile("(^|\\s)заправк[а-я]*");
 	private static final Pattern RESUME = Pattern.compile(
 			"^(продолж(ить|аем|им|и|ай)\\s+заправку|вернись\\s+к\\s+заправке|вернемся\\s+к\\s+заправке)$");
