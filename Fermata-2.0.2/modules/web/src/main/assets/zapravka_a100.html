@@ -293,22 +293,30 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     if (st.pos) list.sort(function (a, b) { return (a._d == null ? 1e12 : a._d) - (b._d == null ? 1e12 : b._d); });
     return list;
   }
+  // Колонки станции — из памяти сразу (журнал 05.11.2026 10:26: запрос колонок — 2 с из 2,6 с открытия), с сервера —
+  // в фоне; изменились — перерисовать, если колонку ещё не выбрали
+  var pumpCache = function () { try { return JSON.parse(store.get('a100_pumps') || '{}') || {}; } catch (e) { return {}; } };
   function selectStation(i) {
     if (!st.list.length) return;
     st.idx = (i + st.list.length) % st.list.length;
-    st.pumps = []; st.pump = ''; st.ready = null; st.calc = null; st.busy = true;
+    st.pump = ''; st.ready = null; st.calc = null;
+    var s = cur(), n = s.NUMBER, idx = st.idx, cached = pumpCache()[n];
+    st.pumps = cached || []; st.busy = !cached;
     render();
-    var s = cur(), n = s.NUMBER, idx = st.idx;
+    if (cached) log('station shown, pumps ' + cached.length + ' (from memory), ' + since() + (s._d != null ? ', distance ' + (s._d > FAR_M ? 'far' : 'near') : ', no location'));
     api('GET', '/azs/' + encodeURIComponent(n) + '/pumps').then(function (j) {
-      if (idx !== st.idx) return;
       var p = (j && j.data) || [];
       if (!Array.isArray(p)) { log('pumps: not a list, keys ' + keys(j)); p = []; }
       var nums = []; p.forEach(function (x) { var v = typeof x === 'object' && x ? (x.number != null ? x.number : x.pump_number) : x; if (v != null && nums.indexOf(String(v)) < 0) nums.push(String(v)); });
       nums.sort(function (a, b) { return a - b; });
-      st.pumps = nums; st.busy = false;
-      log('station shown, pumps ' + nums.length + ', ' + since() + (s._d != null ? ', distance ' + (s._d > FAR_M ? 'far' : 'near') : ', no location'));
-      render();
-    }, fail);
+      var all = pumpCache(); all[n] = nums; store.set('a100_pumps', JSON.stringify(all));
+      if (idx !== st.idx) return;
+      var changed = nums.join(',') !== (st.pumps || []).join(',');
+      st.busy = false;
+      if (!cached) log('station shown, pumps ' + nums.length + ', ' + since() + (s._d != null ? ', distance ' + (s._d > FAR_M ? 'far' : 'near') : ', no location'));
+      if (changed && (!st.pump || nums.indexOf(st.pump) < 0)) { st.pumps = nums; if (st.pump && nums.indexOf(st.pump) < 0) { st.pump = ''; st.ready = null; st.calc = null; } render(); }
+      else if (!cached) render();
+    }, function (e) { if (cached && !(e instanceof Unauth)) { st.busy = false; return; } fail(e); });
   }
   function choosePump(p) {
     st.pump = p; st.ready = null; st.calc = null; render();

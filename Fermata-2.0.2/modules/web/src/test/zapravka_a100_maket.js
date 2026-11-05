@@ -51,6 +51,8 @@ async function run(name, vp, opt, steps) {
   const pg = await ctx.newPage();
   pg.on('console', m => { if (m.text().includes('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] fast: ', '')); });
   if (opt.lastPos) await pg.addInitScript(p => { try { localStorage.setItem('a100_pos', JSON.stringify({ t: Date.now(), p: p })); } catch (e) { } }, opt.lastPos);
+  if (opt.pumpsMem) await pg.addInitScript(() => { try { localStorage.setItem('a100_pumps', JSON.stringify({ 14: ['1', '2', '3', '4', '5', '6', '7', '8'] }));
+    localStorage.setItem('a100_azs', JSON.stringify({ t: Date.now(), list: [{ NUMBER: 14, NAME: 'ул. Тростенецкая, 16', POINT: '53.8456,27.6340', FUEL: [] }] })); } catch (e) { } });
   if (opt.token) await pg.addInitScript(t => { try { localStorage.setItem('a100_token', t); } catch (e) { } }, opt.token);
   const t0 = Date.now();
   await pg.goto('https://appassets.androidplatform.net/zp/zapravka_a100.html?tg=' + encodeURIComponent('https://web.telegram.org/k/#?tgaddr=x'));
@@ -133,6 +135,10 @@ const tap = (pg, sel) => pg.click(sel);
     async (pg, check, calls) => { await pg.click('[data-mb="0"]'); await pg.waitForURL(/payment\.webpay\.by/); check(calls.some(c => c.startsWith('pay-new:') && !c.includes('bank_card_id')), 'POST /payment без карты');
       await pg.goto('https://appassets.androidplatform.net/zp/zapravka_a100.html?tg=x&paid=success'); await pg.waitForFunction(() => document.body.innerText.includes('Оплачено'));
       check((await txt(pg)).includes('колонка 1'), 'после банка — оплачено, колонка 1'); }]));
+  // 8. колонки из памяти — сразу, даже когда сервер отвечает медленно (3 с)
+  r.push(await run('kolonki-iz-pamyati', CAR, { geo: HOME, token: '5|tok', delay: 3000, pumpsMem: 1 }, [
+    async (pg, check) => { const t = Date.now(); await pg.waitForSelector('.z-p', { timeout: 15000 }); check(Date.now() - t < 1500, 'колонки за 1,5 с при медленном сервере (' + (Date.now() - t) + ' мс)');
+      check(await pg.$$eval('.z-p', a => a.map(e => e.textContent).join(',')) === '1,2,3,4,5,6,7,8', 'колонки из памяти'); }]));
   console.log(r.filter(Boolean).length + ' из ' + r.length);
   process.exit(r.every(Boolean) ? 0 : 1);
 })();
