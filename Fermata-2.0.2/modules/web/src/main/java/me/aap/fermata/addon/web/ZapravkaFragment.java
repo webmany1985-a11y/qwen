@@ -35,7 +35,7 @@ public class ZapravkaFragment extends WebBrowserFragment {
 		FermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
-		webView.init(addon, new ZapravkaWebClient(), chromeClient);
+		webView.init(addon, new ZapravkaWebClient(((ZapravkaAddon) addon).getLink()), chromeClient);
 		ZapravkaAuto.install(webView);
 		// Своя вкладка А-100 (05.11.2026) — сразу; прежний путь через веб-Telegram — с неё кнопкой «Telegram»
 		String url = ((ZapravkaAddon) addon).getFastUrl();

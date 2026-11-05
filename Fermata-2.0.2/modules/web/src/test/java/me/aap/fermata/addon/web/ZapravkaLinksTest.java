@@ -64,4 +64,18 @@ public class ZapravkaLinksTest {
 		assertNull(ZapravkaLinks.fastAsset("appassets.androidplatform.net", null));
 		assertEquals("image/png", ZapravkaLinks.mimeOf("zapravka_logo.png"));
 	}
+
+	@Test
+	public void payReturn() {
+		assertEquals("success", ZapravkaLinks.payResult("tgminiapp.a-100.by", "/pay-success", "order=1"));
+		assertEquals("success", ZapravkaLinks.payResult("tgminiapp.a-100.by", "/success-tma-redirect", null));
+		assertEquals("fail", ZapravkaLinks.payResult("tgminiapp.a-100.by", "/pay-fail", null));
+		assertEquals("fail", ZapravkaLinks.payResult("t.me", "/A100_app_bot", "startapp=page_fail"));
+		assertNull(ZapravkaLinks.payResult("tgminiapp.a-100.by", "/azs-map", null));
+		assertNull(ZapravkaLinks.payResult("t.me", "/A100_app_bot", null));
+		assertNull(ZapravkaLinks.payResult("payment.webpay.by", "/pay-success", null));
+		assertNull(ZapravkaLinks.payResult(null, "/pay-success", null));
+		assertTrue(ZapravkaLinks.fastUrlPaid("https://t.me/A100_app_bot", "success").endsWith("&paid=success"));
+		assertTrue(ZapravkaLinks.fastUrlPaid("https://t.me/A100_app_bot", "x").endsWith("&paid=fail"));
+	}
 }

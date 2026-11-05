@@ -21,6 +21,17 @@ import me.aap.utils.log.Log;
  * Адреса страниц в журнал не пишутся: в них бывают данные входа Telegram.
  */
 public class ZapravkaWebClient extends FermataWebClient {
+	/** Ссылка на бота из настроек — для возврата в свою вкладку после страницы банка. */
+	@androidx.annotation.Nullable
+	private final String link;
+
+	public ZapravkaWebClient() {
+		this(null);
+	}
+
+	public ZapravkaWebClient(@androidx.annotation.Nullable String link) {
+		this.link = link;
+	}
 
 	/** Своя вкладка А-100: её 4 файла из assets по адресу https://appassets.androidplatform.net/zp/… */
 	@Override
@@ -64,6 +75,13 @@ public class ZapravkaWebClient extends FermataWebClient {
 	public boolean shouldOverrideUrlLoading(@NonNull WebView view,
 																					@NonNull WebResourceRequest request) {
 		Uri u = request.getUrl();
+		// Оплата новой картой: банк закончил — обратно в свою вкладку с результатом (без адреса и данных заказа в журнале)
+		String paid = request.isForMainFrame() ? ZapravkaLinks.payResult(u.getHost(), u.getPath(), u.getQuery()) : null;
+		if (paid != null) {
+			Log.i("Zapravka: back from bank, ", paid);
+			view.loadUrl(ZapravkaLinks.fastUrlPaid(link, paid));
+			return true;
+		}
 		String scheme = u.getScheme();
 		if (!"http".equals(scheme) && !"https".equals(scheme)) {
 			Log.i("Zapravka: app link blocked, scheme ", scheme);

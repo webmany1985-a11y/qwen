@@ -60,7 +60,7 @@ background:#00000033;border:1.5px solid #ffffffaa;text-shadow:0 2px 8px #000c;bo
 .z-go{position:absolute;left:2vw;right:2vw;bottom:3vh;height:14vh;min-height:40px;border-radius:16px;background:linear-gradient(90deg,#f15a22e6,#ff7a3de6);border:1.5px solid #ffd2bf;
 display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5vh,22px);font-weight:900;letter-spacing:2px;box-shadow:0 6px 24px #f15a2299;transition:opacity .2s}
 .z-go.off{opacity:.45;filter:grayscale(.6)}
-.z-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(86vw,520px);border-radius:18px;padding:16px 18px;background:#141618f2;font-size:clamp(14px,4.5vh,18px);text-align:center;z-index:5}
+.z-msg{white-space:pre-line;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(86vw,520px);border-radius:18px;padding:16px 18px;background:#141618f2;font-size:clamp(14px,4.5vh,18px);text-align:center;z-index:5}
 .z-msg .z-mb{display:flex;gap:10px;margin-top:14px;justify-content:center}
 .z-msg .z-b{position:relative;padding:10px 16px;font-size:15px}
 .z-msg .z-b.pri{background:#f15a22d0;border-color:#ffd2bf}
@@ -164,7 +164,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     var unit = st.mode === 'l' ? 'л' : 'руб';
     var quick = st.mode === 'l' ? ['5', '10', '15', '20'] : ['10', '20', '30', '40']; // пожелание 05.11.2026
     var can = st.pump && st.ready && parseFloat((st.value || '0').replace(',', '.')) > 0 && !st.busy;
-    var goText = st.calc ? 'К ОПЛАТЕ ' + st.calc.amount + ' руб · ' + st.calc.liters + ' л' : (st.busy ? 'СЧИТАЮ…' : 'РАССЧИТАТЬ ›');
+    var goText = st.calc ? 'ОПЛАТИТЬ ' + st.calc.amount + ' руб · ' + st.calc.liters + ' л' : (st.busy ? 'СЧИТАЮ…' : 'РАССЧИТАТЬ ›');
     app.innerHTML =
       '<div class="z-bg"></div><div class="z-shade"></div>' +
       '<div class="z-g z-hdr"><img class="z-kl" alt="" src="zapravka_klever.png"><div><div class="z-st">' +
@@ -259,7 +259,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
       if (!Array.isArray(list)) { log('azs: data not a list, keys ' + keys(j)); list = []; }
       if (list[0]) log('azs: ' + list.length + ' stations, fields ' + keys(list[0]));
       var slim = list.filter(function (s) { return s.ACTIVE !== 'N' && s.ACTIVE !== false && s.ACTIVE !== 0; }) // закрытые станции не показываем
-        .map(function (s) { return { NUMBER: s.NUMBER, NAME: s.NAME || s.NAME_RU, POINT: s.POINT }; }).filter(function (s) { return s.NUMBER != null; });
+        .map(function (s) { return { NUMBER: s.NUMBER, NAME: s.NAME || s.NAME_RU, POINT: s.POINT, FUEL: (s.FUEL || []).map(function (f) { return { NAME: f.NAME, CODE: f.CODE }; }) }; }).filter(function (s) { return s.NUMBER != null; });
       if (slim.length) store.set('a100_azs', JSON.stringify({ t: Date.now(), list: slim }));
       return slim;
     });
@@ -338,7 +338,8 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
         var d = (j && j.data) || {};
         log('calculate ok, fields ' + keys(d));
         st.busy = false;
-        st.calc = { amount: d.amount != null ? Number(d.amount).toFixed(2).replace('.', ',') : '?', liters: d.liters != null ? parseInt(d.liters, 10) : liters };
+        st.calc = { amountRaw: d.amount != null ? Number(d.amount) : null, amount: d.amount != null ? Number(d.amount).toFixed(2).replace('.', ',') : '?', liters: d.liters != null ? parseInt(d.liters, 10) : liters,
+          price: d.price != null ? d.price : st.ready.price, fuel_name: d.fuel_name || st.ready.fuel_name, nozzle: d.nozzle_number != null ? d.nozzle_number : st.ready.nozzle };
         render();
       }, fail);
     };
@@ -349,10 +350,81 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     }
     doIt();
   }
+  // ------------------------------------------------------------------ оплата (этап 2, 05.11.2026)
+  // Как в приложении А-100 (PayTypeStep → payMutation, оплата «картой»): POST /payment/recurring с bank_card_id
+  // сохранённой карты (основной) либо POST /payment без карты → redirectUrl (страница банка WebPay). Тело — поля
+  // приложения для type FUEL. Скидки по программе лояльности приложение считает отдельно (/discount/calculate) —
+  // здесь не считаются: номер карты лояльности передаётся, итог определяет сервер. Платёж — только по нажатию
+  // «Оплатить» в окне подтверждения с суммой и картой.
+  var fmt = function (n) { return Number(n).toFixed(2).replace('.', ','); };
+  var cardMask = function (c) { var m = String((c && c.card) || '').replace(/[^0-9xX*•]/g, ''); return m ? '•••• ' + m.slice(-4) : 'сохранённой картой'; };
+  function payInfo() {
+    return api('GET', '/users/me').then(function (j) {
+      var d = (j && j.data) || {}, u = Object.assign({}, d, d.user || {});
+      var cards = u.bank_cards || d.bank_cards || [];
+      log('user fields ' + keys(u) + ', cards ' + cards.length + (cards[0] ? ', card fields ' + keys(cards[0]) : ''));
+      var card = cards.filter(function (c) { return c.is_main; })[0] || cards[0] || null;
+      if (u.id == null) return { card: card, loyalty: null };
+      return api('GET', '/users/' + encodeURIComponent(u.id) + '/loyalty-cards').then(function (l) {
+        var arr = (l && l.data) || [];
+        if (!Array.isArray(arr)) arr = [];
+        return { card: card, loyalty: arr.filter(function (c) { return c.is_main; })[0] || arr[0] || null };
+      }, function (e) { if (e instanceof Unauth) throw e; return { card: card, loyalty: null }; });
+    });
+  }
   function pay() {
-    log('pay pressed (stage 2 not ready)');
-    showMsg('Оплата из этой вкладки будет следующим шагом. Сейчас оплатить можно через приложение в Telegram — колонка ' + st.pump + ', ' + st.calc.liters + ' л.',
-      [{ label: 'Открыть через Telegram', pri: true, fn: toTelegram }, { label: 'Назад' }]);
+    var s = cur(), c = st.calc;
+    if (!s || !c || c.amountRaw == null) return;
+    st.busy = true; render();
+    log('pay: preparing');
+    payInfo().then(function (info) {
+      st.busy = false;
+      var fuel = (s.FUEL || []).filter(function (f) { return f.NAME === c.fuel_name; })[0];
+      var body = { promotions: [], discount: 0, payment_method: 'card', type: 'FUEL', fuel_name: c.fuel_name, azs_number: s.NUMBER,
+        nozzle_number: c.nozzle, liters: c.liters, fuel_code: fuel ? fuel.CODE : '', amount: c.amountRaw, price: c.price, pump_number: Number(st.pump) };
+      if (info.card && info.card.id != null) body.bank_card_id = info.card.id;
+      if (info.loyalty && info.loyalty.number) body.loyalty_card_number = info.loyalty.number;
+      var how = info.card ? 'картой ' + cardMask(info.card) : 'банковской картой (откроется страница банка)';
+      showMsg('Оплатить ' + fmt(c.amountRaw) + ' руб ' + how + '?\nАЗС №' + s.NUMBER + ', колонка ' + st.pump + ', ' + (c.fuel_name || '') + ', ' + c.liters + ' л.',
+        [{ label: 'Оплатить ' + fmt(c.amountRaw) + ' руб', pri: true, fn: function () { sendPay(body); } }, { label: 'Отмена' }]);
+    }, function (e) {
+      st.busy = false;
+      if (e instanceof Unauth) { onAuthLost(); return; }
+      showMsg((e && e.msg) || 'Не удалось получить карты', [{ label: 'Понятно', pri: true }]);
+    });
+  }
+  function sendPay(body) {
+    st.busy = true; st.loadText = 'Оплата…'; render();
+    var path = body.bank_card_id != null ? '/payment/recurring' : '/payment';
+    log('pay: sending (' + (body.bank_card_id != null ? 'saved card' : 'new card') + (body.loyalty_card_number ? ', loyalty' : '') + ')');
+    api('POST', path, body).then(function (j) {
+      var d = (j && j.data) || {};
+      log('pay: answer fields ' + keys(d));
+      st.busy = false;
+      var pend = { t: Date.now(), azs: body.azs_number, pump: body.pump_number, liters: body.liters, amount: body.amount, order: d.orderNumber || d.order_number || null };
+      if (d.redirectUrl) {
+        store.set('a100_pending', JSON.stringify(pend));
+        log('pay: to bank page');
+        location.href = d.redirectUrl;
+        return;
+      }
+      paidScreen(pend, true);
+    }, function (e) {
+      st.busy = false;
+      if (e instanceof Unauth) { onAuthLost(); return; }
+      showMsg('Оплата не прошла: ' + ((e && e.msg) || 'ошибка'), [{ label: 'Понятно', pri: true }]);
+    });
+  }
+  function paidScreen(p, ok) {
+    st.calc = null; st.value = ''; st.pump = ''; st.ready = null;
+    if (ok) {
+      log('pay: done');
+      showMsg('Оплачено: ' + fmt(p.amount) + ' руб, ' + p.liters + ' л.\nАЗС №' + p.azs + ', колонка ' + p.pump + ' — можно заправляться.' + (p.order ? '\nЗаказ ' + p.order : ''),
+        [{ label: 'Хорошо', pri: true }]);
+    } else {
+      log('pay: failed at bank');
+      showMsg('Банк не подтвердил оплату — деньги не списаны или вернутся банком. Можно попробовать ещё раз.', [{ label: 'Понятно', pri: true }]);
+    }
   }
   function showMsg(text, buttons) { st.msg = { text: text, buttons: buttons }; render(); }
   function fail(e) {
@@ -434,6 +506,15 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
   }
   log('page start');
   start();
+  (function () {
+    var r = null; try { r = new URLSearchParams(location.search).get('paid'); } catch (e) { }
+    if (!r) return;
+    var p = null; try { p = JSON.parse(store.get('a100_pending') || 'null'); } catch (e) { }
+    store.set('a100_pending', null);
+    log('back from bank: ' + (r === 'success' ? 'success' : 'fail'));
+    var show = function () { if (st.phase === 'main' && !st.busy) paidScreen(p || { amount: 0, liters: '?', azs: '?', pump: '?' }, r === 'success'); else setTimeout(show, 200); };
+    show();
+  })();
 })();
 </script>
 </body>

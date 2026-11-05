@@ -97,6 +97,11 @@ public class ZapravkaAddon extends WebBrowserAddon {
 		return ZP_BOOKMARKS;
 	}
 
+	/** Ссылка на бота из настроек. */
+	String getLink() {
+		return getPreferenceStore().getStringPref(ZP_LINK);
+	}
+
 	/** Своя вкладка А-100 (05.11.2026); ссылка на бота — для кнопки «Telegram» на ней. */
 	String getFastUrl() {
 		return ZapravkaLinks.fastUrl(getPreferenceStore().getStringPref(ZP_LINK));

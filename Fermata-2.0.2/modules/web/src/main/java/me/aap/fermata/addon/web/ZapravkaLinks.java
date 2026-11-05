@@ -118,4 +118,32 @@ public final class ZapravkaLinks {
 		if (name.endsWith(".png")) return "image/png";
 		return "application/octet-stream";
 	}
+
+	/**
+	 * Возврат со страницы банка (оплата новой картой, 05.11.2026). Приложение А-100 после WebPay уходит на свои
+	 * страницы {@code /pay-success}, {@code /success-tma-redirect}, {@code /pay-fail} (код А-100: PATH) или в бота
+	 * {@code t.me/A100_app_bot?startapp=page_fail}. Возвращает «success», «fail» или {@code null} — не возврат.
+	 * Адреса проверены по коду приложения; на живой оплате не проверялись.
+	 */
+	@Nullable
+	public static String payResult(@Nullable String host, @Nullable String path, @Nullable String query) {
+		if (host == null) return null;
+		String p = path == null ? "" : path;
+		String q = query == null ? "" : query;
+		if ("tgminiapp.a-100.by".equalsIgnoreCase(host)) {
+			if (p.startsWith("/pay-success") || p.startsWith("/success-tma-redirect")) return "success";
+			if (p.startsWith("/pay-fail")) return "fail";
+			return null;
+		}
+		if ("t.me".equalsIgnoreCase(host) && p.toLowerCase(Locale.ROOT).startsWith("/a100_app_bot")) {
+			if (q.contains("startapp=page_fail")) return "fail";
+			if (q.contains("startapp=page_success")) return "success";
+		}
+		return null;
+	}
+
+	/** Своя вкладка с результатом оплаты. */
+	public static String fastUrlPaid(@Nullable String input, @NonNull String result) {
+		return fastUrl(input) + "&paid=" + ("success".equals(result) ? "success" : "fail");
+	}
 }
