@@ -358,16 +358,10 @@
     <string name="open_log">Otvori zapisnik</string>
     <string name="unlock_phone_and_grant">Otključajte telefon i dodijelite tražene dozvole.</string>
     <string name="screen_capture_rejected">Zahtjev za snimanje zaslona odbijen.</string>
-    <string name="accessibility_dsc">Usluga pristupačnosti koristi se od strane Fermata Mirror za simuliranje događaja na zaslonu osjetljivom na dodir.</string>
+    <string name="accessibility_dsc">Usluga pristupačnosti koristi se od strane JARVIS Экран za simuliranje događaja na zaslonu osjetljivom na dodir.</string>
     <string name="media_projection_action_text">Započni sada</string>
 
     <string name="about"> O programu</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-<p>Fermata Media Player" je besplatni, otvorenokodni audio i video player s jednostavnim i intuitivnim sučeljem.</p>
-<p><b>Autor:</b> Andrey Pavlenko</p>
-<p><b>Verzija:</b> %1$s (%2$d)</p>
-<p><b>Početna strancia:</b> <a href="%3$s">%3$s</a></p>
-]]></string>
 
     <string name="err_failed_to_play">Nije uspjelo reproduciranje %s</string>
     <string name="err_failed_to_play_cause">Nije uspjelo reproduciranje %1$s: %2$s</string>

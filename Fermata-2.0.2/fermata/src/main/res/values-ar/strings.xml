@@ -362,9 +362,6 @@
     <string name="media_projection_action_text">بدأ</string>
 
     <string name="about">عن التطبيق</string>
-    <string name="about_html">
-    <![CDATA[ <H1 align="center">Fermata Media Player</H1> <p>Fermata Media Player is a free, open source audio and video player with a simple and intuitive interface.</p> <p><b>Author:</b> Andrey Pavlenko</p> <p><b>Version:</b> %1$s (%2$d)</p> <p><b>Home page:</b> <a href="%3$s">%3$s</a></p> ]]>
-    </string>
 
     <string name="err_failed_to_play">فشل التشغيل %s</string>
     <string name="err_failed_to_play_cause">فشل التشغيل بسبب %1$s: %2$s</string>

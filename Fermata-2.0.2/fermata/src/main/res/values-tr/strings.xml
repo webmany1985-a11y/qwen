@@ -358,17 +358,10 @@
     <string name="open_log">Günlük dosyasını aç</string>
     <string name="unlock_phone_and_grant">Telefonun kilidini açın ve istenen izinleri verin.</string>
     <string name="screen_capture_rejected">Ekran yakalama isteği reddedildi.</string>
-    <string name="accessibility_dsc">Erişilebilirlik hizmeti, Fermata Mirror tarafından dokunmatik ekran olaylarını simüle etmek için kullanılır.</string>
+    <string name="accessibility_dsc">Erişilebilirlik hizmeti, JARVIS Экран tarafından dokunmatik ekran olaylarını simüle etmek için kullanılır.</string>
     <string name="media_projection_action_text">Şimdi başlat</string>
 
     <string name="about">Hakkında</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player is a free, open source audio and video player with a simple and
-        intuitive interface.</p>
-        <p><b>Author:</b> Andrey Pavlenko</p>
-        <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Home page:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">Oynatılamıyor: %s</string>
     <string name="err_failed_to_play_cause">Oynatılamıyor %1$s: %2$s</string>

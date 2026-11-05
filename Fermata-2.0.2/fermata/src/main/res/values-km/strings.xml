@@ -358,16 +358,10 @@
     <string name="open_log">បើកឯកសារកំណត់ហេតុ</string>
     <string name="unlock_phone_and_grant">ដោះសោទូរសព្ទ ហើយផ្តល់ការអនុញ្ញាតដែលបានស្នើសុំ។</string>
     <string name="screen_capture_rejected">សំណើ​ថត​អេក្រង់​ត្រូវ​បាន​បដិសេធ។</string>
-    <string name="accessibility_dsc">សេវាកម្ម​មធ្យោបាយ​ងាយស្រួល​ត្រូវ​បាន​ប្រើ​ដោយ Fermata Mirror ដើម្បី​ក្លែង​ធ្វើ​ព្រឹត្តិការណ៍​ប៉ះ​លើ​អេក្រង់។</string>
+    <string name="accessibility_dsc">សេវាកម្ម​មធ្យោបាយ​ងាយស្រួល​ត្រូវ​បាន​ប្រើ​ដោយ JARVIS Экран ដើម្បី​ក្លែង​ធ្វើ​ព្រឹត្តិការណ៍​ប៉ះ​លើ​អេក្រង់។</string>
     <string name="media_projection_action_text">ចាប់ផ្តើមឥឡូវនេះ</string>
 
     <string name="about">អំពី</string>
-    <string name="about_html"><![CDATA[<H1 តម្រឹម = \"មជ្ឈមណ្ឌល\"> កម្មវិធីចាក់មេឌៀហ្វឺម៉ាហ្គាតា </ h1>
-        <p> អ្នកលេងមេឌៀហ្វូម៉ាតាគឺជាកម្មវិធីចាក់អូឌីយ៉ូប្រភពនិងវីដេអូឥតគិតថ្លៃដែលមានលក្ខណៈសាមញ្ញនិង
-        ចំណុចប្រទាក់វិចារណញាណ។ </ p>
-        <p> <b> អ្នកនិពន្ធ: </ b> andrey pavlenko </ p>
-        <p> <p> ព្រីនៈ </ b>% 1 $ s (% 2 $ d) </ p>
-        <p> <b> ទំព័រដើម: </ b> <A HREF = \"% 3 $ s\">% 3 $ s </a> </ p>]]></string>
 
     <string name="err_failed_to_play">បាន​បរាជ័យ​ក្នុង​ការ​លេង %s</string>
     <string name="err_failed_to_play_cause">បាន​បរាជ័យ​ក្នុង​ការ​លេង %1$s៖ %2$s</string>

@@ -365,17 +365,10 @@
     <string name="open_log">Protokolldatei öffnen</string>
     <string name="unlock_phone_and_grant">Entsperren Sie das Telefon und erteilen Sie die angeforderten Berechtigungen.</string>
     <string name="screen_capture_rejected">Anfrage zur Bildschirmaufnahme abgelehnt.</string>
-    <string name="accessibility_dsc">Der Barrierefreiheitsdienst wird von Fermata Mirror verwendet, um Touchscreen-Ereignisse zu simulieren.</string>
+    <string name="accessibility_dsc">Der Barrierefreiheitsdienst wird von JARVIS Экран verwendet, um Touchscreen-Ereignisse zu simulieren.</string>
     <string name="media_projection_action_text">Jetzt starten</string>
 
     <string name="about">Über Fermata</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player ist ein kostenloser Open-Source-Audio- und Videoplayer mit einer
-        einfachen und intuitiven Benutzeroberfläche.</p>
-        <p><b>Autor:</b> Andrey Pavlenko</p>
-        <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Homepage:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">Abspielen fehlgeschlagen %s</string>
     <string name="err_failed_to_play_cause">konnte nicht abgespielt werden %1$s: %2$s</string>

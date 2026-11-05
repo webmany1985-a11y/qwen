@@ -375,18 +375,16 @@
     <string name="log_report_collecting">Collecting the log…</string>
     <string name="unlock_phone_and_grant">Unlock the phone and grant the requested permissions.</string>
     <string name="screen_capture_rejected">Screen capture request rejected.</string>
-    <string name="accessibility_dsc">The accessibility service is used by JARVIS Экран (Fermata Mirror) to simulate touch screen events.</string>
+    <string name="accessibility_dsc">The accessibility service is used by JARVIS Экран to simulate touch screen events.</string>
     <string name="media_projection_action_text">Start now</string>
 
     <string name="about">About</string>
     <string name="about_html"><![CDATA[<H1 align="center">JARVIS Auto</H1>
-        <p>JARVIS Auto is a modified build of Fermata Media Player (GPL-3.0): renamed, with the
-        JARVIS voice assistant tab and command bridge added (16.10.2026).</p>
-        <p>Fermata Media Player is a free, open source audio and video player with a simple and
-        intuitive interface.</p>
-        <p><b>Author:</b> Andrey Pavlenko</p>
+        <p><b>Author:</b> Sinilo Aleksandr Leonidovich</p>
         <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Home page:</b> <a href="%3$s">%3$s</a></p>
+        <p>Based on Fermata Media Player © Andrey Pavlenko. Licensed under the GNU GPL version 3 (GPL-3.0),
+        without any warranty. Modified by Sinilo Aleksandr Leonidovich, 2026.</p>
+        <p><b>Fermata source code:</b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Failed to play %s</string>

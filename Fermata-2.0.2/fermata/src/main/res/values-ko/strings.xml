@@ -365,17 +365,10 @@
     <string name="open_log">로그파일 열기</string>
     <string name="unlock_phone_and_grant">스마트폰의 잠금을 해제하여 요청된 권한을 부여해주세요.</string>
     <string name="screen_capture_rejected">스크린샷 요청이 거절 되었습니다.</string>
-    <string name="accessibility_dsc">접근성 서비스는 Fermata Mirror에 의해 터치스크린을 시뮬레이션하기 위해 사용됩니다.</string>
+    <string name="accessibility_dsc">접근성 서비스는 JARVIS Экран에 의해 터치스크린을 시뮬레이션하기 위해 사용됩니다.</string>
     <string name="media_projection_action_text">지금 시작 합니다</string>
 
     <string name="about">앱정보</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player (페르마타 미디어 플레이어)는 간결하고 직관적인
-        무료 오픈소스 오디오, 비디오 플레이어 입니다.</p>
-        <p><b>제작자:</b> Andrey Pavlenko</p>
-        <p><b>앱버전:</b> %1$s (%2$d)</p>
-        <p><b>홈페이지:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">재생에 실패 했습니다 %s</string>
     <string name="err_failed_to_play_cause">지생에 실패 했습니다 %1$s: %2$s</string>

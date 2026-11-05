@@ -365,17 +365,10 @@
     <string name="open_log">ログファイルを開く</string>
     <string name="unlock_phone_and_grant">スマートフォンのロックを解除し、要求された権限を付与してください。</string>
     <string name="screen_capture_rejected">画面キャプチャ要求が拒否されました。</string>
-    <string name="accessibility_dsc">アクセシビリティサービスは、Fermata Mirror によってタッチスクリーンをシミュレートするために使用されます。</string>
+    <string name="accessibility_dsc">アクセシビリティサービスは、JARVIS Экран によってタッチスクリーンをシミュレートするために使用されます。</string>
     <string name="media_projection_action_text">今すぐ始めましょう</string>
 
     <string name="about">About</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player is a free, open source audio and video player with a simple and
-        intuitive interface.</p>
-        <p><b>Author:</b> Andrey Pavlenko</p>
-        <p><b>Version:</b> %1$s (%2$d)</p>
-        <p><b>Home page:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">再生に失敗しました %s</string>
     <string name="err_failed_to_play_cause">再生に失敗しました %1$s: %2$s</string>

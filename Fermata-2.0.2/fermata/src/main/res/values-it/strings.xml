@@ -358,17 +358,10 @@
     <string name="open_log">Apri il file di registro</string>
     <string name="unlock_phone_and_grant">Sblocca il telefono e concedi le autorizzazioni richieste.</string>
     <string name="screen_capture_rejected">Richiesta di acquisizione schermo respinta.</string>
-    <string name="accessibility_dsc">Il servizio di accessibilità viene utilizzato da Fermata Mirror per simulare eventi touch screen.</string>
+    <string name="accessibility_dsc">Il servizio di accessibilità viene utilizzato da JARVIS Экран per simulare eventi touch screen.</string>
     <string name="media_projection_action_text">Avvia adesso</string>
 
     <string name="about">Info</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player è un riproduttore audio e video gratuito,
-		open source con un\'interfaccia semplice ed intuitiva.</p>
-        <p><b>Autore:</b> Andrey Pavlenko</p>
-        <p><b>Versione:</b> %1$s (%2$d)</p>
-        <p><b>Sito web:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">Impossibile riprodurre %s</string>
     <string name="err_failed_to_play_cause">Impossibile riprodurre %1$s: %2$s</string>

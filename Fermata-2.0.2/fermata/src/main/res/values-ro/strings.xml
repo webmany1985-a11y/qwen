@@ -358,17 +358,10 @@
     <string name="open_log">Deschide fișierul jurnal</string>
     <string name="unlock_phone_and_grant">Deblochează telefonul și acordă permisiunile solicitate.</string>
     <string name="screen_capture_rejected">Solicitare de capturare a ecranului respinsă.</string>
-    <string name="accessibility_dsc">Serviciul de accesibilitate este folosit de Fermata Mirror pentru a simula evenimentele ecranului tactil.</string>
+    <string name="accessibility_dsc">Serviciul de accesibilitate este folosit de JARVIS Экран pentru a simula evenimentele ecranului tactil.</string>
     <string name="media_projection_action_text">Începe acum</string>
 
     <string name="about">Despre</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player este un player audio și video gratis, open source  cu o interfață simplă și
-        intuitivă.</p>
-        <p><b>Author:</b> Andrey Pavlenko</p>
-        <p><b>Versiune:</b> %1$s (%2$d)</p>
-        <p><b>Pagina principală:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">Redare eșuată %s</string>
     <string name="err_failed_to_play_cause">Redare eșuată %1$s: %2$s</string>

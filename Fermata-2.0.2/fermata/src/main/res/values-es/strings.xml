@@ -368,17 +368,10 @@ Por favor, reinicie la aplicación.</string>
     <string name="open_log">Abrir archivo de registro</string>
     <string name="unlock_phone_and_grant">Desbloquee el teléfono y otorgue los permisos solicitados.</string>
     <string name="screen_capture_rejected">Solicitud de captura de pantalla rechazada.</string>
-    <string name="accessibility_dsc">El servicio de accesibilidad es utilizado por Fermata Mirror para simular eventos de pantalla táctil.</string>
+    <string name="accessibility_dsc">El servicio de accesibilidad es utilizado por JARVIS Экран para simular eventos de pantalla táctil.</string>
     <string name="media_projection_action_text">Empieza ahora</string>
 
     <string name="about">Acerca de</string>
-    <string name="about_html"><![CDATA[<H1 align="center">Fermata Media Player</H1>
-        <p>Fermata Media Player es un reproductor de audio y vídeo gratuito y de código abierto con
-        una interfaz sencilla e intuitiva.</p>
-        <p><b>Autor:</b> Andrey Pavlenko</p>
-        <p><b>Versión:</b> %1$s (%2$d)</p>
-        <p><b>Página principal:</b> <a href="%3$s">%3$s</a></p>
-        ]]></string>
 
     <string name="err_failed_to_play">No se pudo reproducir %s</string>
     <string name="err_failed_to_play_cause">Error al reproducir %1$s: %2$s</string>

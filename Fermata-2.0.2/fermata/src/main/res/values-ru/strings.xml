@@ -359,19 +359,16 @@
     <string name="log_report_collecting">Собираю журнал… Если Magisk спросит root — разрешите</string>
     <string name="unlock_phone_and_grant">Разблокируйте телефон и предоставьте запрошенные разрешения.</string>
     <string name="screen_capture_rejected">Запрос на трянсляцию экрана отклонен.</string>
-    <string name="accessibility_dsc">Эта служба используется JARVIS Экран (Fermata Mirror) для взаимодействия с экраном телефона.</string>
+    <string name="accessibility_dsc">Эта служба используется JARVIS Экран для взаимодействия с экраном телефона.</string>
     <string name="media_projection_action_text">Начать</string>
 
     <string name="about">О приложении</string>
     <string name="about_html"><![CDATA[<H1 align="center">JARVIS Auto</H1>
-        <p>JARVIS Auto — изменённая сборка Fermata Media Player (лицензия GPL-3.0): другое
-        название и значок, добавлены вкладка голосового ассистента JARVIS и передача ему
-        голосовых команд (16.10.2026).</p>
-        <p>Fermata Media Player - это бесплатный, с открытым исходным кодом, аудио и видео плеер
-        с простым и интуитивным интерфейсом.</p>
-        <p><b>Автор:</b> Андрей Павленко</p>
+        <p><b>Автор:</b> Синило Александр Леонидович</p>
         <p><b>Версия:</b> %1$s (%2$d)</p>
-        <p><b>Домашняя страница:</b> <a href="%3$s">%3$s</a></p>
+        <p>Создано на основе Fermata Media Player © Андрей Павленко. Распространяется по лицензии GNU GPL версии 3
+        (GPL-3.0); без каких-либо гарантий. Изменения — Синило Александр Леонидович, 2026.</p>
+        <p><b>Исходный код Fermata:</b> <a href="%3$s">%3$s</a></p>
         ]]></string>
 
     <string name="err_failed_to_play">Не удалось воспроизвести %s</string>
