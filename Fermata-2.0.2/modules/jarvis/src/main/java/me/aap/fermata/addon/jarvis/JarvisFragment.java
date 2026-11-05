@@ -90,6 +90,21 @@ public class JarvisFragment extends MainActivityFragment
 	private Cancellable interrupt = Cancellable.CANCELED;
 	/** Идёт разговор: слушаем, ждём JARVIS или произносим ответ. */
 	private boolean busy;
+	// ------------------------------------------------------------------ заправка голосом (05.11.2026)
+	/** Диалог заправки — помнится 5 минут, переживает «не расслышал» и перерывы. */
+	private final FuelDialog fuel = new FuelDialog();
+	@Nullable
+	private FuelRunner fuelRunner;
+	@Nullable
+	private FuelVosk fuelVosk;
+	/** Ответ в диалоге заправки слушает Google (модель Vosk ещё не скачана) — фразу отдать диалогу. */
+	private boolean fuelListening;
+	/** Поколение прослушивания: done() его меняет, запоздавший ответ Vosk не продолжает диалог. */
+	private int fuelGen;
+	/** Первая фраза без интернета уже пробовалась распознать на телефоне. */
+	private boolean offlineTried;
+	@Nullable
+	private android.widget.TextView fuelLine;
 	/** Произносится «Слушаю». */
 	@Nullable
 	private TextToSpeech greeting;
@@ -153,6 +168,10 @@ public class JarvisFragment extends MainActivityFragment
 			}
 		};
 		rootView = root;
+		fuelVosk = new FuelVosk(ctx);
+		fuelVosk.ensureModel();
+		fuelRunner = new FuelRunner(ctx, fuel);
+		addFuelLine(ctx, root);
 		startWatchdog();
 		preloadHome(ctx);
 		chatRoot = root;
@@ -686,6 +705,11 @@ public class JarvisFragment extends MainActivityFragment
 	/** Разговор окончен: музыку — обратно, круг — в ожидание. */
 	private void done() {
 		Log.i("JARVIS tab: done");
+		fuelGen++;
+		fuelListening = false;
+		offlineTried = false;
+		FuelVosk v = fuelVosk;
+		if (v != null) v.cancel();
 		releaseMic();
 		abandonFocus();
 		Cancellable i = interrupt;
@@ -796,6 +820,26 @@ public class JarvisFragment extends MainActivityFragment
 			}
 			return;
 		}
+		// Нет интернета — распознать фразу на телефоне (Vosk, свободная речь), если модель скачана (05.11.2026)
+		if (!silence && !offlineTried && busy && (hud != null) && (fuelVosk != null) && fuelVosk.ready() &&
+				((error == SpeechRecognizer.ERROR_NETWORK) || (error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) ||
+						(error == SpeechRecognizer.ERROR_SERVER))) {
+			offlineTried = true;
+			Log.i("JARVIS tab: no network — local recognition");
+			MainActivityDelegate a = getActivityDelegate();
+			int gen = fuelGen;
+			setPhase(HudMath.Phase.LISTEN);
+			withMic(a, () -> fuelVosk.listen(null, (carMic != null) && carMic.isTaken(), (text, heard, gap) -> {
+				if ((gen != fuelGen) || (hud == null)) return;
+				if (text.isEmpty()) {
+					toast(R.string.jarvis_not_heard);
+					done();
+				} else {
+					onRecognized(Collections.singletonList(text));
+				}
+			}));
+			return;
+		}
 		if (!silence && usingGoogle && busy && (hud != null) &&
 				((error == SpeechRecognizer.ERROR_CLIENT) || (error == SpeechRecognizer.ERROR_SERVER) ||
 						(error == SpeechRecognizer.ERROR_NETWORK) || (error == SpeechRecognizer.ERROR_NETWORK_TIMEOUT) ||
@@ -869,6 +913,9 @@ public class JarvisFragment extends MainActivityFragment
 		releaseMic();
 		List<String> q = (alt != null) ? alt : Collections.singletonList(p.toString());
 		Log.i("JARVIS tab: phrase «", q.get(0), "»");
+		// Заправка голосом — раньше всего, в том числе раньше «хватит» конца разговора («хватит заправки»):
+		// «заправь …», «стоп заправка», «продолжить заправку», ответ в диалоге
+		if (fuelHandle(getActivityDelegate(), q)) return;
 		if (inConversation && isConversationEnd(q.get(0))) {
 			Log.i("JARVIS tab: conversation ended by phrase");
 			done();
@@ -1336,6 +1383,167 @@ public class JarvisFragment extends MainActivityFragment
 				else say(a, String.format(str(R.string.jarvis_chat_error), site.title) + err);
 			}
 		});
+	}
+
+	// ------------------------------------------------------------------ заправка голосом
+	/** Фраза про заправку — отдать диалогу; true — обработана. */
+	private boolean fuelHandle(MainActivityDelegate a, List<String> q) {
+		long now = System.currentTimeMillis();
+		boolean answering = fuelListening && fuel.active(now);
+		fuelListening = false;
+		if (answering) {
+			// ответ на вопрос диалога (Google — модель Vosk ещё не скачана): лучший осмысленный вариант
+			for (String s : q) {
+				if (fuelUseful(FuelPhrase.norm(s))) {
+					fuelStep(a, step(fuel.onPhrase(s, now), now));
+					return true;
+				}
+			}
+			fuelStep(a, step(fuel.onPhrase("", now), now));
+			return true;
+		}
+		for (String s : q) {
+			String n = FuelPhrase.norm(s);
+			if (FuelPhrase.isStart(n) || FuelPhrase.isCancel(n) || FuelPhrase.isResume(n)) {
+				FuelDialog.Step st = fuel.onPhrase(s, now);
+				if (st != null) {
+					Log.i("JARVIS fuel: phrase, step ", fuel.state());
+					fuelStep(a, st);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private boolean fuelUseful(String n) {
+		if (n.isEmpty()) return false;
+		if (FuelPhrase.isCancel(n) || FuelPhrase.isResume(n) || FuelPhrase.isRepeat(n) || FuelPhrase.isOtherStation(n) ||
+				FuelPhrase.isPay(n) || FuelPhrase.isReady(n)) return true;
+		return !FuelPhrase.parse(n, FuelPhrase.Expect.AMOUNT).empty();
+	}
+
+	private FuelDialog.Step step(@Nullable FuelDialog.Step s, long now) {
+		return (s != null) ? s : fuel.onSilence(now);
+	}
+
+	/** Шаг диалога: сказать, затем — действие или ответ. */
+	private void fuelStep(MainActivityDelegate a, FuelDialog.Step st) {
+		if (hud == null) return;
+		busy = true;
+		String say = st.say;
+		boolean listen = st.listen;
+		FuelDialog.Effect eff = st.effect;
+		FuelRunner r = fuelRunner;
+		// Голосовая оплата — после первой оплаты касанием во вкладке (критерий 9)
+		if (listen && say.endsWith("Оплатить?") && (fuel.state() == FuelDialog.State.ASK_PAY) &&
+				((r == null) || !r.voicePayAllowed())) {
+			say = say.substring(0, say.length() - "Оплатить?".length()) +
+					"Голосовая оплата включится после первой оплаты касанием во вкладке «Заправка». Оплатите там.";
+			listen = false;
+			eff = FuelDialog.Effect.END;
+			fuel.onPhrase("стоп заправка", System.currentTimeMillis());
+		}
+		Log.i("JARVIS fuel: step ", eff, listen ? " + listen" : "", ", state ", fuel.state());
+		showFuelLine(say);
+		boolean l = listen;
+		FuelDialog.Effect e = eff;
+		int gen = fuelGen;
+		Runnable next = () -> {
+			if ((gen != fuelGen) || (hud == null)) return;
+			FuelRunner fr = fuelRunner;
+			switch (e) {
+				case PREPARE:
+					setPhase(HudMath.Phase.THINK);
+					if (fr != null) fr.prepare(s -> {
+						if (gen == fuelGen) fuelStep(a, s);
+					});
+					break;
+				case PAY:
+					setPhase(HudMath.Phase.THINK);
+					if (fr != null) fr.pay(s -> {
+						if (gen == fuelGen) fuelStep(a, s);
+					});
+					break;
+				case END:
+					main.postDelayed(this::hideFuelLine, 15000);
+					done();
+					break;
+				default:
+					if (l) fuelListen(a);
+					else done();
+			}
+		};
+		if (say.isEmpty()) {
+			next.run();
+			return;
+		}
+		setPhase(HudMath.Phase.SPEAK);
+		speech = JarvisBridge.say(a, say, new JarvisBridge.Listener() {
+			@Override
+			public void onDone() {
+				main.post(next);
+			}
+		});
+	}
+
+	/** Слушать ответ в диалоге: на телефоне (Vosk, словарь шага); модели ещё нет — Google, как раньше. */
+	private void fuelListen(MainActivityDelegate a) {
+		FuelVosk v = fuelVosk;
+		if ((v == null) || !v.ready()) {
+			if (v != null) v.ensureModel();
+			Log.i("JARVIS fuel: speech model not ready — answer via Google");
+			fuelListening = true;
+			followUp(a);
+			return;
+		}
+		int gen = fuelGen;
+		setPhase(HudMath.Phase.APPEAR);
+		long pause = a.isCarActivityNotMirror() ? FOLLOW_UP_CAR_MS : FOLLOW_UP_MS;
+		main.postDelayed(() -> {
+			if ((gen != fuelGen) || (hud == null)) return;
+			withMic(a, () -> {
+				setPhase(HudMath.Phase.LISTEN);
+				FuelDialog.State state = fuel.state();
+				v.listen(FuelGrammar.json(state), (carMic != null) && carMic.isTaken(), (text, heard, gap) -> {
+					releaseMic();
+					if ((gen != fuelGen) || (hud == null)) return;
+					long now = System.currentTimeMillis();
+					String acc = FuelGrammar.accept(state, text, gap);
+					Log.i("JARVIS fuel: local answer «", text, "» ", acc.isEmpty() ? (heard ? "not accepted" : "silence") : "accepted",
+							(gap < 1e9) ? String.format(Locale.ROOT, ", gap %.1f", gap) : "");
+					fuelStep(a, heard ? step(fuel.onPhrase(acc, now), now) : fuel.onSilence(now));
+				});
+			});
+		}, pause);
+	}
+
+	private void addFuelLine(Context ctx, android.widget.FrameLayout root) {
+		android.widget.TextView t = new android.widget.TextView(ctx);
+		t.setTextColor(0xFFFFFFFF);
+		t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16);
+		t.setBackgroundColor(0xB0000000);
+		int pad = (int) (8 * ctx.getResources().getDisplayMetrics().density);
+		t.setPadding(pad * 2, pad, pad * 2, pad);
+		t.setGravity(android.view.Gravity.CENTER);
+		t.setVisibility(View.GONE);
+		android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM);
+		root.addView(t, lp);
+		fuelLine = t;
+	}
+
+	private void showFuelLine(String text) {
+		android.widget.TextView t = fuelLine;
+		if ((t == null) || text.isEmpty()) return;
+		t.setText("⛽ " + text);
+		t.setVisibility(View.VISIBLE);
+		t.bringToFront();
+	}
+
+	private void hideFuelLine() {
+		android.widget.TextView t = fuelLine;
+		if ((t != null) && !fuel.active(System.currentTimeMillis())) t.setVisibility(View.GONE);
 	}
 
 	private void say(MainActivityDelegate a, String text) {

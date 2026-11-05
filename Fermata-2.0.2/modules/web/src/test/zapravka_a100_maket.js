@@ -50,6 +50,8 @@ async function run(name, vp, opt, steps) {
   });
   const pg = await ctx.newPage();
   pg.on('console', m => { if (m.text().includes('[JARVIS-ZP]')) logs.push(m.text().replace('[JARVIS-ZP] fast: ', '')); });
+  // канал в приложение (JzpApp, ZapravkaFragment.installAppBridge) — сообщения копятся в window.__app
+  await pg.addInitScript(() => { window.JzpApp = { postMessage: m => (window.__app = window.__app || []).push(JSON.parse(m)) }; });
   if (opt.lastPos) await pg.addInitScript(p => { try { localStorage.setItem('a100_pos', JSON.stringify({ t: Date.now(), p: p })); } catch (e) { } }, opt.lastPos);
   if (opt.pumpsMem) await pg.addInitScript(() => { try { localStorage.setItem('a100_pumps', JSON.stringify({ 14: ['1', '2', '3', '4', '5', '6', '7', '8'] }));
     localStorage.setItem('a100_azs', JSON.stringify({ t: Date.now(), list: [{ NUMBER: 14, NAME: 'ул. Тростенецкая, 16', POINT: '53.8456,27.6340', FUEL: [] }] })); } catch (e) { } });
@@ -98,7 +100,10 @@ const tap = (pg, sel) => pg.click(sel);
       const b = JSON.parse((calls.find(c => c.startsWith('pay-rec:')) || 'pay-rec:{}').slice(8));
       check(b.bank_card_id === 11 && b.loyalty_card_number === '777' && b.fuel_code === '95' && b.type === 'FUEL' && b.payment_method === 'card' && b.amount === 50 && b.liters === 20 && b.pump_number === 3 && b.nozzle_number === 2 && b.azs_number === 14 && b.price === 2.5,
         'тело оплаты: основная карта, лояльность, код топлива, сумма (' + JSON.stringify(b) + ')');
-      check(!calls.some(c => c.startsWith('pay-new:')), 'один платёж'); check((await txt(pg)).includes('колонка 3 — можно заправляться'), 'сообщение «можно заправляться»'); }]));
+      check(!calls.some(c => c.startsWith('pay-new:')), 'один платёж');
+      const msgs = await pg.evaluate(() => window.__app || []);
+      check(msgs.some(m => m.token === '5|tok'), 'вход передан приложению');
+      check(msgs.some(m => m.paid === true), 'отметка оплаты передана приложению'); check((await txt(pg)).includes('колонка 3 — можно заправляться'), 'сообщение «можно заправляться»'); }]));
   // 2. машина: вход уже есть, сумма своей клавиатурой, колонка не активна — сообщение
   r.push(await run('mashina-summa', CAR, { geo: HOME, token: '5|tok' }, [
     async (pg, check) => { await pg.waitForSelector('.z-p'); check(!(await pg.$('#ph')), 'без формы входа'); },

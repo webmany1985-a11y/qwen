@@ -37,6 +37,7 @@ public class ZapravkaFragment extends WebBrowserFragment {
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new ZapravkaWebClient(((ZapravkaAddon) addon).getLink()), chromeClient);
 		ZapravkaAuto.install(webView);
+		installAppBridge(webView);
 		// Своя вкладка А-100 (05.11.2026) — сразу; прежний путь через веб-Telegram — с неё кнопкой «Telegram»
 		String url = ((ZapravkaAddon) addon).getFastUrl();
 		Log.i("Zapravka: open own A-100 tab");
@@ -62,5 +63,28 @@ public class ZapravkaFragment extends WebBrowserFragment {
 	@Override
 	protected String getSearchUrl() {
 		return ZapravkaLinks.WEB_TELEGRAM;
+	}
+
+	/**
+	 * Своя вкладка передаёт приложению вход А-100 и отметку первой оплаты касанием — для заправки голосом во вкладке
+	 * JARVIS (модуль jarvis, FuelRunner; настройки «jarvis_a100»). Только со своей страницы
+	 * (https://appassets.androidplatform.net): чужие сайты этот канал не видят.
+	 */
+	private static void installAppBridge(android.webkit.WebView webView) {
+		if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) return;
+		Context app = webView.getContext().getApplicationContext();
+		androidx.webkit.WebViewCompat.addWebMessageListener(webView, "JzpApp",
+				java.util.Collections.singleton("https://" + ZapravkaLinks.FAST_HOST), (view, msg, origin, isMain, reply) -> {
+					try {
+						org.json.JSONObject o = new org.json.JSONObject(String.valueOf(msg.getData()));
+						android.content.SharedPreferences.Editor e = app.getSharedPreferences("jarvis_a100", Context.MODE_PRIVATE).edit();
+						if (o.has("token")) e.putString("token", o.getString("token"));
+						if (o.optBoolean("logout")) e.remove("token");
+						if (o.optBoolean("paid")) e.putBoolean("paid_ok", true);
+						e.apply();
+					} catch (Exception ex) {
+						Log.e(ex, "Zapravka: app bridge message");
+					}
+				});
 	}
 }

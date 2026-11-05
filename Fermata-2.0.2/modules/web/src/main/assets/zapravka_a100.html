@@ -109,6 +109,8 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set: function (k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { } }
   };
+  // Приложению (JARVIS Auto): вход — для заправки голосом во вкладке JARVIS, отметка первой оплаты касанием
+  var toApp = function (o) { try { if (window.JzpApp) window.JzpApp.postMessage(JSON.stringify(o)); } catch (e) { } };
   var tgUrl = (function () { try { return new URLSearchParams(location.search).get('tg') || ''; } catch (e) { return ''; } })();
   var t0 = Date.now();
   var since = function () { return ((Date.now() - t0) / 1000).toFixed(1) + ' s'; };
@@ -128,7 +130,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
         clearTimeout(to);
         return r.text().then(function (t) {
           var j = null; try { j = JSON.parse(t); } catch (e) { }
-          if (r.status === 401 && !noAuth) { log(method + ' ' + path.replace(/\d+/g, 'N') + ' → 401'); store.set('a100_token', null); throw new Unauth(); }
+          if (r.status === 401 && !noAuth) { log(method + ' ' + path.replace(/\d+/g, 'N') + ' → 401'); store.set('a100_token', null); toApp({ logout: true }); throw new Unauth(); }
           if (!r.ok) { log(method + ' ' + path.replace(/\d+/g, 'N') + ' → ' + r.status); throw new ApiError(r.status, (j && j.message) || ('ошибка сервера ' + r.status)); }
           return j || {};
         });
@@ -232,6 +234,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
       st.busy = false;
       if (!tok) { log('login: no token, keys ' + keys(j && j.data)); st.err = (j && j.message) || 'Сервер не выдал вход'; renderLogin(); return; }
       store.set('a100_token', tok);
+      toApp({ token: tok });
       log('login ok');
       start();
     }, function (e) {
@@ -427,6 +430,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     st.calc = null; st.value = ''; st.pump = ''; st.ready = null;
     if (ok) {
       log('pay: done');
+      toApp({ paid: true });
       showMsg('Оплачено: ' + fmt(p.amount) + ' руб, ' + p.liters + ' л.\nАЗС №' + p.azs + ', колонка ' + p.pump + ' — можно заправляться.' + (p.order ? '\nЗаказ ' + p.order : ''),
         [{ label: 'Хорошо', pri: true }]);
     } else {
@@ -479,6 +483,7 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
 
   // ------------------------------------------------------------------ запуск
   function start() {
+    if (store.get('a100_token')) toApp({ token: store.get('a100_token') });
     if (!store.get('a100_token')) { log('no login yet, ' + since()); st.phase = 'login'; st.err = ''; render(); return; }
     st.phase = 'load'; st.loadText = 'Ищу ближайшую АЗС…'; render();
     var where = locate();

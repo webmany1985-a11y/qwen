@@ -14,3 +14,11 @@
 
 -keepnames class androidx.media3.exoplayer.ExoPlayerImpl { *; }
 -keepnames class androidx.media3.exoplayer.ExoPlayerImplInternal { *; }
+
+# Vosk (распознавание на телефоне для заправки голосом, модуль jarvis, 05.11.2026): JNA обращается к классам и
+# полям по именам — без этих правил сжатие кода ломает загрузку libvosk
+-keep class com.sun.jna.** { *; }
+-keep class * implements com.sun.jna.** { *; }
+-keep class org.vosk.** { *; }
+-dontwarn java.awt.**
+-dontwarn com.sun.jna.**
