@@ -41,18 +41,22 @@ html,body{margin:0;height:100%;background:#0b0d10;overflow:hidden}
 .z-nav{right:2vw;top:calc(3vh + 36px);display:flex;gap:6px;background:none;border:0;box-shadow:none}
 .z-nav .z-b{position:relative}
 .z-b{border-radius:12px;padding:6px 12px;font-size:13px}
-.z-fuel{right:2vw;top:calc(3vh + 74px);border-radius:12px;padding:6px 12px;font-size:14px;font-weight:700;background:#f15a2255;border-color:#ffd2bf}
+.z-fuel{display:inline-block;margin-top:4px;border-radius:9px;padding:2px 9px;font-size:clamp(12px,4vh,15px);font-weight:700;background:#f15a22b0;border:1px solid #ffd2bf}
 .z-pumps{position:absolute;left:2vw;right:2vw;top:39vh;display:flex;gap:1vw}
 .z-p{flex:1;max-width:24vw;height:17.5vh;min-height:44px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:clamp(22px,8.5vh,36px);font-weight:800;
 background:#00000033;border:1.5px solid #ffffffaa;text-shadow:0 2px 8px #000c;box-shadow:0 4px 16px #0006;transition:transform .25s,background .25s}
 .z-p.sel{background:#f15a22d0;border-color:#ffd2bf;box-shadow:0 0 26px #f15a22,0 6px 18px #0008;transform:translateY(-8px) scale(1.06)}
 .z-p.wait{opacity:.6}
+/* много колонок (в журнале 05.11.2026 — до 24): в машине два ряда помельче, на телефоне 6 в ряд */
+.z-pumps.many{flex-wrap:wrap;top:39.5vh;gap:.8vh .6vw}
+.z-pumps.many .z-p{flex:0 0 calc((100% - 11 * .6vw) / 12);height:10.5vh;min-height:30px;font-size:clamp(14px,6vh,26px);border-radius:10px}
+.z-pumps.many .z-p.sel{transform:translateY(-3px) scale(1.04)}
 .z-row{position:absolute;left:2vw;right:2vw;top:62.5vh;height:15.5vh;display:flex;gap:1vw}
 .z-row .z-g{position:relative}
 .z-seg{border-radius:14px;padding:0 2vw;display:flex;align-items:center;font-size:clamp(13px,4.2vh,17px)}.z-seg.on{background:#ffffffe0;color:#1f2a1f;font-weight:800;text-shadow:none}
 .z-inp{flex:1;border-radius:16px;font-size:clamp(22px,11vh,44px);font-weight:800;display:flex;align-items:center;justify-content:flex-end;padding:0 2vw;background:#0000004d}
 .z-inp small{font-size:18px;margin-left:6px}
-.z-q{border-radius:14px;padding:0 1.5vw;display:flex;align-items:center;font-size:clamp(12px,3.8vh,15px);background:#7cc24233;border-color:#7cc242}
+.z-q{border-radius:14px;padding:0 1.2vw;min-width:7vw;justify-content:center;display:flex;align-items:center;font-size:clamp(12px,3.8vh,15px);background:#7cc24233;border-color:#7cc242}
 .z-go{position:absolute;left:2vw;right:2vw;bottom:3vh;height:14vh;min-height:40px;border-radius:16px;background:linear-gradient(90deg,#f15a22e6,#ff7a3de6);border:1.5px solid #ffd2bf;
 display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5vh,22px);font-weight:900;letter-spacing:2px;box-shadow:0 6px 24px #f15a2299;transition:opacity .2s}
 .z-go.off{opacity:.45;filter:grayscale(.6)}
@@ -78,15 +82,15 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
 @media (orientation:portrait){
 .z-hdr{left:4vw;right:4vw;top:2vh;max-width:none;padding:1.4vh 4vw}
 .z-st{font-size:clamp(20px,4vh,30px)}.z-ad{font-size:clamp(14px,2.4vh,18px)}
-.z-tag{left:4vw;right:auto;top:calc(2vh + 11.5vh);font-size:13px}
-.z-nav{right:4vw;top:calc(2vh + 11.5vh)}
-.z-fuel{left:4vw;right:4vw;top:calc(2vh + 17vh);text-align:center}
-.z-pumps{top:27vh;left:4vw;right:4vw;display:grid;grid-template-columns:repeat(4,1fr);gap:3vw}
+.z-tag{left:4vw;right:auto;top:calc(2vh + 15vh);font-size:13px}
+.z-nav{right:4vw;top:calc(2vh + 15vh)}
+.z-pumps{top:30vh;left:4vw;right:4vw;display:grid;grid-template-columns:repeat(4,1fr);gap:3vw}
 .z-p{max-width:none;height:10vh;font-size:clamp(24px,5.5vh,40px)}
-.z-row{top:auto;bottom:calc(3vh + 9vh + 2vh);left:4vw;right:4vw;height:auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2vw}
-.z-row .z-seg{grid-column:span 3;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}
-.z-row .z-inp{grid-column:span 6;height:10vh;font-size:clamp(30px,6vh,48px)}
-.z-row .z-q{grid-column:span 2;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}
+.z-pumps.many{grid-template-columns:repeat(6,1fr);gap:1.5vw;top:30vh}.z-pumps.many .z-p{height:6vh;font-size:clamp(18px,3.4vh,28px);flex:none}
+.z-row{top:auto;bottom:calc(3vh + 9vh + 2vh);left:4vw;right:4vw;height:auto;display:grid;grid-template-columns:repeat(12,1fr);gap:2vw}
+.z-row .z-seg{grid-column:span 6;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}
+.z-row .z-inp{grid-column:span 12;height:10vh;font-size:clamp(30px,6vh,48px)}
+.z-row .z-q{grid-column:span 3;height:7vh;justify-content:center;font-size:clamp(15px,2.4vh,19px)}
 .z-go{left:4vw;right:26vw;bottom:3vh;height:9vh}
 .z-kb{width:92vw}.z-k{height:8vh}}
 </style>
@@ -158,18 +162,19 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     if (st.phase === 'login') { renderLogin(); return; }
     var s = cur(), d = s && s._d, far = d != null && d > FAR_M;
     var unit = st.mode === 'l' ? 'л' : 'руб';
-    var quick = st.mode === 'l' ? ['20', '40'] : ['50', '100'];
+    var quick = st.mode === 'l' ? ['5', '10', '15', '20'] : ['10', '20', '30', '40']; // пожелание 05.11.2026
     var can = st.pump && st.ready && parseFloat((st.value || '0').replace(',', '.')) > 0 && !st.busy;
     var goText = st.calc ? 'К ОПЛАТЕ ' + st.calc.amount + ' руб · ' + st.calc.liters + ' л' : (st.busy ? 'СЧИТАЮ…' : 'РАССЧИТАТЬ ›');
     app.innerHTML =
       '<div class="z-bg"></div><div class="z-shade"></div>' +
       '<div class="z-g z-hdr"><img class="z-kl" alt="" src="zapravka_klever.png"><div><div class="z-st">' +
-      esc(s ? 'АЗС №' + s.NUMBER : 'АЗС не найдена') + '</div><div class="z-ad">' + esc(s ? (s.NAME || '') : 'нет списка станций') + '</div></div></div>' +
-      (d != null ? '<div class="z-g z-tag' + (far ? ' far' : '') + '">' + (far ? '⚠ далеко: ' : '✓ рядом: ') + km(d) + '</div>' :
+      esc(s ? 'АЗС №' + s.NUMBER : 'АЗС не найдена') + '</div><div class="z-ad">' + esc(s ? (s.NAME || '') : 'нет списка станций') + '</div>' +
+      (st.ready ? '<div class="z-fuel">' + esc(st.ready.fuel_name || 'топливо') + (parseFloat(st.ready.price) > 0 ? ' · ' + esc(Number(st.ready.price).toFixed(2).replace('.', ',')) + ' руб/л' : '') + '</div>' : '') +
+      '</div></div>' +
+      (d != null ? '<div class="z-g z-tag' + (far ? ' far' : '') + '">' + (far ? '⚠ далеко: ' : '✓ рядом: ') + km(d) + (st.posOld ? ' (по прошлому месту)' : '') + '</div>' :
         '<div class="z-g z-tag far">⚠ без местоположения</div>') +
       '<div class="z-g z-nav"><div class="z-g z-b" data-a="prev">‹</div><div class="z-g z-b" data-a="next">›</div><div class="z-g z-b" data-a="tg">Telegram</div></div>' +
-      (st.ready ? '<div class="z-g z-fuel">' + esc(st.ready.fuel_name || 'топливо') + (parseFloat(st.ready.price) > 0 ? ' · ' + esc(Number(st.ready.price).toFixed(2).replace('.', ',')) + ' руб/л' : '') + '</div>' : '') +
-      '<div class="z-pumps">' + st.pumps.map(function (n) {
+      '<div class="z-pumps' + (st.pumps.length > 8 ? ' many' : '') + '">' + st.pumps.map(function (n) {
         var sel = String(n) === String(st.pump);
         return '<div class="z-p' + (sel ? ' sel' : '') + (sel && !st.ready ? ' wait' : '') + '" data-p="' + esc(n) + '">' + esc(n) + '</div>';
       }).join('') + (st.pumps.length ? '' : '<div class="z-g z-b" style="position:relative">' + (st.busy ? 'колонки…' : 'нет колонок') + '</div>') + '</div>' +
@@ -253,21 +258,34 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
       var list = (j && j.data) || [];
       if (!Array.isArray(list)) { log('azs: data not a list, keys ' + keys(j)); list = []; }
       if (list[0]) log('azs: ' + list.length + ' stations, fields ' + keys(list[0]));
-      var slim = list.map(function (s) { return { NUMBER: s.NUMBER, NAME: s.NAME, POINT: s.POINT }; }).filter(function (s) { return s.NUMBER != null; });
+      var slim = list.filter(function (s) { return s.ACTIVE !== 'N' && s.ACTIVE !== false && s.ACTIVE !== 0; }) // закрытые станции не показываем
+        .map(function (s) { return { NUMBER: s.NUMBER, NAME: s.NAME || s.NAME_RU, POINT: s.POINT }; }).filter(function (s) { return s.NUMBER != null; });
       if (slim.length) store.set('a100_azs', JSON.stringify({ t: Date.now(), list: slim }));
       return slim;
     });
     if (cached && cached.list && cached.list.length) { fresh.catch(function () { }); return Promise.resolve({ list: cached.list, fresh: fresh }); }
     return fresh.then(function (l) { return { list: l, fresh: null }; });
   }
+  // Местоположение. Журнал 05.11.2026 10:09:51: телефон не ответил 8 с — станция показана через 9,3 с. Теперь:
+  // свежее — до 1,5 с; нет — последнее сохранённое (не старше суток), а свежее, когда придёт, уточняет станцию
+  var lastPos = function () {
+    try { var o = JSON.parse(store.get('a100_pos') || 'null'); return o && Date.now() - o.t < 86400000 ? o.p : null; } catch (e) { return null; }
+  };
+  var fixPromise = null;
   function locate() {
-    return new Promise(function (res) {
+    fixPromise = new Promise(function (res) {
       if (!navigator.geolocation) { res(null); return; }
-      var done = false;
-      var fin = function (p) { if (!done) { done = true; res(p); } };
-      setTimeout(function () { fin(null); }, 9000);
-      navigator.geolocation.getCurrentPosition(function (p) { fin([p.coords.latitude, p.coords.longitude]); },
-        function (e) { log('location error ' + (e && e.code)); fin(null); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 });
+      navigator.geolocation.getCurrentPosition(function (p) {
+        var v = [p.coords.latitude, p.coords.longitude];
+        store.set('a100_pos', JSON.stringify({ t: Date.now(), p: v }));
+        res(v);
+      }, function (e) { log('location error ' + (e && e.code)); res(null); }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 120000 });
+    });
+    return Promise.race([fixPromise, new Promise(function (r) { setTimeout(function () { r(undefined); }, 1500); })]).then(function (p) {
+      if (p) return p;
+      var lp = lastPos();
+      if (lp) { st.posOld = true; log('location: using last known'); }
+      return lp;
     });
   }
   function sortList(list) {
@@ -391,6 +409,15 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
         st.list = sortList(r.list.slice());
         st.phase = 'main';
         selectStation(0);
+        // свежее местоположение пришло позже — пересчитать ближайшую, если колонку ещё не выбирали
+        if (fixPromise) fixPromise.then(function (p) {
+          if (!p || (pos && p[0] === pos[0] && p[1] === pos[1])) return;
+          st.pos = p; st.posOld = false;
+          var n = cur() && cur().NUMBER;
+          st.list = sortList(st.list);
+          log('location refined, ' + since());
+          if (!st.pump && st.list[0] && String(st.list[0].NUMBER) !== String(n)) selectStation(0); else { st.idx = Math.max(0, st.list.findIndex(function (s) { return String(s.NUMBER) === String(n); })); render(); }
+        });
         if (r.fresh) r.fresh.then(function (l) {
           if (!l.length || st.pump) return;
           var n = cur() && cur().NUMBER;
