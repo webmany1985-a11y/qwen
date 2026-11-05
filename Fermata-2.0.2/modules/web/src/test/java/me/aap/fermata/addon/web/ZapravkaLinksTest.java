@@ -51,4 +51,17 @@ public class ZapravkaLinksTest {
 		assertFalse(ZapravkaLinks.isTelegramHost("telegram.org.evil.com"));
 		assertFalse(ZapravkaLinks.isTelegramHost(null));
 	}
+
+	@Test
+	public void fastTab() {
+		String u = ZapravkaLinks.fastUrl("https://t.me/A100_app_bot");
+		assertTrue(u.startsWith("https://appassets.androidplatform.net/zp/zapravka_a100.html?tg=https%3A%2F%2Fweb.telegram.org%2Fk%2F"));
+		assertEquals("zapravka_a100.html", ZapravkaLinks.fastAsset("appassets.androidplatform.net", "/zp/zapravka_a100.html"));
+		assertEquals("zapravka_fon.jpg", ZapravkaLinks.fastAsset("appassets.androidplatform.net", "/zp/zapravka_fon.jpg"));
+		assertNull(ZapravkaLinks.fastAsset("appassets.androidplatform.net", "/zp/zapravka_auto.js"));
+		assertNull(ZapravkaLinks.fastAsset("appassets.androidplatform.net", "/zp/../zapravka_a100.html"));
+		assertNull(ZapravkaLinks.fastAsset("example.com", "/zp/zapravka_a100.html"));
+		assertNull(ZapravkaLinks.fastAsset("appassets.androidplatform.net", null));
+		assertEquals("image/png", ZapravkaLinks.mimeOf("zapravka_logo.png"));
+	}
 }

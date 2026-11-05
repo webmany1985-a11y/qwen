@@ -97,6 +97,11 @@ public class ZapravkaAddon extends WebBrowserAddon {
 		return ZP_BOOKMARKS;
 	}
 
+	/** Своя вкладка А-100 (05.11.2026); ссылка на бота — для кнопки «Telegram» на ней. */
+	String getFastUrl() {
+		return ZapravkaLinks.fastUrl(getPreferenceStore().getStringPref(ZP_LINK));
+	}
+
 	/** Вкладка всегда открывается на приложении заправки, а не на последней странице. */
 	@Override
 	String getLastUrl() {

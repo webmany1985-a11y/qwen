@@ -16,7 +16,7 @@ import me.aap.utils.ui.view.ToolBarView;
 
 /**
  * Экран вкладки «Заправка» — как вкладка «Кинопоиск»: обычная страница под размер экрана, без версии для
- * компьютера; открывается веб-Telegram с приложением заправки ({@link ZapravkaAddon#getLastUrl()}).
+ * компьютера; открывается своя вкладка А-100 ({@link ZapravkaAddon#getFastUrl()}), с неё — веб-Telegram с приложением заправки.
  */
 @Keep
 @SuppressWarnings("unused")
@@ -37,8 +37,9 @@ public class ZapravkaFragment extends WebBrowserFragment {
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new ZapravkaWebClient(), chromeClient);
 		ZapravkaAuto.install(webView);
-		String url = addon.getLastUrl();
-		Log.i("Zapravka: open ", ZapravkaLinks.WEB_TELEGRAM.equals(url) ? "web telegram (no link)" : "fuel app link");
+		// Своя вкладка А-100 (05.11.2026) — сразу; прежний путь через веб-Telegram — с неё кнопкой «Telegram»
+		String url = ((ZapravkaAddon) addon).getFastUrl();
+		Log.i("Zapravka: open own A-100 tab");
 		webView.loadUrl(url);
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}

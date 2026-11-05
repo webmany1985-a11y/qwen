@@ -1,7 +1,10 @@
 package me.aap.fermata.addon.web;
 
+import static me.aap.fermata.util.Utils.dynCtx;
+
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.widget.Toast;
 
@@ -18,6 +21,26 @@ import me.aap.utils.log.Log;
  * Адреса страниц в журнал не пишутся: в них бывают данные входа Telegram.
  */
 public class ZapravkaWebClient extends FermataWebClient {
+
+	/** Своя вкладка А-100: её 4 файла из assets по адресу https://appassets.androidplatform.net/zp/… */
+	@Override
+	public WebResourceResponse shouldInterceptRequest(@NonNull WebView view, @NonNull WebResourceRequest request) {
+		Uri u = request.getUrl();
+		String name = ZapravkaLinks.fastAsset(u.getHost(), u.getPath());
+		if (name == null) {
+			if (ZapravkaLinks.FAST_HOST.equals(u.getHost())) {
+				return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", null, null);
+			}
+			return super.shouldInterceptRequest(view, request);
+		}
+		try {
+			return new WebResourceResponse(ZapravkaLinks.mimeOf(name), name.endsWith(".html") ? "UTF-8" : null,
+					dynCtx(view.getContext()).getAssets().open(name));
+		} catch (Exception ex) {
+			Log.e(ex, "Zapravka: asset not available ", name);
+			return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", null, null);
+		}
+	}
 
 	@Override
 	public void onPageFinished(WebView view, String url) {

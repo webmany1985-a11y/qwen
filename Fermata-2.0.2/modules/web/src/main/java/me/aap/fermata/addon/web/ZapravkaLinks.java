@@ -82,4 +82,40 @@ public final class ZapravkaLinks {
 		return h.equals("telegram.org") || h.endsWith(".telegram.org") || h.equals("t.me")
 				|| h.endsWith(".t.me");
 	}
+
+	/**
+	 * Своя вкладка А-100 (05.11.2026: «свою вкладку для заправки А-100, чтобы быстрее грузилось») — страница из
+	 * assets, раздаётся по https-адресу WebView ({@link #FAST_HOST}); сервер А-100 разрешает запросы с любого
+	 * адреса (CORS «*», проверено 05.11.2026). Прежний путь через Telegram — параметр {@code tg}.
+	 */
+	public static final String FAST_HOST = "appassets.androidplatform.net";
+	static final String FAST_PREFIX = "/zp/";
+	private static final String[] FAST_FILES = {"zapravka_a100.html", "zapravka_fon.jpg", "zapravka_logo.png",
+			"zapravka_klever.png"};
+
+	public static String fastUrl(@Nullable String input) {
+		try {
+			return "https://" + FAST_HOST + FAST_PREFIX + "zapravka_a100.html?tg=" +
+					URLEncoder.encode(startUrl(input), "UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			return "https://" + FAST_HOST + FAST_PREFIX + "zapravka_a100.html";
+		}
+	}
+
+	/** Путь запроса к своей вкладке → имя файла в assets; чужие пути — {@code null} (отдаются только эти 4 файла). */
+	@Nullable
+	public static String fastAsset(@Nullable String host, @Nullable String path) {
+		if (!FAST_HOST.equals(host) || (path == null) || !path.startsWith(FAST_PREFIX)) return null;
+		String name = path.substring(FAST_PREFIX.length());
+		for (String f : FAST_FILES) if (f.equals(name)) return f;
+		return null;
+	}
+
+	@NonNull
+	public static String mimeOf(@NonNull String name) {
+		if (name.endsWith(".html")) return "text/html";
+		if (name.endsWith(".jpg")) return "image/jpeg";
+		if (name.endsWith(".png")) return "image/png";
+		return "application/octet-stream";
+	}
 }
