@@ -17,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import me.aap.utils.log.Log;
+
 /**
  * Сервер приложения А-100 для заправки голосом — те же запросы, что у своей вкладки «Заправка»
  * (assets/zapravka_a100.html модуля web; поля — по коду приложения А-100 и журналу 05.11.2026):
@@ -130,7 +132,26 @@ final class FuelApi {
 	/** Ответ {@link #pay}: нужна страница банка (нет карты или банк просит подтверждение). */
 	static final String NEEDS_BANK = "needs-bank";
 
-	/** Оплата сохранённой основной картой: номер заказа или {@link #NEEDS_BANK}. */
+	/** Скидка А-100 по карте лояльности (POST /discount/calculate); ok=false — расчёт не удался. */
+	static final class Discount {
+		final boolean ok;
+		final double amount;
+		final double discount;
+
+		Discount(boolean ok, double amount, double discount) {
+			this.ok = ok;
+			this.amount = amount;
+			this.discount = discount;
+		}
+
+		static final Discount NONE = new Discount(false, 0, 0);
+	}
+
+	/**
+	 * Оплата сохранённой основной картой: номер заказа или {@link #NEEDS_BANK}. Как в приложении А-100: сначала
+	 * расчёт скидки по карте лояльности, затем оплата суммой со скидкой, sale_point и номером карты лояльности.
+	 * Без расчёта скидки сервер отвечал 500 на оплату с картой лояльности (журнал 05.11.2026, 18:21–18:23).
+	 */
 	String pay(Station s, int pump, Ready r, Calc c) throws IOException {
 		JSONObject me = call("GET", "/users/me", null);
 		JSONObject card = mainCard(me);
@@ -143,7 +164,13 @@ final class FuelApi {
 			} catch (ServerException ignore) {
 			}
 		}
-		JSONObject body = payBody(s, pump, r, c, card.optLong("id"), loyalty);
+		Discount dc = Discount.NONE;
+		try {
+			dc = parseDiscount(call("POST", "/discount/calculate", discountBody(s, pump, r, c, client(me), loyalty)), c);
+		} catch (ServerException ex) {
+			Log.i("JARVIS fuel: discount failed ", ex.code);
+		}
+		JSONObject body = payBody(s, pump, r, c, card.optLong("id"), loyalty, dc);
 		JSONObject ans = call("POST", "/payment/recurring", body);
 		JSONObject d = ans.optJSONObject("data");
 		if ((d != null) && d.has("redirectUrl") && !d.isNull("redirectUrl")) return NEEDS_BANK;
@@ -298,15 +325,60 @@ final class FuelApi {
 		return n.isEmpty() ? null : n;
 	}
 
-	/** Тело оплаты — как во вкладке и в приложении А-100 (type FUEL, оплата «картой»). */
-	static JSONObject payBody(Station s, int pump, Ready r, Calc c, long cardId, @Nullable String loyalty) {
+	/** Клиент для расчёта скидки — «telegram_id,loyalty_customer_id», как в приложении А-100. */
+	static String client(JSONObject me) {
+		JSONObject u = user(me);
+		StringBuilder b = new StringBuilder();
+		for (String k : new String[]{"telegram_id", "loyalty_customer_id"}) {
+			if (!u.has(k) || u.isNull(k)) continue;
+			String v = u.optString(k, "");
+			if (v.isEmpty()) continue;
+			if (b.length() > 0) b.append(',');
+			b.append(v);
+		}
+		return b.toString();
+	}
+
+	static JSONObject discountBody(Station s, int pump, Ready r, Calc c, String client, @Nullable String loyalty) {
 		JSONObject b = new JSONObject();
 		try {
-			b.put("promotions", new JSONArray()).put("discount", 0).put("payment_method", "card").put("type", "FUEL")
-					.put("fuel_name", r.fuel).put("azs_number", Integer.parseInt(s.number)).put("nozzle_number", r.nozzle)
+			int azs = Integer.parseInt(s.number);
+			b.put("client", client).put("liters", c.liters).put("azs_number", azs).put("pump_number", pump)
+					.put("nozzle_number", r.nozzle).put("points", JSONObject.NULL).put("promotions", new JSONArray())
+					.put("type", "FUEL").put("sale_point", azs);
+			if (loyalty != null) b.put("card_number", loyalty);
+		} catch (Exception ignore) {
+		}
+		return b;
+	}
+
+	/**
+	 * Ответ расчёта скидки. Сумма со скидкой принимается, только если она больше нуля и не больше суммы, названной
+	 * пользователю перед «Оплатить?» — списать больше названного нельзя.
+	 */
+	static Discount parseDiscount(JSONObject j, Calc c) {
+		JSONObject d = j.optJSONObject("data");
+		if ((d == null) || !d.has("amount") || d.isNull("amount")) return Discount.NONE;
+		double amount = d.optDouble("amount", 0);
+		if (!(amount > 0) || (amount > c.amount + 0.005)) return Discount.NONE;
+		double disc = d.optDouble("discount", 0) + d.optDouble("promotions_discount", 0) + d.optDouble("points_discount", 0);
+		if (Double.isNaN(disc)) disc = 0;
+		return new Discount(true, amount, disc);
+	}
+
+	/** Тело оплаты — как во вкладке и в приложении А-100 (type FUEL, оплата «картой»). */
+	static JSONObject payBody(Station s, int pump, Ready r, Calc c, long cardId, @Nullable String loyalty, Discount dc) {
+		JSONObject b = new JSONObject();
+		try {
+			int azs = Integer.parseInt(s.number);
+			b.put("promotions", new JSONArray()).put("discount", dc.ok ? dc.discount : 0).put("sale_point", azs)
+					.put("payment_method", "card").put("type", "FUEL")
+					.put("fuel_name", r.fuel).put("azs_number", azs).put("nozzle_number", r.nozzle)
 					.put("liters", c.liters).put("fuel_code", s.fuelCode(r.fuel) == null ? "" : s.fuelCode(r.fuel))
-					.put("amount", c.amount).put("price", r.price).put("pump_number", pump).put("bank_card_id", cardId);
-			if (loyalty != null) b.put("loyalty_card_number", loyalty);
+					.put("amount", dc.ok ? dc.amount : c.amount).put("price", r.price).put("pump_number", pump)
+					.put("bank_card_id", cardId);
+			// номер карты лояльности — только после расчёта скидки (как в приложении); расчёт не удался — без неё
+			if (dc.ok && (loyalty != null)) b.put("loyalty_card_number", loyalty);
 		} catch (Exception ignore) {
 		}
 		return b;

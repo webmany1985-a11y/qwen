@@ -375,12 +375,31 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
       var cards = u.bank_cards || d.bank_cards || [];
       log('user fields ' + keys(u) + ', cards ' + cards.length + (cards[0] ? ', card fields ' + keys(cards[0]) : ''));
       var card = cards.filter(function (c) { return c.is_main; })[0] || cards[0] || null;
-      if (u.id == null) return { card: card, loyalty: null };
+      if (u.id == null) return { card: card, loyalty: null, user: u };
       return api('GET', '/users/' + encodeURIComponent(u.id) + '/loyalty-cards').then(function (l) {
         var arr = (l && l.data) || [];
         if (!Array.isArray(arr)) arr = [];
-        return { card: card, loyalty: arr.filter(function (c) { return c.is_main; })[0] || arr[0] || null };
-      }, function (e) { if (e instanceof Unauth) throw e; return { card: card, loyalty: null }; });
+        return { card: card, loyalty: arr.filter(function (c) { return c.is_main; })[0] || arr[0] || null, user: u };
+      }, function (e) { if (e instanceof Unauth) throw e; return { card: card, loyalty: null, user: u }; });
+    });
+  }
+  // Скидка по карте лояльности — как в приложении А-100 (LoyaltyCard → litersConvertMutation с type): POST
+  // /discount/calculate; ответ — итог к оплате (amount) и скидки (discount, promotions_discount, points_discount).
+  // Без этого шага сервер на /payment/recurring с номером карты лояльности отвечал 500 (журнал 05.11.2026 18:21–18:23).
+  function discountCalc(s, c, info) {
+    var u = info.user || {};
+    var body = { client: [u.telegram_id, u.loyalty_customer_id].filter(function (x) { return x != null && x !== ''; }).join(','),
+      liters: c.liters, azs_number: s.NUMBER, pump_number: Number(st.pump), nozzle_number: c.nozzle, points: null, promotions: [],
+      card_number: info.loyalty ? info.loyalty.number : undefined, type: 'FUEL', sale_point: s.NUMBER };
+    return api('POST', '/discount/calculate', body).then(function (j) {
+      var d = (j && j.data) || {};
+      log('discount: fields ' + keys(d));
+      var disc = (Number(d.discount) || 0) + (Number(d.promotions_discount) || 0) + (Number(d.points_discount) || 0);
+      return { amount: d.amount != null ? Number(d.amount) : null, discount: disc, ok: true };
+    }, function (e) {
+      if (e instanceof Unauth) throw e;
+      log('discount: failed ' + (e && e.status));
+      return { amount: null, discount: 0, ok: false };
     });
   }
   function pay() {
@@ -389,15 +408,22 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     st.busy = true; render();
     log('pay: preparing');
     payInfo().then(function (info) {
+      return discountCalc(s, c, info).then(function (dc) { return { info: info, dc: dc }; });
+    }).then(function (r) {
       st.busy = false;
+      var info = r.info, dc = r.dc;
+      var amount = dc.ok && dc.amount != null && dc.amount > 0 ? dc.amount : c.amountRaw;
       var fuel = (s.FUEL || []).filter(function (f) { return f.NAME === c.fuel_name; })[0];
-      var body = { promotions: [], discount: 0, payment_method: 'card', type: 'FUEL', fuel_name: c.fuel_name, azs_number: s.NUMBER,
-        nozzle_number: c.nozzle, liters: c.liters, fuel_code: fuel ? fuel.CODE : '', amount: c.amountRaw, price: c.price, pump_number: Number(st.pump) };
+      var body = { promotions: [], discount: dc.ok ? dc.discount : 0, sale_point: s.NUMBER, payment_method: 'card', type: 'FUEL',
+        fuel_name: c.fuel_name, azs_number: s.NUMBER, nozzle_number: c.nozzle, liters: c.liters, fuel_code: fuel ? fuel.CODE : '',
+        amount: amount, price: c.price, pump_number: Number(st.pump) };
       if (info.card && info.card.id != null) body.bank_card_id = info.card.id;
-      if (info.loyalty && info.loyalty.number) body.loyalty_card_number = info.loyalty.number;
+      // номер карты лояльности — только после расчёта скидки (как в приложении); расчёт не удался — без неё
+      if (dc.ok && info.loyalty && info.loyalty.number) body.loyalty_card_number = info.loyalty.number;
       var how = info.card ? 'картой ' + cardMask(info.card) : 'банковской картой (откроется страница банка)';
-      showMsg('Оплатить ' + fmt(c.amountRaw) + ' руб ' + how + '?\nАЗС №' + s.NUMBER + ', колонка ' + st.pump + ', ' + (c.fuel_name || '') + ', ' + c.liters + ' л.',
-        [{ label: 'Оплатить ' + fmt(c.amountRaw) + ' руб', pri: true, fn: function () { sendPay(body); } }, { label: 'Отмена' }]);
+      var discTxt = dc.ok && dc.discount > 0 ? ' (скидка ' + fmt(dc.discount) + ' руб)' : '';
+      showMsg('Оплатить ' + fmt(amount) + ' руб' + discTxt + ' ' + how + '?\nАЗС №' + s.NUMBER + ', колонка ' + st.pump + ', ' + (c.fuel_name || '') + ', ' + c.liters + ' л.',
+        [{ label: 'Оплатить ' + fmt(amount) + ' руб', pri: true, fn: function () { sendPay(body); } }, { label: 'Отмена' }]);
     }, function (e) {
       st.busy = false;
       if (e instanceof Unauth) { onAuthLost(); return; }
@@ -423,6 +449,8 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     }, function (e) {
       st.busy = false;
       if (e instanceof Unauth) { onAuthLost(); return; }
+      // текст ошибки сервера — в журнал (без сумм и карт): 18:21–18:23 было только «→ 500»
+      log('pay: error ' + (e && e.status) + ' «' + String((e && e.msg) || '').slice(0, 120).replace(/\d{4,}/g, '#') + '»');
       showMsg('Оплата не прошла: ' + ((e && e.msg) || 'ошибка'), [{ label: 'Понятно', pri: true }]);
     });
   }

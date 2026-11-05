@@ -149,8 +149,10 @@ final class FuelRunner {
 				Log.i("JARVIS fuel: network error on payment");
 				post(cb, () -> dialog.onNetError(System.currentTimeMillis()));
 			} catch (FuelApi.ServerException ex) {
-				Log.i("JARVIS fuel: payment error ", ex.code);
 				String m = ex.getMessage();
+				String shown = (m == null) ? "" : m.replaceAll("\\d{4,}", "####");
+				if (shown.length() > 120) shown = shown.substring(0, 120);
+				Log.i("JARVIS fuel: payment error ", ex.code, " «", shown, "»");
 				post(cb, () -> dialog.onServerError(m, System.currentTimeMillis()));
 			} catch (Exception ex) {
 				Log.e(ex, "JARVIS fuel: payment failed");

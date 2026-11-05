@@ -1,6 +1,7 @@
 package me.aap.fermata.addon.jarvis;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -44,7 +45,26 @@ public class FuelApiTest {
 		assertEquals("777", FuelApi.mainLoyalty(new JSONObject("{\"data\":[{\"number\":\"1\"},{\"number\":\"777\",\"is_main\":true}]}")));
 		FuelApi.Station st = FuelApi.parseStations(new JSONObject("{\"data\":[{\"NUMBER\":14,\"NAME\":\"x\",\"POINT\":\"1,2\"," +
 				"\"FUEL\":[{\"NAME\":\"АИ-95\",\"CODE\":\"95\"}]}]}")).get(0);
-		JSONObject b = FuelApi.payBody(st, 3, r, c, 11, "777");
+		JSONObject me2 = new JSONObject("{\"data\":{\"user\":{\"id\":7,\"telegram_id\":7001,\"loyalty_customer_id\":55}}}");
+		assertEquals("7001,55", FuelApi.client(me2));
+		assertEquals("7001", FuelApi.client(new JSONObject("{\"data\":{\"user\":{\"telegram_id\":7001,\"loyalty_customer_id\":null}}}")));
+		JSONObject db = FuelApi.discountBody(st, 3, r, c, "7001,55", "777");
+		assertEquals("7001,55", db.getString("client"));
+		assertEquals("777", db.getString("card_number"));
+		assertEquals("FUEL", db.getString("type"));
+		assertEquals(14, db.getInt("sale_point"));
+		assertEquals(20, db.getInt("liters"));
+		assertTrue(db.isNull("points"));
+		FuelApi.Discount dc = FuelApi.parseDiscount(new JSONObject("{\"data\":{\"amount\":48.5,\"discount\":1.5}}"), c);
+		assertTrue(dc.ok);
+		assertEquals(48.5, dc.amount, 1e-9);
+		// сумма со скидкой больше названной — не принимается
+		assertFalse(FuelApi.parseDiscount(new JSONObject("{\"data\":{\"amount\":51,\"discount\":0}}"), c).ok);
+		assertFalse(FuelApi.parseDiscount(new JSONObject("{\"data\":{}}"), c).ok);
+		JSONObject b = FuelApi.payBody(st, 3, r, c, 11, "777", dc);
+		assertEquals(48.5, b.getDouble("amount"), 1e-9);
+		assertEquals(1.5, b.getDouble("discount"), 1e-9);
+		assertEquals(14, b.getInt("sale_point"));
 		assertEquals("card", b.getString("payment_method"));
 		assertEquals("FUEL", b.getString("type"));
 		assertEquals(14, b.getInt("azs_number"));
@@ -54,6 +74,11 @@ public class FuelApiTest {
 		assertEquals("95", b.getString("fuel_code"));
 		assertEquals(11, b.getLong("bank_card_id"));
 		assertEquals("777", b.getString("loyalty_card_number"));
+		// расчёт скидки не удался — полная сумма и без карты лояльности
+		JSONObject b0 = FuelApi.payBody(st, 3, r, c, 11, "777", FuelApi.Discount.NONE);
+		assertEquals(50.0, b0.getDouble("amount"), 1e-9);
+		assertEquals(0, b0.getInt("discount"));
+		assertFalse(b0.has("loyalty_card_number"));
 	}
 
 	@Test

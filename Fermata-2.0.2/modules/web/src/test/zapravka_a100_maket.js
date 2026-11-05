@@ -41,8 +41,10 @@ async function run(name, vp, opt, steps) {
       if (m[2] === '5') return json(400, { data: null, message: 'Колонка не активна' });
       return json(200, { data: { nozzle_number: 2, fuel_name: 'АИ-95', price: 2.5 } });
     }
-    if (p === '/users/me') return json(200, { data: { token: { abilities: [] }, user: { id: 7, phone: 'x', bank_cards: opt.noCard ? [] : [{ id: 11, is_main: true, card: '425500xxxxxx1234', bran_card: 'VISA' }, { id: 12, is_main: false, card: '5100xxxxxxxx9999' }] } } });
+    if (p === '/users/me') return json(200, { data: { token: { abilities: [] }, user: { id: 7, phone: 'x', telegram_id: 7001, loyalty_customer_id: 55, bank_cards: opt.noCard ? [] : [{ id: 11, is_main: true, card: '425500xxxxxx1234', bran_card: 'VISA' }, { id: 12, is_main: false, card: '5100xxxxxxxx9999' }] } } });
     if (p === '/users/7/loyalty-cards') return json(200, { data: [{ number: '777', is_main: true }] });
+    if (p === '/discount/calculate') { calls.push('disc:' + JSON.stringify(body)); if (opt.discFail) return json(500, { message: 'Server Error' }); return json(200, { data: { amount: body.liters * 2.5 - 1.5, discount: 1.5, promotions_discount: null, points_discount: null } }); }
+    if (p === '/payment/recurring' && !(calls.some(c => c.startsWith('disc:')) || opt.discFail) && JSON.parse(q.postData()).loyalty_card_number) return json(500, { message: 'Server Error' }); // как у А-100 без расчёта скидки
     if (p === '/payment/recurring') { calls.push('pay-rec:' + JSON.stringify(body)); return json(200, { data: { orderNumber: 'A-1' } }); }
     if (p === '/payment') { calls.push('pay-new:' + JSON.stringify(body)); return json(200, { data: { orderNumber: 'A-2', redirectUrl: 'https://payment.webpay.by/pay?x=1' } }); }
     if (p === '/fuel/calculate') { calls.push('calc:' + JSON.stringify(body)); return json(200, { data: { amount: body.liters * 2.5, liters: body.liters } }); }
@@ -93,14 +95,16 @@ const tap = (pg, sel) => pg.click(sel);
     async (pg, check) => { await tap(pg, '[data-p="3"]'); await pg.waitForSelector('.z-fuel'); check((await txt(pg)).includes('АИ-95 · 2,50 руб/л'), 'топливо и цена'); },
     async (pg, check, calls) => { check(await pg.$$eval('[data-q]', a => a.map(e => e.textContent).join(',')) === '5,10,15,20', 'быстрые кнопки литров 5/10/15/20'); await tap(pg, '[data-q="20"]'); await tap(pg, '[data-a="go"]'); await pg.waitForFunction(() => document.querySelector('.z-go').textContent.includes('ОПЛАТИТЬ')); check(calls.some(c => c === 'calc:{"liters":20,"azs_number":14,"nozzle_number":2,"pump_number":3}'), 'расчёт с колонкой 3, 20 л'); check((await txt(pg)).includes('50,00 руб'), 'сумма 50,00'); },
     async (pg, check, calls) => { await tap(pg, '[data-a="go"]'); await pg.waitForSelector('.z-msg'); const m = await txt(pg);
-      check(m.includes('Оплатить 50,00 руб картой •••• 1234?') && m.includes('колонка 3') && m.includes('20 л'), 'подтверждение: сумма, карта, колонка');
+      check(m.includes('Оплатить 48,50 руб (скидка 1,50 руб) картой •••• 1234?') && m.includes('колонка 3') && m.includes('20 л'), 'подтверждение: сумма, карта, колонка');
       await pg.click('[data-mb="1"]'); await pg.waitForTimeout(300); check(!calls.some(c => c.startsWith('pay-')), '«Отмена» — без платежа'); },
     async (pg, check, calls) => { await tap(pg, '[data-a="go"]'); await pg.waitForSelector('.z-msg'); await pg.click('[data-mb="0"]');
       await pg.waitForFunction(() => document.body.innerText.includes('Оплачено'));
       const b = JSON.parse((calls.find(c => c.startsWith('pay-rec:')) || 'pay-rec:{}').slice(8));
-      check(b.bank_card_id === 11 && b.loyalty_card_number === '777' && b.fuel_code === '95' && b.type === 'FUEL' && b.payment_method === 'card' && b.amount === 50 && b.liters === 20 && b.pump_number === 3 && b.nozzle_number === 2 && b.azs_number === 14 && b.price === 2.5,
+      check(b.bank_card_id === 11 && b.loyalty_card_number === '777' && b.fuel_code === '95' && b.type === 'FUEL' && b.payment_method === 'card' && b.amount === 48.5 && b.discount === 1.5 && b.sale_point === 14 && b.liters === 20 && b.pump_number === 3 && b.nozzle_number === 2 && b.azs_number === 14 && b.price === 2.5,
         'тело оплаты: основная карта, лояльность, код топлива, сумма (' + JSON.stringify(b) + ')');
       check(!calls.some(c => c.startsWith('pay-new:')), 'один платёж');
+      const dc = JSON.parse((calls.find(c => c.startsWith('disc:')) || 'disc:{}').slice(5));
+      check(dc.card_number === '777' && dc.type === 'FUEL' && dc.sale_point === 14 && dc.liters === 20 && dc.pump_number === 3 && dc.client === '7001,55', 'расчёт скидки как в приложении (' + JSON.stringify(dc) + ')');
       const msgs = await pg.evaluate(() => window.__app || []);
       check(msgs.some(m => m.token === '5|tok'), 'вход передан приложению');
       check(msgs.some(m => m.paid === true), 'отметка оплаты передана приложению'); check((await txt(pg)).includes('колонка 3 — можно заправляться'), 'сообщение «можно заправляться»'); }]));
@@ -144,6 +148,12 @@ const tap = (pg, sel) => pg.click(sel);
   r.push(await run('kolonki-iz-pamyati', CAR, { geo: HOME, token: '5|tok', delay: 3000, pumpsMem: 1 }, [
     async (pg, check) => { const t = Date.now(); await pg.waitForSelector('.z-p', { timeout: 15000 }); check(Date.now() - t < 1500, 'колонки за 1,5 с при медленном сервере (' + (Date.now() - t) + ' мс)');
       check(await pg.$$eval('.z-p', a => a.map(e => e.textContent).join(',')) === '1,2,3,4,5,6,7,8', 'колонки из памяти'); }]));
+  // 9. расчёт скидки не удался — оплата без карты лояльности, на полную сумму
+  r.push(await run('skidka-ne-udalas', CAR, { geo: HOME, token: '5|tok', discFail: 1 }, [
+    async (pg, check, calls) => { await pg.waitForSelector('.z-p'); await tap(pg, '[data-p="1"]'); await pg.waitForSelector('.z-fuel'); await tap(pg, '[data-q="10"]'); await tap(pg, '[data-a="go"]');
+      await pg.waitForFunction(() => document.querySelector('.z-go').textContent.includes('ОПЛАТИТЬ')); await tap(pg, '[data-a="go"]'); await pg.waitForSelector('.z-msg');
+      check((await txt(pg)).includes('Оплатить 25,00 руб картой'), 'полная сумма без скидки'); await pg.click('[data-mb="0"]'); await pg.waitForFunction(() => document.body.innerText.includes('Оплачено'));
+      const b = JSON.parse((calls.find(c => c.startsWith('pay-rec:')) || 'pay-rec:{}').slice(8)); check(!b.loyalty_card_number && b.amount === 25, 'без карты лояльности'); }]));
   console.log(r.filter(Boolean).length + ' из ' + r.length);
   process.exit(r.every(Boolean) ? 0 : 1);
 })();
