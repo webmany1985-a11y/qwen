@@ -45,6 +45,7 @@ async function run(name, vp, opt, steps) {
     if (p === '/users/7/loyalty-cards') return json(200, { data: [{ number: '777', is_main: true }] });
     if (p === '/discount/calculate') { calls.push('disc:' + JSON.stringify(body)); if (opt.discFail) return json(500, { message: 'Server Error' }); return json(200, { data: { amount: body.liters * 2.5 - 1.5, discount: 1.5, promotions_discount: null, points_discount: null } }); }
     if (p === '/payment/recurring' && !(calls.some(c => c.startsWith('disc:')) || opt.discFail) && JSON.parse(q.postData()).loyalty_card_number) return json(500, { message: 'Server Error' }); // как у А-100 без расчёта скидки
+    if (p.startsWith('/payment') && body.fuel_code !== body.fuel_name) return json(500, { message: 'Ошибка сервера. Попробуйте позже' }); // как у А-100 с кодом станции вместо названия (06.11.2026)
     if (p === '/payment/recurring') { calls.push('pay-rec:' + JSON.stringify(body)); return json(200, { data: { orderNumber: 'A-1' } }); }
     if (p === '/payment') { calls.push('pay-new:' + JSON.stringify(body)); return json(200, { data: { orderNumber: 'A-2', redirectUrl: 'https://payment.webpay.by/pay?x=1' } }); }
     if (p === '/fuel/calculate') { calls.push('calc:' + JSON.stringify(body)); return json(200, { data: { amount: body.liters * 2.5, liters: body.liters } }); }
@@ -100,7 +101,7 @@ const tap = (pg, sel) => pg.click(sel);
     async (pg, check, calls) => { await tap(pg, '[data-a="go"]'); await pg.waitForSelector('.z-msg'); await pg.click('[data-mb="0"]');
       await pg.waitForFunction(() => document.body.innerText.includes('Оплачено'));
       const b = JSON.parse((calls.find(c => c.startsWith('pay-rec:')) || 'pay-rec:{}').slice(8));
-      check(b.bank_card_id === 11 && b.loyalty_card_number === '777' && b.fuel_code === '95' && b.type === 'FUEL' && b.payment_method === 'card' && b.amount === 48.5 && b.discount === 1.5 && b.sale_point === 14 && b.liters === 20 && b.pump_number === 3 && b.nozzle_number === 2 && b.azs_number === 14 && b.price === 2.5,
+      check(b.bank_card_id === 11 && b.loyalty_card_number === '777' && b.fuel_code === 'АИ-95' && b.type === 'FUEL' && b.payment_method === 'card' && b.amount === 48.5 && b.discount === 1.5 && b.sale_point === 14 && b.liters === 20 && b.pump_number === 3 && b.nozzle_number === 2 && b.azs_number === 14 && b.price === 2.5,
         'тело оплаты: основная карта, лояльность, код топлива, сумма (' + JSON.stringify(b) + ')');
       check(!calls.some(c => c.startsWith('pay-new:')), 'один платёж');
       const dc = JSON.parse((calls.find(c => c.startsWith('disc:')) || 'disc:{}').slice(5));

@@ -71,7 +71,7 @@ public class FuelApiTest {
 		assertEquals(3, b.getInt("pump_number"));
 		assertEquals(2, b.getInt("nozzle_number"));
 		assertEquals(20, b.getInt("liters"));
-		assertEquals("95", b.getString("fuel_code"));
+		assertEquals("АИ-95", b.getString("fuel_code"));
 		assertEquals(11, b.getLong("bank_card_id"));
 		assertEquals("777", b.getString("loyalty_card_number"));
 		// расчёт скидки не удался — полная сумма и без карты лояльности

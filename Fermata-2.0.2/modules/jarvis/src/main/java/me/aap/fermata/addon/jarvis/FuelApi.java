@@ -374,7 +374,7 @@ final class FuelApi {
 			b.put("promotions", new JSONArray()).put("discount", dc.ok ? dc.discount : 0).put("sale_point", azs)
 					.put("payment_method", "card").put("type", "FUEL")
 					.put("fuel_name", r.fuel).put("azs_number", azs).put("nozzle_number", r.nozzle)
-					.put("liters", c.liters).put("fuel_code", s.fuelCode(r.fuel) == null ? "" : s.fuelCode(r.fuel))
+					.put("liters", c.liters).put("fuel_code", r.fuel) // название, как в приложении А-100; с кодом станции — 500 (06.11.2026)
 					.put("amount", dc.ok ? dc.amount : c.amount).put("price", r.price).put("pump_number", pump)
 					.put("bank_card_id", cardId);
 			// номер карты лояльности — только после расчёта скидки (как в приложении); расчёт не удался — без неё

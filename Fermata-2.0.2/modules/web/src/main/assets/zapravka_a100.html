@@ -413,9 +413,10 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
       st.busy = false;
       var info = r.info, dc = r.dc;
       var amount = dc.ok && dc.amount != null && dc.amount > 0 ? dc.amount : c.amountRaw;
-      var fuel = (s.FUEL || []).filter(function (f) { return f.NAME === c.fuel_name; })[0];
+      // fuel_code — название топлива, как в приложении А-100 (Nn({...Wn, fuel_code: Wn.fuel_name})), а не FUEL[].CODE:
+      // с кодом станции сервер отвечал 500 (журнал 06.11.2026 08:06)
       var body = { promotions: [], discount: dc.ok ? dc.discount : 0, sale_point: s.NUMBER, payment_method: 'card', type: 'FUEL',
-        fuel_name: c.fuel_name, azs_number: s.NUMBER, nozzle_number: c.nozzle, liters: c.liters, fuel_code: fuel ? fuel.CODE : '',
+        fuel_name: c.fuel_name, azs_number: s.NUMBER, nozzle_number: c.nozzle, liters: c.liters, fuel_code: c.fuel_name || '',
         amount: amount, price: c.price, pump_number: Number(st.pump) };
       if (info.card && info.card.id != null) body.bank_card_id = info.card.id;
       // номер карты лояльности — только после расчёта скидки (как в приложении); расчёт не удался — без неё
@@ -434,6 +435,9 @@ display:flex;align-items:center;justify-content:center;font-size:clamp(16px,5.5v
     st.busy = true; st.loadText = 'Оплата…'; render();
     var path = body.bank_card_id != null ? '/payment/recurring' : '/payment';
     log('pay: sending (' + (body.bank_card_id != null ? 'saved card' : 'new card') + (body.loyalty_card_number ? ', loyalty' : '') + ')');
+    log('pay: body fuel_name=' + body.fuel_name + ' fuel_code=' + body.fuel_code + ' liters=' + body.liters + ' price=' + body.price +
+      ' amount=' + body.amount + ' discount=' + body.discount + ' azs=' + body.azs_number + ' sale_point=' + body.sale_point +
+      ' pump=' + body.pump_number + ' nozzle=' + body.nozzle_number);
     api('POST', path, body).then(function (j) {
       var d = (j && j.data) || {};
       log('pay: answer fields ' + keys(d));
