@@ -33,6 +33,14 @@ public class TermometrTest {
 	}
 
 	@Test
+	public void weatherCode() {
+		assertEquals(Integer.valueOf(73), Termometr.parseCode(
+				"{\"current_units\":{\"weather_code\":\"wmo code\"},\"current\":{\"temperature_2m\":-2.1,\"weather_code\":73}}"));
+		assertNull(Termometr.parseCode("{\"current\":{\"temperature_2m\":4.6}}"));
+		assertNull(Termometr.parseCode(null));
+	}
+
+	@Test
 	public void placeFollowsPhone() throws Exception {
 		// Деревня — её имя, а не сельсовет из поля city
 		assertEquals("Самохваловичи", Termometr.parsePlace(res("samohvalovichi.json")));
@@ -95,7 +103,7 @@ public class TermometrTest {
 
 	@Test
 	public void urls() {
-		assertEquals("https://api.open-meteo.com/v1/forecast?latitude=53.9006&longitude=27.5590&current=temperature_2m",
+		assertEquals("https://api.open-meteo.com/v1/forecast?latitude=53.9006&longitude=27.5590&current=temperature_2m,weather_code",
 				Termometr.weatherUrl(53.9006, 27.559));
 		assertTrue(Termometr.placeUrl(53.7383, 27.5044).contains("lat=53.73830&lon=27.50440"));
 		assertTrue(Termometr.placeUrl(53.7383, 27.5044).contains("accept-language=ru"));

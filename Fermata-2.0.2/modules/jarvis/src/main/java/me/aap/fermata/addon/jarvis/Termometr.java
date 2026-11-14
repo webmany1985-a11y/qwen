@@ -27,6 +27,8 @@ public final class Termometr {
 
 	private static final Pattern TEMP = Pattern.compile(
 			"\"current\"\\s*:\\s*\\{[^}]*?\"temperature_2m\"\\s*:\\s*(-?\\d+(?:\\.\\d+)?)");
+	private static final Pattern CODE = Pattern.compile(
+			"\"current\"\\s*:\\s*\\{[^}]*?\"weather_code\"\\s*:\\s*(\\d+)");
 	private static final Pattern ADDRESS = Pattern.compile("\"address\"\\s*:\\s*\\{([^}]*)\\}");
 	/** Порядок важен: деревня раньше «города» — у деревень Nominatim пишет в city сельсовет. */
 	private static final String[] PLACE_KEYS = {
@@ -37,7 +39,7 @@ public final class Termometr {
 
 	public static String weatherUrl(double lat, double lon) {
 		return String.format(Locale.US,
-				"https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m", lat, lon);
+				"https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m,weather_code", lat, lon);
 	}
 
 	public static String placeUrl(double lat, double lon) {
@@ -54,6 +56,19 @@ public final class Termometr {
 		if (!m.find()) return null;
 		try {
 			return Double.parseDouble(m.group(1));
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
+	/** Код погоды WMO из ответа Open-Meteo (значок по погоде, {@link Pogoda}); null — нет. */
+	@Nullable
+	public static Integer parseCode(@Nullable String json) {
+		if (json == null) return null;
+		Matcher m = CODE.matcher(json);
+		if (!m.find()) return null;
+		try {
+			return Integer.parseInt(m.group(1));
 		} catch (NumberFormatException e) {
 			return null;
 		}

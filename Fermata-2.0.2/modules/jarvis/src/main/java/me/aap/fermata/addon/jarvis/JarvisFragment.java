@@ -202,8 +202,10 @@ public class JarvisFragment extends MainActivityFragment
 		root.addView(v, new android.widget.FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 		hud = v;
-		termometr = new TermometrRunner(ctx, (t, c) -> {
-			if (hud != null) hud.setWeather(t, c);
+		termometr = new TermometrRunner(ctx, (t, c, k) -> {
+			if (hud == null) return;
+			hud.setWeather(t, c);
+			hud.setWeatherKind(k);
 		});
 
 		android.widget.Button close = new android.widget.Button(ctx);

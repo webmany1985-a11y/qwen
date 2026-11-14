@@ -30,7 +30,7 @@ import me.aap.utils.log.Log;
  */
 final class TermometrRunner {
 	interface Sink {
-		void show(@NonNull String temp, @NonNull String caption);
+		void show(@NonNull String temp, @NonNull String caption, @NonNull Pogoda.Kind kind);
 	}
 
 	/** Раз в минуту — проверить, не устарело ли значение и не пора ли обновить. */
@@ -98,7 +98,10 @@ final class TermometrRunner {
 			} catch (NumberFormatException ignore) {
 			}
 		}
-		sink.show(Termometr.shown(v, prefs.getLong("at", 0L), now), Termometr.caption(prefs.getString("place", "")));
+		long at = prefs.getLong("at", 0L);
+		int code = prefs.getInt("code", -1);
+		sink.show(Termometr.shown(v, at, now), Termometr.caption(prefs.getString("place", "")),
+				Pogoda.shown((code < 0) ? null : code, v, at, now));
 	}
 
 	/** Фоновый поток: местоположение → температура → (если переехали) название. */
@@ -111,13 +114,15 @@ final class TermometrRunner {
 				return;
 			}
 			double lat = l.getLatitude(), lon = l.getLongitude();
-			Double t = Termometr.parseTemp(get(Termometr.weatherUrl(lat, lon)));
+			String reply = get(Termometr.weatherUrl(lat, lon));
+			Double t = Termometr.parseTemp(reply);
+			Integer code = Termometr.parseCode(reply);
 			if (t == null) {
 				Log.i("JARVIS temp: no temperature in reply");
 				return;
 			}
 			SharedPreferences.Editor e = prefs.edit().putString("temp", Double.toString(t))
-					.putLong("at", System.currentTimeMillis());
+					.putLong("at", System.currentTimeMillis()).putInt("code", (code == null) ? -1 : code);
 			String place = prefs.getString("place", "");
 			boolean moved = place.isEmpty() || Termometr.moved(
 					Double.longBitsToDouble(prefs.getLong("plat", 0L)), Double.longBitsToDouble(prefs.getLong("plon", 0L)),
@@ -131,7 +136,7 @@ final class TermometrRunner {
 			}
 			e.apply();
 			ok = true;
-			Log.i("JARVIS temp: ", Termometr.format(t), " ", place, moved ? " (place updated)" : "");
+			Log.i("JARVIS temp: ", Termometr.format(t), " code=", code, " ", place, moved ? " (place updated)" : "");
 		} catch (Throwable ex) {
 			Log.i("JARVIS temp: failed ", ex);
 		} finally {

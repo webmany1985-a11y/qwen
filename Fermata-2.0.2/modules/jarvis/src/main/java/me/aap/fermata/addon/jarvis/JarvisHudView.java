@@ -117,6 +117,22 @@ public class JarvisHudView extends View {
 	private final Path weatherBulb = new Path();
 	private final RectF weatherBox = new RectF();
 
+	// ------------------------------------------------------------- значок по погоде (14.11.2026, Pogoda)
+	private Pogoda.Kind weatherKind = Pogoda.Kind.FIRE;
+	/** Слои значка, перекрашенные под погоду; null — огонь, исходные слои. */
+	@Nullable
+	private Bitmap opelK, ogonK;
+	/** Сосульки, капли, иней — поверх значка, в его масштабе. */
+	@Nullable
+	private Bitmap weatherOverlay;
+	@Nullable
+	private Paint[] weatherPuff;
+	@Nullable
+	private Pogoda.Fx weatherFx;
+	private final Paint fxPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+	@Nullable
+	private Paint mistPaint;
+
 	private HudMath.Phase phase = HudMath.Phase.IDLE;
 	private float micLevel;
 	private long start = -1L;
@@ -169,6 +185,175 @@ public class JarvisHudView extends View {
 		weatherTemp = temp;
 		weatherCaption = c;
 		invalidate();
+	}
+
+	/** Значок в покое — по погоде: огонь, лёд со снегом, мокрый под дождём, в инее на морозе. */
+	public void setWeatherKind(@NonNull Pogoda.Kind k) {
+		if ((k == weatherKind) || (opel == null) || (ogon == null)) return;
+		weatherKind = k;
+		if (k == Pogoda.Kind.FIRE) {
+			opelK = ogonK = weatherOverlay = null;
+			weatherPuff = null;
+			weatherFx = null;
+			mistPaint = null;
+		} else {
+			try {
+				opelK = recolored(opel, k, true);
+				ogonK = recolored(ogon, k, false);
+				weatherOverlay = overlayFor(k, opel.getWidth());
+				weatherPuff = puffPaints(k);
+				weatherFx = new Pogoda.Fx(k);
+				mistPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+				mistPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFFC8E1F5, PorterDuff.Mode.MULTIPLY));
+			} catch (Throwable ex) {
+				// Не хватило памяти и т. п. — остаётся огонь
+				weatherKind = Pogoda.Kind.FIRE;
+				opelK = ogonK = weatherOverlay = null;
+				weatherPuff = null;
+				weatherFx = null;
+			}
+		}
+		invalidate();
+	}
+
+	public Pogoda.Kind getWeatherKind() {
+		return weatherKind;
+	}
+
+	private static Bitmap recolored(Bitmap src, Pogoda.Kind k, boolean badge) {
+		int w = src.getWidth(), h = src.getHeight();
+		int[] px = new int[w * h];
+		src.getPixels(px, 0, w, 0, 0, w, h);
+		if (badge) Pogoda.recolorBadge(px, w, k);
+		else Pogoda.recolorRing(px, k);
+		return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+	}
+
+	/** Живые языки поверх кольца — в палитре погоды (у огня — свои цвета, {@link #firePaint}). */
+	private Paint[] puffPaints(Pogoda.Kind k) {
+		Paint[] ps = new Paint[FIRE_SHADES];
+		PorterDuffXfermode addMode = new PorterDuffXfermode(PorterDuff.Mode.ADD);
+		for (int i = 0; i < FIRE_SHADES; i++) {
+			Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+			int rgb = Pogoda.palette(k, 1f - 0.75f * (i + 0.5f) / FIRE_SHADES);
+			p.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFF000000 | rgb, PorterDuff.Mode.MULTIPLY));
+			p.setXfermode(addMode);
+			ps[i] = p;
+		}
+		return ps;
+	}
+
+	/** Неподвижные детали в масштабе слоя значка (сторона w): сосульки — снег, капли и блик — дождь, иней — мороз. */
+	@Nullable
+	private static Bitmap overlayFor(Pogoda.Kind k, int w) {
+		Bitmap b = Bitmap.createBitmap(w, w, Bitmap.Config.ARGB_8888);
+		Canvas c = new Canvas(b);
+		float u = w / 512f, cx = w / 2f;
+		java.util.Random rnd = new java.util.Random(7);
+		Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+		Path path = new Path();
+		switch (k) {
+			case SNOW:
+				// Сосульки по низу хромового круга
+				for (int i = 0; i < 16; i++) {
+					double ang = Math.toRadians(40 + i * (100.0 / 15));
+					float x = cx + (float) (103 * u * Math.cos(ang)), y = cx + (float) (103 * u * Math.sin(ang));
+					float sin = (float) Math.sin(ang);
+					float len = (18 + rnd.nextFloat() * 28) * sin * sin * u, wd = (2.5f + rnd.nextFloat() * 2.5f) * u;
+					path.reset();
+					path.moveTo(x - wd, y);
+					path.lineTo(x + wd, y);
+					path.lineTo(x + (rnd.nextFloat() - 0.5f) * 2 * u, y + len);
+					path.close();
+					p.setStyle(Paint.Style.FILL);
+					p.setColor(0xD7D7F0FF);
+					c.drawPath(path, p);
+					p.setStyle(Paint.Style.STROKE);
+					p.setStrokeWidth(u);
+					p.setColor(0xC8FFFFFF);
+					c.drawLine(x - wd * 0.3f, y + 2 * u, x, y + len * 0.7f, p);
+				}
+				break;
+			case RAIN:
+				p.setStyle(Paint.Style.STROKE);
+				p.setStrokeWidth(5 * u);
+				p.setColor(0xAAFFFFFF);
+				p.setMaskFilter(new android.graphics.BlurMaskFilter(2 * u, android.graphics.BlurMaskFilter.Blur.NORMAL));
+				c.drawArc(new RectF(cx - 118 * u, cx - 118 * u, cx + 118 * u, cx + 118 * u), 200, 50, false, p);
+				p.setMaskFilter(null);
+				p.setStyle(Paint.Style.FILL);
+				for (int i = 0; i < 22; i++) {
+					double a = rnd.nextFloat() * 2 * Math.PI;
+					float r = (40 + rnd.nextFloat() * 85) * u, s = (2.5f + rnd.nextFloat() * 2.5f) * u;
+					float x = cx + (float) (r * Math.cos(a)), y = cx + (float) (r * Math.sin(a));
+					p.setColor(0x78C8E1FA);
+					c.drawOval(x - s, y - s * 1.2f, x + s, y + s * 1.2f, p);
+					p.setColor(0xDCFFFFFF);
+					c.drawOval(x - s * 0.4f, y - s * 0.8f, x + s * 0.1f, y - s * 0.3f, p);
+				}
+				break;
+			case FROST:
+				p.setStyle(Paint.Style.STROKE);
+				p.setStrokeWidth(u);
+				p.setColor(0x96EBF8FF);
+				for (int i = 0; i < 45; i++) {
+					double a = rnd.nextFloat() * 2 * Math.PI;
+					float r = (float) (103 + rnd.nextGaussian() * 6) * u, s = (1.5f + rnd.nextFloat() * 2f) * u;
+					float x = cx + (float) (r * Math.cos(a)), y = cx + (float) (r * Math.sin(a));
+					for (int j = 0; j < 3; j++) {
+						double q = Math.toRadians(j * 60 + rnd.nextFloat() * 30);
+						float dx = (float) (s * Math.cos(q)), dy = (float) (s * Math.sin(q));
+						c.drawLine(x - dx, y - dy, x + dx, y + dy, p);
+					}
+				}
+				break;
+			default:
+				return null;
+		}
+		return b;
+	}
+
+	/** Снежинки, струи дождя, пар — вокруг значка, в квадрате ±Fx.HALF радиусов кольца. */
+	private void drawWeatherFx(Canvas c, float cx, float cy, float ringPx, float alpha) {
+		Pogoda.Fx fx = weatherFx;
+		if ((fx == null) || (alpha <= 0.01f)) return;
+		fx.step(HudMath.clampDt(fireDt));
+		for (int i = 0; i < fx.count; i++) {
+			float x = cx + fx.x[i] * ringPx, y = cy + fx.y[i] * ringPx;
+			float a = clamp(fx.alpha(i) * alpha, 0f, 1f);
+			switch (fx.kind) {
+				case SNOW:
+					fxPaint.setColor(withAlpha(0xFFF0F8FF, a));
+					if (fx.big[i]) {
+						float r = fx.size[i] * ringPx;
+						fxPaint.setStyle(Paint.Style.STROKE);
+						fxPaint.setStrokeWidth(1.5f * dp);
+						for (int k = 0; k < 3; k++) {
+							float q = (float) Math.toRadians(k * 60) + fx.phase[i];
+							float dx = r * (float) Math.cos(q), dy = r * (float) Math.sin(q);
+							c.drawLine(x - dx, y - dy, x + dx, y + dy, fxPaint);
+						}
+					} else {
+						fxPaint.setStyle(Paint.Style.FILL);
+						c.drawCircle(x, y, Math.max(0.8f * dp, fx.size[i] * ringPx), fxPaint);
+					}
+					break;
+				case RAIN:
+					float len = fx.size[i] * ringPx;
+					fxPaint.setStyle(Paint.Style.STROKE);
+					fxPaint.setStrokeWidth(1f * dp);
+					fxPaint.setColor(withAlpha(0xFFAACDF0, a));
+					c.drawLine(x, y, x - len * 0.18f, y + len, fxPaint);
+					break;
+				default:
+					Paint mp = mistPaint;
+					if (mp == null) break;
+					float r = fx.size[i] * ringPx * 2f;
+					puffBox.set(x - r, y - r * 0.5f, x + r, y + r * 0.5f);
+					mp.setAlpha(Math.round(255f * a));
+					c.drawBitmap(puff, null, puffBox, mp);
+			}
+		}
 	}
 
 	@Nullable
@@ -624,8 +809,11 @@ public class JarvisHudView extends View {
 	 * медленно покачиваясь, с другой турбулентностью — языки не повторяют друг друга.
 	 */
 	private void drawEmblem(Canvas c, float alpha) {
-		Bitmap z = opel, f = ogon;
+		Bitmap z = (opelK != null) ? opelK : opel, f = (ogonK != null) ? ogonK : ogon;
 		if ((z == null) || (f == null) || (alpha <= 0.01f)) return;
+		Pogoda.Kind wk = weatherKind;
+		Paint[] shades = (weatherPuff != null) ? weatherPuff : firePaint;
+		float puffGain = (wk == Pogoda.Kind.RAIN) ? 0.4f : (wk == Pogoda.Kind.FROST) ? 0.5f : 1f;
 		float t = since;
 		float cx = getWidth() / 2f, cy = getHeight() / 2f;
 		float ringPx = Math.min(getWidth(), getHeight()) * EmblemMorph.RING_OF_VIEW;
@@ -633,18 +821,18 @@ public class JarvisHudView extends View {
 
 		// Подложка — огонь с фото, приглушён и неровно мерцает; поверх — живые языки пламени
 		fireMesh(f, cx, cy, sc, 1f, 0f, t, 0f);
-		image.setAlpha(Math.round(255f * clamp(alpha * 0.55f * EmblemMorph.flicker(t, 0f), 0f, 1f)));
+		image.setAlpha(Math.round(255f * clamp(alpha * 0.55f * Pogoda.ringGain(wk) * EmblemMorph.flicker(t, 0f), 0f, 1f)));
 		c.drawBitmapMesh(f, FIRE_MESH, FIRE_MESH, opelMesh, 0, null, 0, image);
 		fire.step(HudMath.clampDt(fireDt));
 		for (int i = 0; i < EmblemMorph.Fire.MAX; i++) {
 			if (!fire.alive[i]) continue;
-			float a = fire.alpha(i) * alpha;
+			float a = fire.alpha(i) * alpha * puffGain;
 			if (a < 0.004f) continue;
 			// Пятно — гауссово с краем на 2 радиусах, как в предпросмотре
 			float r = fire.radius(i) * ringPx * 2f;
 			float px = cx + fire.x[i] * ringPx, py = cy + fire.y[i] * ringPx;
 			puffBox.set(px - r, py - r, px + r, py + r);
-			Paint p = firePaint[Math.min(FIRE_SHADES - 1, (int) (fire.progress(i) * FIRE_SHADES))];
+			Paint p = shades[Math.min(FIRE_SHADES - 1, (int) (fire.progress(i) * FIRE_SHADES))];
 			p.setAlpha(Math.round(255f * clamp(a, 0f, 1f)));
 			c.drawBitmap(puff, null, puffBox, p);
 		}
@@ -655,6 +843,9 @@ public class JarvisHudView extends View {
 		box.set(cx - hw, cy - hh, cx + hw, cy + hh);
 		logoPaint.setAlpha(Math.round(255f * clamp(alpha, 0f, 1f)));
 		c.drawBitmap(z, null, box, logoPaint);
+		Bitmap ov = weatherOverlay;
+		if (ov != null) c.drawBitmap(ov, null, box, logoPaint);
+		drawWeatherFx(c, cx, cy, ringPx, alpha);
 	}
 
 	/** Белое пятно 64×64 с гауссовым спадом прозрачности — одно на все частицы. */
