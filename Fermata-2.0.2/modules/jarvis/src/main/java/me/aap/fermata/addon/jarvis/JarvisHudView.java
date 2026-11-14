@@ -106,6 +106,17 @@ public class JarvisHudView extends View {
 	private final String listening;
 	private final String thinking;
 
+	// ------------------------------------------------------------- температура в левом верхнем углу (14.11.2026)
+	/** Цифра («−3°»); null — виджет не показывается. Задаёт вкладка ({@link #setWeather}). */
+	@Nullable
+	private String weatherTemp;
+	private String weatherCaption = "";
+	private final Paint weatherBig = new Paint(Paint.ANTI_ALIAS_FLAG);
+	private final Paint weatherSmall = new Paint(Paint.ANTI_ALIAS_FLAG);
+	private final Paint weatherIcon = new Paint(Paint.ANTI_ALIAS_FLAG);
+	private final Path weatherBulb = new Path();
+	private final RectF weatherBox = new RectF();
+
 	private HudMath.Phase phase = HudMath.Phase.IDLE;
 	private float micLevel;
 	private long start = -1L;
@@ -143,8 +154,81 @@ public class JarvisHudView extends View {
 		text.setTextAlign(Paint.Align.CENTER);
 		// Свечение складывается (ADD) только с собственным фоном вида
 		setLayerType(LAYER_TYPE_HARDWARE, null);
+		initWeatherPaints();
 		setClickable(true);
 		setFocusable(true);
+	}
+
+	/**
+	 * Температура в левом верхнем углу: temp — «−3°» или «—°», caption — «за бортом · Минск»; temp == null — убрать.
+	 * Рисуется поверх сферы без подложки; касаний не берёт — касание там, как и раньше, показывает строку приложений.
+	 */
+	public void setWeather(@Nullable String temp, @Nullable String caption) {
+		String c = (caption == null) ? "" : caption;
+		if (java.util.Objects.equals(temp, weatherTemp) && c.equals(weatherCaption)) return;
+		weatherTemp = temp;
+		weatherCaption = c;
+		invalidate();
+	}
+
+	@Nullable
+	public String getWeatherTemp() {
+		return weatherTemp;
+	}
+
+	public String getWeatherCaption() {
+		return weatherCaption;
+	}
+
+	private void initWeatherPaints() {
+		// Золото сферы (HudColor.GOLD_HOT); тень вместо подложки — цифра читается и на светлом фото
+		int shadow = 0xE6000000;
+		weatherBig.setColor(HudColor.GOLD_HOT);
+		weatherBig.setTypeface(Typeface.create(Typeface.SANS_SERIF, 300, false));
+		weatherBig.setTextSize(30 * dp);
+		weatherBig.setShadowLayer(4 * dp, 0f, 0f, shadow);
+		weatherSmall.setColor(withAlpha(HudColor.GOLD_HOT, 0.8f));
+		weatherSmall.setTypeface(wordFace);
+		weatherSmall.setTextSize(11 * dp);
+		weatherSmall.setLetterSpacing(0.03f);
+		weatherSmall.setShadowLayer(3 * dp, 0f, 0f, shadow);
+		weatherIcon.setColor(HudColor.GOLD_HOT);
+		weatherIcon.setStrokeWidth(1.6f * dp);
+		weatherIcon.setStrokeCap(Paint.Cap.ROUND);
+		weatherIcon.setShadowLayer(3 * dp, 0f, 0f, shadow);
+	}
+
+	/** Термометр, цифра и подпись — в левом верхнем углу, отступ 16 dp. */
+	private void drawWeather(Canvas c) {
+		String t = weatherTemp;
+		if (t == null) return;
+		float x = 16 * dp;
+		float top = 12 * dp;
+		// Термометр: трубка 6×22 dp со скруглённым верхом и шарик r = 5 dp
+		float iw = 6 * dp, ih = 22 * dp, br = 5 * dp;
+		float icx = x + br;
+		weatherIcon.setStyle(Paint.Style.STROKE);
+		weatherBulb.reset();
+		weatherBox.set(icx - iw / 2f, top + 2 * dp, icx + iw / 2f, top + 2 * dp + iw);
+		weatherBulb.arcTo(weatherBox, 180f, 180f, false);
+		weatherBulb.lineTo(icx + iw / 2f, top + ih);
+		weatherBox.set(icx - br, top + ih - br * 0.4f, icx + br, top + ih + br * 1.6f);
+		weatherBulb.arcTo(weatherBox, -60f, 300f, false);
+		weatherBulb.close();
+		c.drawPath(weatherBulb, weatherIcon);
+		weatherIcon.setStyle(Paint.Style.FILL);
+		float bulbCy = top + ih + br * 0.6f;
+		c.drawCircle(icx, bulbCy, br * 0.55f, weatherIcon);
+		c.drawLine(icx, bulbCy, icx, top + 9 * dp, weatherIcon);
+
+		float tx = x + 2 * br + 8 * dp;
+		Paint.FontMetrics fm = weatherBig.getFontMetrics();
+		float base = top - fm.ascent - 4 * dp;
+		c.drawText(t, tx, base, weatherBig);
+		if (!weatherCaption.isEmpty()) {
+			Paint.FontMetrics sm = weatherSmall.getFontMetrics();
+			c.drawText(weatherCaption, tx + 1 * dp, base + fm.descent - sm.ascent, weatherSmall);
+		}
 	}
 
 	/** Касание в точке (x, y) попало в шар (с небольшим запасом вокруг). */
@@ -213,6 +297,7 @@ public class JarvisHudView extends View {
 			drawEmblem(c, EmblemMorph.emblemAlpha(morph));
 			drawSparks(c, morph);
 		}
+		drawWeather(c);
 
 		if (isShown()) postInvalidateOnAnimation();
 	}

@@ -81,6 +81,9 @@ public class JarvisFragment extends MainActivityFragment
 	private ChatPlan.Site loginSite;
 	@Nullable
 	private CarMic carMic;
+	/** Температура в левом верхнем углу (14.11.2026) — обновляется, только пока вкладка на экране. */
+	@Nullable
+	private TermometrRunner termometr;
 	@Nullable
 	private View qwenDone;
 	/** Когда коснулись шара — долгое касание открывает сайт Qwen. */
@@ -199,6 +202,9 @@ public class JarvisFragment extends MainActivityFragment
 		root.addView(v, new android.widget.FrameLayout.LayoutParams(
 				ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 		hud = v;
+		termometr = new TermometrRunner(ctx, (t, c) -> {
+			if (hud != null) hud.setWeather(t, c);
+		});
 
 		android.widget.Button close = new android.widget.Button(ctx);
 		close.setText(dynCtx(ctx).getString(R.string.jarvis_qwen_done));
@@ -392,12 +398,17 @@ public class JarvisFragment extends MainActivityFragment
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (!isHidden()) showBarsForAWhile();
+		if (!isHidden()) {
+			showBarsForAWhile();
+			if (termometr != null) termometr.start();
+		}
 	}
 
 	@Override
 	public void onDestroyView() {
 		stopWatchdog();
+		if (termometr != null) termometr.destroy();
+		termometr = null;
 		restoreBars();
 		stopListening();
 		closeWarm();
@@ -416,6 +427,7 @@ public class JarvisFragment extends MainActivityFragment
 	@Override
 	public void onPause() {
 		super.onPause();
+		if (termometr != null) termometr.stop();
 		restoreBars();
 		stopListening();
 	}
@@ -424,10 +436,12 @@ public class JarvisFragment extends MainActivityFragment
 	public void onHiddenChanged(boolean hidden) {
 		super.onHiddenChanged(hidden);
 		if (hidden) {
+			if (termometr != null) termometr.stop();
 			restoreBars();
 			stopListening();
 		} else {
 			showBarsForAWhile();
+			if (termometr != null) termometr.start();
 		}
 	}
 
