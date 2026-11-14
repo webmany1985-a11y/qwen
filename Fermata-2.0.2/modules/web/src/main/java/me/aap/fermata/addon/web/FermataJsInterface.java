@@ -33,6 +33,14 @@ public class FermataJsInterface {
 		App.get().run(() -> handleEvent(event, data));
 	}
 
+	/** tab_media.js: видео в странице играет / встало (пожелание 14.11.2026). */
+	@Keep
+	@SuppressWarnings("unused")
+	@JavascriptInterface
+	public void tabMedia(boolean playing, double time, double duration) {
+		App.get().run(() -> WebBrowserFragment.onTabMedia(webView, playing, time, duration));
+	}
+
 	protected void handleEvent(int event, String data) {
 		switch (event) {
 			case JS_EDIT:

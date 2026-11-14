@@ -51,7 +51,7 @@ public class TikTokFragment extends WebBrowserFragment {
 			ws.setLoadWithOverviewMode(true);
 			me.aap.utils.log.Log.i("TikTok: car screen, desktop version: ", ua);
 		}
-		webView.loadUrl(addon.getLastUrl());
+		webView.loadUrl(resumeUrl(webView, addon.getLastUrl()));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 

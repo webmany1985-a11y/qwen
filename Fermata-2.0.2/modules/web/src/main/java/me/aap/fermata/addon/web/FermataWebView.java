@@ -93,6 +93,7 @@ public class FermataWebView extends WebView
 		s.setJavaScriptCanOpenWindowsAutomatically(true);
 
 		addJavascriptInterface(createJsInterface(), FermataJsInterface.NAME);
+		TabMediaScript.install(this);
 		CookieManager.getInstance().setAcceptThirdPartyCookies(this, true);
 
 		addon.getPreferenceStore().addBroadcastListener(this);

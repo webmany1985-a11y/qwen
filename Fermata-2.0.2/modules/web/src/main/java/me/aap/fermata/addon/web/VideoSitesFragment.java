@@ -44,7 +44,7 @@ public class VideoSitesFragment extends WebBrowserFragment {
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new VideoSitesWebClient(addon), chromeClient);
 		AutoFullScreen.install(webView, "Video");
-		webView.loadUrl(VideoSitesPage.HOME);
+		webView.loadUrl(resumeUrl(webView, VideoSitesPage.HOME));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 

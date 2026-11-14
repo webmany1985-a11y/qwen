@@ -28,6 +28,7 @@ import me.aap.fermata.addon.AddonManager;
 import me.aap.fermata.addon.web.yt.YoutubeFragment;
 import me.aap.fermata.ui.activity.MainActivityDelegate;
 import me.aap.fermata.ui.activity.MainActivityListener;
+import me.aap.fermata.ui.activity.TabMedia;
 import me.aap.fermata.ui.activity.VoiceCommand;
 import me.aap.fermata.ui.fragment.MainActivityFragment;
 import me.aap.utils.function.BooleanConsumer;
@@ -47,8 +48,10 @@ import me.aap.utils.ui.view.ToolBarView;
 @Keep
 @SuppressWarnings("unused")
 public class WebBrowserFragment extends MainActivityFragment
-		implements OverlayMenu.SelectionHandler, MainActivityListener {
+		implements OverlayMenu.SelectionHandler, MainActivityListener, TabMedia.Pausable {
 	private boolean fullScreenOnResume;
+	/** Воспроизведение остановлено уходом на другую вкладку — до возврата на эту. */
+	private boolean tabPaused;
 
 	@Override
 	public int getFragmentId() {
@@ -74,8 +77,58 @@ public class WebBrowserFragment extends MainActivityFragment
 		FermataWebClient webClient = new FermataWebClient();
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, webClient, chromeClient);
-		webView.loadUrl(addon.getLastUrl());
+		webView.loadUrl(resumeUrl(webView, addon.getLastUrl()));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
+	}
+
+	/**
+	 * Адрес, с которого начать вкладку: если приложение перезапущено при идущем здесь видео (машина заглохла) —
+	 * страница этого видео, а фильм — с той же секунды; иначе {@code def}.
+	 */
+	protected String resumeUrl(FermataWebView webView, String def) {
+		TabMedia.Pending p = TabMedia.takePending(getFragmentId());
+		if ((p == null) || (p.url == null) || p.url.isEmpty()) return def;
+		TabMediaScript.resumeAt(webView, p.time);
+		return p.url;
+	}
+
+	/** Веб-страница вкладки, где играет видео (у YouTube — своя). */
+	@Nullable
+	private FermataWebView mediaWebView() {
+		View v = getView();
+		if (v == null) return null;
+		View w = v.findViewById(R.id.browserWebView);
+		if (w == null) w = v.findViewById(R.id.ytWebView);
+		return (w instanceof FermataWebView) ? (FermataWebView) w : null;
+	}
+
+	@Override
+	public void pauseTabMedia() {
+		FermataWebView v = mediaWebView();
+		if ((v == null) || !isHidden()) return;
+		tabPaused = true;
+		v.evaluateJavascript(TabMediaScript.PAUSE_JS, null);
+	}
+
+	@Override
+	public void onHiddenChanged(boolean hidden) {
+		super.onHiddenChanged(hidden);
+		if (hidden || !tabPaused) return;
+		tabPaused = false;
+		FermataWebView v = mediaWebView();
+		if (v != null) v.evaluateJavascript(TabMediaScript.RESUME_JS, null);
+	}
+
+	/** Сообщение tab_media.js из страницы {@code v}. */
+	static void onTabMedia(FermataWebView v, boolean playing, double time, double duration) {
+		MainActivityDelegate a = MainActivityDelegate.getActivityDelegate(v.getContext()).peek();
+		if (a == null) return;
+		for (androidx.fragment.app.Fragment f : a.getSupportFragmentManager().getFragments()) {
+			if (!(f instanceof WebBrowserFragment wf) || (wf.mediaWebView() != v)) continue;
+			if (wf.tabPaused) return;
+			TabMedia.reportWeb(v.getContext(), wf.getFragmentId(), v.getUrl(), time, duration, playing);
+			return;
+		}
 	}
 
 	@Override

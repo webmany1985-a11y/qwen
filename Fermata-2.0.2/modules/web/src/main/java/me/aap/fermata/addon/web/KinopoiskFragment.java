@@ -38,7 +38,7 @@ public class KinopoiskFragment extends WebBrowserFragment {
 		webView.init(addon, new KinopoiskWebClient(), chromeClient);
 		AutoFullScreen.install(webView, "Kinopoisk");
 		KinopoiskNoApp.install(webView);
-		webView.loadUrl(addon.getLastUrl());
+		webView.loadUrl(resumeUrl(webView, addon.getLastUrl()));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);
 	}
 

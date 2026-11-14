@@ -247,6 +247,7 @@ public class MainActivityDelegate extends ActivityDelegate
 		b.getMediaSessionCallback().addAssistant(this, isCarActivityNotMirror() ? 0 : 1);
 		if (b.getCurrentItem() == null) b.getMediaSessionCallback().onPrepare();
 		init();
+		TabMedia.onActivityCreate(this);
 
 		for (FermataAddon addon : AddonManager.get().getAddons()) {
 			if (addon instanceof FermataActivityAddon)
@@ -336,6 +337,16 @@ public class MainActivityDelegate extends ActivityDelegate
 			return;
 		}
 
+		// В машине: окно закрылось при идущем видео (машина заглохла) — туда же и продолжить (пожелание 14.11.2026)
+		if (isCarActivityNotMirror()) {
+			int resumeTab = TabMedia.takeResumeTab(getContext());
+			if ((resumeTab != 0) && (showFragment(resumeTab) != null)) {
+				TabMedia.resumeSession(this, resumeTab);
+				checkUpdates();
+				return;
+			}
+		}
+
 		String showAddon = getPrefs().getShowAddonOnStartPref();
 		// В машине — сразу вкладка JARVIS (настройка в дополнении JARVIS)
 		if (isCarActivityNotMirror() && me.aap.fermata.FermataApplication.get().getPreferenceStore()
@@ -415,6 +426,7 @@ public class MainActivityDelegate extends ActivityDelegate
 
 	@Override
 	public void onActivityDestroy() {
+		TabMedia.onActivityDestroy(this);
 		super.onActivityDestroy();
 		handler.close();
 		getMediaServiceBinder().getMediaSessionCallback().removeAssistant(this);
@@ -715,7 +727,16 @@ public class MainActivityDelegate extends ActivityDelegate
 	public ActivityFragment showFragment(int id, Object input) {
 		BodyLayout b = getBody();
 		if (b.isVideoMode()) b.setMode(BodyLayout.Mode.BOTH);
-		return super.showFragment(id, input);
+		ActivityFragment from = getActiveFragment();
+		ActivityFragment to = super.showFragment(id, input);
+		if ((to != null) && (to != from)) {
+			try {
+				TabMedia.onSwitch(this, from, to);
+			} catch (RuntimeException ex) {
+				Log.e(ex, "TabMedia: switch");
+			}
+		}
+		return to;
 	}
 
 	protected ActivityFragment createFragment(int id) {
