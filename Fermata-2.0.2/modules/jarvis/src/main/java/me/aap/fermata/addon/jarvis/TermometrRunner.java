@@ -62,6 +62,18 @@ final class TermometrRunner {
 		tick();
 	}
 
+	/** Обновить сейчас, не дожидаясь 15 минут (касание температуры). Уже идёт запрос — ничего. */
+	void refreshNow() {
+		if (fetching) return;
+		nextAt = 0L;
+		tick();
+	}
+
+	/** Идёт запрос погоды — вкладка показывает «обновляю…». */
+	boolean isFetching() {
+		return fetching;
+	}
+
 	void stop() {
 		running = false;
 		main.removeCallbacks(tick);
@@ -85,6 +97,7 @@ final class TermometrRunner {
 			} catch (Exception e) {
 				fetching = false;
 			}
+			show(now);
 		}
 		main.postDelayed(tick, TICK_MS);
 	}

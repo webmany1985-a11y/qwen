@@ -116,6 +116,10 @@ public class JarvisHudView extends View {
 	private final Paint weatherIcon = new Paint(Paint.ANTI_ALIAS_FLAG);
 	private final Path weatherBulb = new Path();
 	private final RectF weatherBox = new RectF();
+	/** Где нарисован виджет (для касания); пусто — не нарисован. */
+	private final RectF weatherHit = new RectF();
+	/** Идёт обновление по касанию — вместо подписи «обновляю…». */
+	private boolean weatherBusy;
 
 	// ------------------------------------------------------------- значок по погоде (14.11.2026, Pogoda)
 	private Pogoda.Kind weatherKind = Pogoda.Kind.FIRE;
@@ -356,6 +360,24 @@ public class JarvisHudView extends View {
 		}
 	}
 
+	public void setWeatherBusy(boolean busy) {
+		if (busy == weatherBusy) return;
+		weatherBusy = busy;
+		invalidate();
+	}
+
+	public boolean isWeatherBusy() {
+		return weatherBusy;
+	}
+
+	/** Касание попало в температуру или термометр (с запасом 12 dp вокруг — палец крупнее цифры). */
+	public boolean isOnWeather(float x, float y) {
+		if ((weatherTemp == null) || weatherHit.isEmpty()) return false;
+		float m = 12 * dp;
+		return (x >= weatherHit.left - m) && (x <= weatherHit.right + m) && (y >= weatherHit.top - m) &&
+				(y <= weatherHit.bottom + m);
+	}
+
 	@Nullable
 	public String getWeatherTemp() {
 		return weatherTemp;
@@ -386,7 +408,10 @@ public class JarvisHudView extends View {
 	/** Термометр, цифра и подпись — в левом верхнем углу, отступ 16 dp. */
 	private void drawWeather(Canvas c) {
 		String t = weatherTemp;
-		if (t == null) return;
+		if (t == null) {
+			weatherHit.setEmpty();
+			return;
+		}
 		float x = 16 * dp;
 		float top = 12 * dp;
 		// Термометр: трубка 6×22 dp со скруглённым верхом и шарик r = 5 dp
@@ -410,10 +435,16 @@ public class JarvisHudView extends View {
 		Paint.FontMetrics fm = weatherBig.getFontMetrics();
 		float base = top - fm.ascent - 4 * dp;
 		c.drawText(t, tx, base, weatherBig);
-		if (!weatherCaption.isEmpty()) {
+		float right = tx + weatherBig.measureText(t), bottom = base + fm.descent;
+		String cap = weatherBusy ? "обновляю…" : weatherCaption;
+		if (!cap.isEmpty()) {
 			Paint.FontMetrics sm = weatherSmall.getFontMetrics();
-			c.drawText(weatherCaption, tx + 1 * dp, base + fm.descent - sm.ascent, weatherSmall);
+			float cb = base + fm.descent - sm.ascent;
+			c.drawText(cap, tx + 1 * dp, cb, weatherSmall);
+			right = Math.max(right, tx + 1 * dp + weatherSmall.measureText(cap));
+			bottom = cb + sm.descent;
 		}
+		weatherHit.set(x, top, right, bottom);
 	}
 
 	/** Касание в точке (x, y) попало в шар (с небольшим запасом вокруг). */

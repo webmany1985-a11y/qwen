@@ -190,7 +190,11 @@ public class JarvisFragment extends MainActivityFragment
 		v.setOnTouchListener((view, e) -> {
 			if (e.getAction() == android.view.MotionEvent.ACTION_DOWN) downAt = e.getEventTime();
 			if (e.getAction() != android.view.MotionEvent.ACTION_UP) return true;
-			if (v.isOnSphere(e.getX(), e.getY())) {
+			if (v.isOnWeather(e.getX(), e.getY())) {
+				// Касание температуры — свежая погода сейчас, а не через 15 минут (пожелание 14.11.2026)
+				Log.i("JARVIS tab: weather tap");
+				if (termometr != null) termometr.refreshNow();
+			} else if (v.isOnSphere(e.getX(), e.getY())) {
 				if ((e.getEventTime() - downAt >= LONG_PRESS_MS) && !busy) showChatPage((loginSite != null) ? loginSite : mainSite());
 				else onCircleClick();
 			} else {
@@ -206,6 +210,7 @@ public class JarvisFragment extends MainActivityFragment
 			if (hud == null) return;
 			hud.setWeather(t, c);
 			hud.setWeatherKind(k);
+			hud.setWeatherBusy((termometr != null) && termometr.isFetching());
 		});
 
 		android.widget.Button close = new android.widget.Button(ctx);

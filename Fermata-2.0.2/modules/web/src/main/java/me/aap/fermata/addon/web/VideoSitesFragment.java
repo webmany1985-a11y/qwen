@@ -54,6 +54,15 @@ public class VideoSitesFragment extends WebBrowserFragment {
 		return AddonManager.get().getAddon(VideoSitesAddon.class);
 	}
 
+	/**
+	 * Без верхней строки с адресом (пожелание 14.11.2026), как у Кинопоиска и TikTok; назад по страницам — кнопкой
+	 * «Назад», к списку — «Мои сайты» в меню вкладки.
+	 */
+	@Override
+	public me.aap.utils.ui.view.ToolBarView.Mediator getToolBarMediator() {
+		return me.aap.utils.ui.view.ToolBarView.Mediator.Invisible.instance;
+	}
+
 	@Override
 	public void contributeToNavBarMenu(OverlayMenu.Builder b) {
 		Context ctx = dynCtx(requireContext());
