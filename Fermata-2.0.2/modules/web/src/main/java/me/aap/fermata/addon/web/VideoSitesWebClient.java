@@ -38,6 +38,10 @@ public class VideoSitesWebClient extends FermataWebClient {
 	private static final String CONT_KEY = "list";
 	private static final String RYADY_FILE = "video_ryady.json";
 	private final VideoSitesAddon addon;
+	/** До какого времени страница фильма, открытая с главной, запускается сама (assets/zona_play.js). */
+	private long autoPlayUntil;
+	@Nullable
+	private static String playScript;
 
 	VideoSitesWebClient(VideoSitesAddon addon) {
 		this.addon = addon;
@@ -82,6 +86,29 @@ public class VideoSitesWebClient extends FermataWebClient {
 			return true;
 		}
 		return super.shouldOverrideUrlLoading(view, request);
+	}
+
+	@Override
+	public void onPageFinished(WebView view, String url) {
+		super.onPageFinished(view, url);
+		if ((url == null) || (System.currentTimeMillis() > autoPlayUntil)) return;
+		Uri u = Uri.parse(url);
+		if ((u.getHost() == null) || !u.getHost().contains("zona")) return;
+		String js = playScript(view.getContext());
+		if (js == null) return;
+		Log.i("Video: film page, auto play ", url);
+		view.evaluateJavascript(js, null);
+	}
+
+	@Nullable
+	private static String playScript(Context ctx) {
+		if (playScript != null) return playScript;
+		try {
+			return playScript = new String(asset(ctx, "zona_play.js"), StandardCharsets.UTF_8);
+		} catch (Exception ex) {
+			Log.e(ex, "Video: zona_play.js");
+			return null;
+		}
 	}
 
 	/** Файлы и данные главной страницы; null — не её адрес. Вызывается не в главном потоке. */
@@ -214,7 +241,10 @@ public class VideoSitesWebClient extends FermataWebClient {
 				Log.i("Video: continue at ", at);
 				TabMediaScript.resumeAt(view, at);
 			}
-			return VideoSitesPage.zonaUrl(film, addon.getBookmarks());
+			// Фильм — на зеркале Zona из афиши (воркер выбирает рабочее): на сохранённом зеркале w1.zona.im другой движок
+			// сайта, и фильм на нём сам не запускался (замечание 15.11.2026). Запуск — assets/zona_play.js
+			autoPlayUntil = System.currentTimeMillis() + 60_000L;
+			return film;
 		}
 		if ("remove".equals(what) && (old != null)) {
 			addon.removeBookmark(old);

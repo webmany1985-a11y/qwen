@@ -67,16 +67,12 @@ public class VideoContinueTest {
 	}
 
 	@Test
-	public void zonaLinksGoToUserMirror() {
+	public void savedSitesFoundByName() {
 		Map<String, String> sites = new LinkedHashMap<>();
 		// как сохранено на телефоне (web.xml, VS_SITES)
 		sites.put("https://w1.zona.im/", "Zona");
 		sites.put("https://liftw.ws/?utm_source=channel", "Lift");
-		assertEquals("https://w1.zona.im/movies/odisseya-2026",
-				VideoSitesPage.zonaUrl("https://w140.zona.plus/movies/odisseya-2026", sites));
-		assertEquals("https://example.com/x", VideoSitesPage.zonaUrl("https://example.com/x", sites));
-		assertEquals("https://w1.zona.im/movies/a",
-				VideoSitesPage.zonaUrl("https://w140.zona.plus/movies/a", new LinkedHashMap<>()));
+		assertEquals("https://w1.zona.im/", VideoSitesPage.savedSite(sites, "zona"));
 		assertEquals("https://liftw.ws/?utm_source=channel", VideoSitesPage.savedSite(sites, "lift"));
 	}
 

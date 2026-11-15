@@ -34,7 +34,7 @@ ext {
             ],
             [
                     name : 'video_sites',
-                    icon : 'video',
+                    icon : 'video_tab',
                     class: 'me.aap.fermata.addon.web.VideoSitesAddon',
                     order: 3
             ],

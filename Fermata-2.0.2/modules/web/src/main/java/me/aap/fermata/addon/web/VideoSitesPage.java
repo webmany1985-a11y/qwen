@@ -68,20 +68,6 @@ final class VideoSitesPage {
 		return null;
 	}
 
-	/**
-	 * Ссылка афиши ведёт на зеркало Zona, которое выбрал воркер (w140.zona.plus). Если у пользователя
-	 * сохранён свой адрес Zona (проверенный им w1.zona.im) — та же страница открывается на его зеркале:
-	 * путь у зеркал общий (проверено 15.11.2026: /movies/odisseya-2026 есть на обоих).
-	 */
-	@NonNull
-	static String zonaUrl(@NonNull String url, @NonNull Map<String, String> sites) {
-		if (!host(url).contains("zona")) return url;
-		String mine = savedSite(sites, "zona");
-		if (mine == null) mine = ZONA_DEFAULT;
-		String h = mine.replaceFirst("(?i)^(https?://[^/?#]+).*$", "$1");
-		return url.replaceFirst("(?i)^https?://[^/?#]+", h);
-	}
-
 	/** HTML без ряда «Продолжить». */
 	@NonNull
 	static String html(@NonNull Map<String, String> sites, @Nullable String editUrl) {

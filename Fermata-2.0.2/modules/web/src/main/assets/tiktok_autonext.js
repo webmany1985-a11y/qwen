@@ -245,11 +245,37 @@
         if (dd < bd) { bd = dd; v = vv; }
       }
     }
-    if (!v || v === P.v) return;
-    if (P.v) { P.v.classList.remove('jarvis-pl'); try { P.v.pause(); } catch (x) {} }
+    if (v && v === P.v) { pinVideo(v); return; }
+    if (!v) return;
+    if (P.v) { unpinVideo(P.v); try { P.v.pause(); } catch (x) {} }
     v.classList.add('jarvis-pl');
+    pinVideo(v);
     P.v = v;
     P.userPaused = false;
+  }
+
+  // Плеер TikTok (xgplayer, с 11.2026) ставит видео своими стилями — по центру, 342×608 — и они перебивали
+  // правило video.jarvis-pl: видео уезжало в правый нижний угол за край, а остальная страница скрыта —
+  // «тёмный экран» (замечание 15.11.2026, воспроизведено в браузере 800×360). Поэтому положение и размер —
+  // стилем самого элемента с !important: его не перебивает никакое правило страницы.
+  var PIN = { position: 'fixed', left: '0', top: '0', right: 'auto', bottom: 'auto', width: '100vw', height: '100vh',
+    'max-width': 'none', 'max-height': 'none', 'min-width': '0', 'min-height': '0', margin: '0', transform: 'none',
+    translate: 'none', 'z-index': '2147483646', background: '#000', 'object-fit': 'var(--jarvis-fit,contain)',
+    visibility: 'visible', opacity: '1', display: 'block' };
+  function pinVideo(v) {
+    for (var k in PIN) {
+      if (v.style.getPropertyValue(k) !== PIN[k] || v.style.getPropertyPriority(k) !== 'important') v.style.setProperty(k, PIN[k], 'important');
+    }
+    var r = v.getBoundingClientRect();
+    if ((Math.abs(r.left) > 2 || Math.abs(r.top) > 2 || r.width < innerWidth * 0.9) && !P.warned) {
+      P.warned = true;
+      log('car player: video not on full screen ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' +
+        Math.round(r.width) + 'x' + Math.round(r.height) + ' of ' + innerWidth + 'x' + innerHeight);
+    }
+  }
+  function unpinVideo(v) {
+    v.classList.remove('jarvis-pl');
+    for (var k in PIN) v.style.removeProperty(k);
   }
 
   function nextDesktop() {
