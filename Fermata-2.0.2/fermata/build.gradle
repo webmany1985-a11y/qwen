@@ -92,6 +92,12 @@ android {
 
     dynamicFeatures.addAll(gradle.ext.modules)
 
+    // Сборка для машины жены (15.11.2026): -PEMBLEMA=buick — фон темы JARVIS с Buick (фото пользователя на прежнем
+    // фоне, src/emblema-buick/sostavit.py). Ресурс только в этом модуле — конфликта частей пакета нет.
+    def emblema = project.getProperties().get('EMBLEMA')
+    if (emblema != null) {
+        sourceSets.release.res.srcDirs += "src/emblema-${emblema}/res"
+    }
     // Перенос на другой телефон (15.11.2026): -PPERENOS=<папка вне репозитория> с perenos/perenos.zip — в выпускную
     // сборку попадает ассет, который FermataApplication распаковывает при первом запуске (см. Perenos.java).
     // В архиве входы пользователя: такой APK — только в scratchpad, не в vypusk/ и не в git.
