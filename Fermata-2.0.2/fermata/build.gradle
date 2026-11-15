@@ -92,6 +92,14 @@ android {
 
     dynamicFeatures.addAll(gradle.ext.modules)
 
+    // Перенос на другой телефон (15.11.2026): -PPERENOS=<папка вне репозитория> с perenos/perenos.zip — в выпускную
+    // сборку попадает ассет, который FermataApplication распаковывает при первом запуске (см. Perenos.java).
+    // В архиве входы пользователя: такой APK — только в scratchpad, не в vypusk/ и не в git.
+    def perenos = project.getProperties().get('PERENOS')
+    if (perenos != null) {
+        sourceSets.release.assets.srcDirs += perenos
+    }
+
     namespace = 'me.aap.fermata'
 }
 

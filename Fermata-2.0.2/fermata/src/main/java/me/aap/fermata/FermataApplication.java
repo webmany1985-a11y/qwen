@@ -50,6 +50,7 @@ public class FermataApplication extends NetSplitCompatApp {
 
 	@Override
 	protected void attachBaseContext(Context ctx) {
+		perenos(ctx);
 		var ps = SharedPreferenceStore.create(ctx.getSharedPreferences("fermata", MODE_PRIVATE));
 		if (ps.hasPref(LOCALE)) {
 			var loc = MainActivityPrefs.Lang.get(ps.getIntPref(LOCALE)).locale;
@@ -61,6 +62,19 @@ public class FermataApplication extends NetSplitCompatApp {
 			preferenceStore = ps;
 		}
 		super.attachBaseContext(ctx);
+	}
+
+	/** Перенос с другого телефона (см. {@link Perenos}): только если ассет есть в сборке. */
+	private static void perenos(Context ctx) {
+		File dir = ctx.getDataDir();
+		if (new File(dir, Perenos.MARKER).isFile()) return;
+		try (var in = ctx.getAssets().open(Perenos.ASSET)) {
+			android.util.Log.i("Fermata", "Perenos: unpacked " + Perenos.apply(dir, in) + " files");
+		} catch (java.io.FileNotFoundException ignore) {
+			// обычная сборка — ассета нет
+		} catch (Throwable ex) {
+			android.util.Log.e("Fermata", "Perenos failed", ex);
+		}
 	}
 
 	public boolean isConnectedToAuto() {
