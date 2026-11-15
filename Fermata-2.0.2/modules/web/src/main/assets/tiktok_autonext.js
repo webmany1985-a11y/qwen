@@ -341,6 +341,7 @@
       log('popup closed: ' + (c.getAttribute('data-e2e') || '?'));
       return;
     }
+    if (closeByText()) return;
     unblockFeed();
     var m = document.querySelector('[data-e2e="middle-cta-container"]');
     // Уже спрятанное окно повторно не разбирать: полный обход страницы каждые
@@ -372,6 +373,50 @@
           cs.backgroundColor.indexOf('rgba') === 0) x.style.setProperty('display', 'none', 'important');
     }
     document.body.style.overflow = '';
+  }
+
+  // То же окно без служебных меток (телефон, 15.11.2026: «Воспользуйтесь всеми функциями приложения» —
+  // «Открыть TikTok» / «Не сейчас» и крестик, сценарий его не узнавал, лента стояла): «Не сейчас» по надписи, а нет
+  // её — крестик (кнопка без текста в правом верхнем углу окна). Только в окне, где говорится о приложении.
+  var NOT_NOW = /^(не\s+сейчас|not\s+now|позже|отмена|cancel)$/i;
+  var closedAt = 0;
+  function promoBox(e) {
+    for (var p = e.parentElement, k = 0; p && p !== document.body && k < 8; k++, p = p.parentElement) {
+      var t = (p.innerText || '').replace(/\s+/g, ' ');
+      if (t.length > 400) return null;
+      if (/приложени|open tiktok|открыть tiktok|get the app/i.test(t)) return p;
+    }
+    return null;
+  }
+  function closeByText() {
+    var now = Date.now();
+    if (now - closedAt < 1500) return false;
+    var els = document.querySelectorAll('button,[role="button"],a,div,span,p');
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i];
+      if (e.childElementCount > 2) continue;
+      var t = (e.innerText || '').trim();
+      if (!t || t.length > 20 || !NOT_NOW.test(t)) continue;
+      var r = e.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var box = promoBox(e);
+      if (!box) continue;
+      closedAt = now;
+      (e.closest('button,[role="button"],a') || e).click();
+      log('popup closed by text «' + t + '» [' + (e.getAttribute('data-e2e') || e.className || e.tagName).toString().slice(0, 60) + ']');
+      return true;
+    }
+    // Крестик: кнопка без текста в окне про приложение
+    var bs = document.querySelectorAll('[role="dialog"] button,[class*="odal"] button,[aria-label*="lose"],[aria-label*="акрыть"]');
+    for (var j = 0; j < bs.length; j++) {
+      var b = bs[j];
+      if ((b.innerText || '').trim() || !b.getBoundingClientRect().width || !promoBox(b)) continue;
+      closedAt = now;
+      b.click();
+      log('popup closed by cross [' + (b.getAttribute('data-e2e') || b.getAttribute('aria-label') || b.className).toString().slice(0, 60) + ']');
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -491,4 +536,5 @@
   }, 500);
 
   window.__jarvisTt = { next: next };
+  log('script on: ' + location.pathname + ', ' + innerWidth + 'x' + innerHeight);
 })();
