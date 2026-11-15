@@ -333,34 +333,55 @@
   // Окно «Воспользуйтесь всеми функциями приложения». Бывает с «Не сейчас»,
   // бывает только с «Открыть TikTok» (16.10.2026, телефон) — тогда прячем само
   // окно: поднимаемся от его содержимого до слоя на весь экран без видео.
-  function closePopups() {
-    var c = document.querySelector(
-      '[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="modal-close-inner-button"]');
-    if (c && c.offsetParent !== null) {
-      c.click();
-      log('popup closed: ' + (c.getAttribute('data-e2e') || '?'));
-      return;
+  // Окно «Воспользуйтесь всеми функциями приложения» — НЕ нажимается, а прячется вместе с затемнением.
+  // Телефон, 15.11.2026: «Не сейчас» (alt-middle-cta-cancel-btn) тоже уводит в приложение (tiktokv.com/redirect →
+  // snssdk1180://), вкладка возвращалась в начало ленты, окно появлялось снова — лента стояла на месте.
+  var NOT_NOW = /^(не\s+сейчас|not\s+now|позже|отмена|cancel)$/i;
+  var APP_PILL = /^(открыть\s+приложение|open\s+app|открыть\s+в\s+приложении)$/i;
+  function promoBox(e) {
+    for (var p = e.parentElement, k = 0; p && p !== document.body && k < 8; k++, p = p.parentElement) {
+      var t = (p.innerText || '').replace(/\s+/g, ' ');
+      if (t.length > 400) return null;
+      if (/приложени|open tiktok|открыть tiktok|get the app/i.test(t)) return p;
     }
-    if (closeByText()) return;
-    unblockFeed();
-    var m = document.querySelector('[data-e2e="middle-cta-container"]');
-    // Уже спрятанное окно повторно не разбирать: полный обход страницы каждые
-    // полсекунды тормозил ленту
-    if (!m || m.offsetParent === null || m.__jarvisHidden) return;
+    return null;
+  }
+  // offsetParent у закреплённых (fixed) элементов всегда null — видимость по размеру и стилю
+  function visible(e) { var r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }
+  // Якорь окна: служебные метки, а нет их — надпись «Не сейчас» в блоке про приложение
+  function promoAnchor() {
+    var m = document.querySelector('[data-e2e="alt-middle-cta-cancel-btn"],[data-e2e="middle-cta-container"],' +
+      '[data-e2e="modal-close-inner-button"]');
+    if (m && visible(m) && !m.__jarvisHidden) return m;
+    // Обход по надписи — не чаще раза в 1,5 с (полный обход страницы каждые полсекунды тормозил ленту)
+    var now = Date.now();
+    if (now - textScanAt < 1500) return null;
+    textScanAt = now;
+    var els = document.querySelectorAll('button,[role="button"],a,div,span,p');
+    for (var i = 0; i < els.length; i++) {
+      var e = els[i];
+      if (e.childElementCount > 2 || e.__jarvisHidden) continue;
+      var t = (e.innerText || '').trim();
+      if (!t || t.length > 20 || !NOT_NOW.test(t) || !visible(e) || !promoBox(e)) continue;
+      return e;
+    }
+    return null;
+  }
+  function hidePromo(m) {
     m.__jarvisHidden = true;
-    log('app promo hidden');
-    // Выше ленты, меню и крупных контейнеров не подниматься: на широком экране
-    // машины видео в ленте может ещё не быть, и без этих ограничений пряталась
-    // вся страница — белый экран (замечание 16.10.2026)
+    // Выше ленты, меню и крупных контейнеров не подниматься: на широком экране машины видео в ленте может ещё не
+    // быть, и без этих ограничений пряталась вся страница — белый экран (замечание 16.10.2026)
     var e = m, layer = null;
     while (e && e !== document.body && e.parentElement !== document.body) {
-      if (e.querySelector('video,[data-e2e="video-slide-active"],.swiper,nav,a[href]')) break;
+      if (e.querySelector('video,[data-e2e="video-slide-active"],.swiper,nav')) break;
       if (e.getElementsByTagName('*').length > 150) break;
       var st = getComputedStyle(e);
       if (st.position === 'fixed' || st.position === 'absolute') layer = e;
       e = e.parentElement;
     }
-    (layer || m).style.setProperty('display', 'none', 'important');
+    var box = layer || promoBox(m) || m;
+    box.style.setProperty('display', 'none', 'important');
+    box.__jarvisHidden = true;
     // Затемнение под окном — отдельный слой на весь экран без содержимого
     var all = document.querySelectorAll('body *');
     for (var i = 0; i < all.length; i++) {
@@ -373,50 +394,31 @@
           cs.backgroundColor.indexOf('rgba') === 0) x.style.setProperty('display', 'none', 'important');
     }
     document.body.style.overflow = '';
+    log('app promo hidden [' + String(m.getAttribute('data-e2e') || (m.innerText || '').trim() || m.tagName).slice(0, 40) + ']');
   }
-
-  // То же окно без служебных меток (телефон, 15.11.2026: «Воспользуйтесь всеми функциями приложения» —
-  // «Открыть TikTok» / «Не сейчас» и крестик, сценарий его не узнавал, лента стояла): «Не сейчас» по надписи, а нет
-  // её — крестик (кнопка без текста в правом верхнем углу окна). Только в окне, где говорится о приложении.
-  var NOT_NOW = /^(не\s+сейчас|not\s+now|позже|отмена|cancel)$/i;
-  var closedAt = 0;
-  function promoBox(e) {
-    for (var p = e.parentElement, k = 0; p && p !== document.body && k < 8; k++, p = p.parentElement) {
-      var t = (p.innerText || '').replace(/\s+/g, ' ');
-      if (t.length > 400) return null;
-      if (/приложени|open tiktok|открыть tiktok|get the app/i.test(t)) return p;
-    }
-    return null;
-  }
-  function closeByText() {
-    var now = Date.now();
-    if (now - closedAt < 1500) return false;
-    var els = document.querySelectorAll('button,[role="button"],a,div,span,p');
+  // Плашка «Открыть приложение» в правом верхнем углу (телефон, 15.11.2026) — спрятать
+  function hideAppPill() {
+    var els = document.querySelectorAll('a,button,[role="button"],div,span');
     for (var i = 0; i < els.length; i++) {
       var e = els[i];
-      if (e.childElementCount > 2) continue;
+      if (e.__jarvisHidden || e.childElementCount > 3) continue;
       var t = (e.innerText || '').trim();
-      if (!t || t.length > 20 || !NOT_NOW.test(t)) continue;
-      var r = e.getBoundingClientRect();
-      if (!r.width || !r.height) continue;
-      var box = promoBox(e);
-      if (!box) continue;
-      closedAt = now;
-      (e.closest('button,[role="button"],a') || e).click();
-      log('popup closed by text «' + t + '» [' + (e.getAttribute('data-e2e') || e.className || e.tagName).toString().slice(0, 60) + ']');
-      return true;
+      if (!t || t.length > 30 || !APP_PILL.test(t) || !visible(e)) continue;
+      var target = e.closest('a,button,[role="button"]') || e;
+      var r = target.getBoundingClientRect();
+      if (r.width * r.height > innerWidth * innerHeight / 6) continue;
+      target.style.setProperty('display', 'none', 'important');
+      target.__jarvisHidden = e.__jarvisHidden = true;
+      log('app button hidden: «' + t + '»');
     }
-    // Крестик: кнопка без текста в окне про приложение
-    var bs = document.querySelectorAll('[role="dialog"] button,[class*="odal"] button,[aria-label*="lose"],[aria-label*="акрыть"]');
-    for (var j = 0; j < bs.length; j++) {
-      var b = bs[j];
-      if ((b.innerText || '').trim() || !b.getBoundingClientRect().width || !promoBox(b)) continue;
-      closedAt = now;
-      b.click();
-      log('popup closed by cross [' + (b.getAttribute('data-e2e') || b.getAttribute('aria-label') || b.className).toString().slice(0, 60) + ']');
-      return true;
-    }
-    return false;
+  }
+  var pillAt = 0, textScanAt = 0;
+  function closePopups() {
+    var m = promoAnchor();
+    if (m) hidePromo(m);
+    unblockFeed();
+    var now = Date.now();
+    if (now - pillAt > 2000) { pillAt = now; hideAppPill(); }
   }
 
   /**

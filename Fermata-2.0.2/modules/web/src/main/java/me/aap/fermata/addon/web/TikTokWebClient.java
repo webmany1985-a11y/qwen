@@ -40,8 +40,15 @@ public class TikTokWebClient extends FermataWebClient {
 		long now = System.currentTimeMillis();
 		if (now - recoveredAt < 5000) return true;
 		recoveredAt = now;
-		Log.i("TikTok: left app link, back to the feed");
-		view.loadUrl(TikTokAddon.DEFAULT_URL);
+		// Назад, а не заново в ленту: лента начиналась с первого ролика, окно «Открыть TikTok» появлялось снова
+		// и перелистывание стояло на месте (журнал 15.11.2026, 15:04)
+		if (view.canGoBack()) {
+			Log.i("TikTok: left app link, back");
+			view.goBack();
+		} else {
+			Log.i("TikTok: left app link, back to the feed");
+			view.loadUrl(TikTokAddon.DEFAULT_URL);
+		}
 		return true;
 	}
 
@@ -93,6 +100,10 @@ public class TikTokWebClient extends FermataWebClient {
 	static boolean isAppLink(Uri uri) {
 		String host = uri.getHost();
 		if (host == null) return false;
+		// tiktokv.com/redirect?redirect_url=snssdk1180://… — переход в приложение (15.11.2026)
+		if (host.endsWith("tiktokv.com") && String.valueOf(uri.getPath()).startsWith("/redirect")) return true;
+		String q = uri.getEncodedQuery();
+		if ((q != null) && q.contains("snssdk")) return true;
 		return host.endsWith("onelink.me") || host.endsWith("app.link") ||
 				host.endsWith("appsflyer.com") || host.equals("play.google.com") ||
 				host.equals("apps.apple.com") || host.startsWith("snssdk");
