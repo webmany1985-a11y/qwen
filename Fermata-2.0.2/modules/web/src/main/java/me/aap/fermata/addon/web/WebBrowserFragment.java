@@ -127,6 +127,7 @@ public class WebBrowserFragment extends MainActivityFragment
 			if (!(f instanceof WebBrowserFragment wf) || (wf.mediaWebView() != v)) continue;
 			if (wf.tabPaused) return;
 			TabMedia.reportWeb(v.getContext(), wf.getFragmentId(), v.getUrl(), time, duration, playing);
+			if (wf instanceof VideoSitesFragment) VideoSitesWebClient.onPlayed(v.getContext(), v.getUrl(), time, duration);
 			return;
 		}
 	}
