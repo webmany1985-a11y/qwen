@@ -38,10 +38,10 @@ public class TikTokFragment extends WebBrowserFragment {
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new TikTokWebClient(), chromeClient);
-		if (isCarScreen(ctx)) {
-			// В машине — версия TikTok для компьютера: под широкий экран, без окна
-			// «Открыть TikTok», которое в мобильной версии затемняло экран и
-			// останавливало ленту (замечание 17.10.2026)
+		{
+			// Версия TikTok для компьютера — в машине (с 17.10.2026: в мобильной окно «Открыть TikTok» затемняло экран и
+			// останавливало ленту) и с 15.11.2026 на телефоне: там мобильная версия показывала то же окно снова и снова,
+			// а «Не сейчас» уводило в приложение — лента стояла. Свой проигрыватель на весь экран — tiktok_autonext.js
 			android.webkit.WebSettings ws = webView.getSettings();
 			String ua = FermataWebView.UserAgent.getUaDesktop(ws, addon);
 			ws.setUserAgentString(ua);
@@ -49,7 +49,7 @@ public class TikTokFragment extends WebBrowserFragment {
 			// fitCarScreen), браузер её примет и впишет в экран
 			ws.setUseWideViewPort(true);
 			ws.setLoadWithOverviewMode(true);
-			me.aap.utils.log.Log.i("TikTok: car screen, desktop version: ", ua);
+			me.aap.utils.log.Log.i("TikTok: desktop version, car ", isCarScreen(ctx), ": ", ua);
 		}
 		webView.loadUrl(resumeUrl(webView, addon.getLastUrl()));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);

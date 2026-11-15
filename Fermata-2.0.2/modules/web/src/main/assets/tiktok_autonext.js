@@ -109,12 +109,18 @@
   // высоту, и страница целиком вписывается в экран машины; меню слева скрыто,
   // чтобы видео было крупнее. Проверено 21.10.2026 на 800×400.
   function fitCarScreen() {
-    if (window.__jarvisFit || !isDesktop() || innerHeight >= 600) return;
+    if (window.__jarvisFit || !isDesktop()) return;
+    // Телефон стоймя (с 15.11.2026 и на телефоне версия для компьютера — в мобильной окно «Открыть TikTok» гоняло
+    // по кругу): страница для компьютера шире экрана (~490 точек), и видео съезжало вправо — ширина 520, браузер
+    // вписывает её в экран
+    var portrait = innerHeight > innerWidth;
+    if (!portrait && innerHeight >= 600) return;
     window.__jarvisFit = true;
-    var w = Math.ceil(640 * innerWidth / innerHeight);
+    var w = portrait ? 520 : Math.ceil(640 * innerWidth / innerHeight);
     var m = document.querySelector('meta[name="viewport"]');
     if (!m) { m = document.createElement('meta'); m.name = 'viewport'; document.head.appendChild(m); }
-    m.content = 'width=' + w;
+    // Стоймя — ещё и масштаб: ширина 520 целиком в экран (screen.width — ширина экрана в точках)
+    m.content = 'width=' + w + (portrait && screen.width ? ',initial-scale=' + (screen.width / w).toFixed(3) : '');
     var st = document.createElement('style');
     st.textContent = '[class*="DivSideNavPlaceholderContainer"],[class*="DivSideNavContainer"]' +
       '{display:none!important}';
