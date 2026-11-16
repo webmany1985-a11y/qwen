@@ -658,7 +658,7 @@ public class SettingsFragment extends MainActivityFragment
 					o.onClick = () -> openLog(a);
 				});
 				if (!BuildConfig.OBNOVLENIE_URL.isEmpty()) {
-					// Сборка жены (16.11.2026): обновление кнопкой, как в «Домашке», установка — через KingInstaller
+					// JARVIS Auto жены и пользователя (16.11.2026): обновление кнопкой, как в «Домашке», установка — через KingInstaller
 					sub1.addButton(o -> {
 						o.title = R.string.jarvis_obnovit;
 						o.subtitle = R.string.jarvis_obnovit_sub;

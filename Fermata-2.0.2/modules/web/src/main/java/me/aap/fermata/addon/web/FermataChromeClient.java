@@ -160,11 +160,11 @@ public class FermataChromeClient extends WebChromeClient {
 
 	/**
 	 * Видео растянуто на всю страницу (assets/zona_play.js) — спрятать и панели приложения, чтобы фильм был на весь
-	 * экран сразу, без касания (Н6, 16.11.2026; только сборка жены — {@link me.aap.fermata.BuildConfig#ZHENA}).
+	 * экран сразу, без касания (Н6, 16.11.2026; обе сборки — жены и пользователя).
 	 * false — вернуть панели. Настоящий полный экран (свой вид) не трогается.
 	 */
 	public void setPageFullScreen(boolean on) {
-		if (!me.aap.fermata.BuildConfig.ZHENA || (on == pageFullScreen) || isFullScreen()) return;
+		if ((on == pageFullScreen) || isFullScreen()) return;
 		pageFullScreen = on;
 		Log.i("Page full screen: ", on);
 		setFullScreen(MainActivityDelegate.get(web.getContext()), on);

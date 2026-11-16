@@ -41,14 +41,11 @@ public class VideoSitesFragment extends WebBrowserFragment {
 		Context ctx = view.getContext();
 		FermataWebView webView = view.findViewById(R.id.browserWebView);
 		ViewGroup fullScreenView = view.findViewById(R.id.browserFullScreenView);
-		FermataChromeClient chromeClient = me.aap.fermata.BuildConfig.ZHENA ?
-				new PopupFilter(webView, fullScreenView) : new FermataChromeClient(webView, fullScreenView);
+		FermataChromeClient chromeClient = new PopupFilter(webView, fullScreenView);
 		webView.init(addon, new VideoSitesWebClient(addon), chromeClient);
-		if (me.aap.fermata.BuildConfig.ZHENA) {
-			// Н6: всплывающие окна — через PopupFilter (реклама не открывается вместо фильма)
-			webView.getSettings().setSupportMultipleWindows(true);
-			webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(false);
-		}
+		// Н6: всплывающие окна — через PopupFilter (реклама не открывается вместо фильма); обе сборки с 16.11.2026
+		webView.getSettings().setSupportMultipleWindows(true);
+		webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(false);
 		AutoFullScreen.install(webView, "Video");
 		StablePage.install(webView, "Video");
 		webView.loadUrl(resumeUrl(webView, VideoSitesPage.HOME));
@@ -101,7 +98,7 @@ public class VideoSitesFragment extends WebBrowserFragment {
 	}
 
 	/**
-	 * Сборка жены (Н6, 16.11.2026, «куча рекламы»): окно, которое страница открывает сама, — открыть во вкладке, только
+	 * Н6, 16.11.2026, «куча рекламы» (сначала сборка жены, затем по просьбе пользователя и его): окно, которое страница открывает сама, — открыть во вкладке, только
 	 * если оно того же сайта и не рекламное; иначе — это всплывающая реклама, она не открывается вместо фильма.
 	 */
 	private static final class PopupFilter extends FermataChromeClient {

@@ -1,21 +1,21 @@
-// Раздача сборки JARVIS Auto жены для кнопки «Обновить приложение» (16.11.2026).
-// Адрес: /<секрет>/jarvis-zhena.json и /<секрет>/jarvis-zhena-N.apk; всё остальное — 404.
-// APK больше предела значения KV (25 МиБ) — лежит частями jarvis-zhena-N.apk.0, .1, …; число частей — в описании
+// Раздача сборок JARVIS Auto для кнопки «Обновить приложение» (16.11.2026): жены (jarvis-zhena) и пользователя
+// (jarvis-auto). Адрес: /<секрет>/<имя>.json и /<секрет>/<имя>-N.apk; всё остальное — 404.
+// APK больше предела значения KV (25 МиБ) — лежит частями <имя>-N.apk.0, .1, …; число частей — в описании
 // выпуска (поле chastej), воркер склеивает их потоком.
 export default {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "HEAD") return new Response("", { status: 405 });
     const parts = new URL(request.url).pathname.split("/").filter(Boolean);
-    if (parts.length !== 2 || parts[0] !== env.SEKRET || !/^jarvis-zhena(-\d+\.apk|\.json)$/.test(parts[1])) {
-      return new Response("", { status: 404 });
-    }
+    const m0 = (parts.length === 2) ? /^(jarvis-(?:zhena|auto))(-\d+\.apk|\.json)$/.exec(parts[1]) : null;
+    if (!m0 || parts[0] !== env.SEKRET) return new Response("", { status: 404 });
+    const imya = m0[1], opis = imya + ".json";
     const nocache = { "Cache-Control": "no-store" };
-    if (parts[1] === "jarvis-zhena.json") {
-      const j = await env.FAJLY.get("jarvis-zhena.json");
+    if (parts[1] === opis) {
+      const j = await env.FAJLY.get(opis);
       if (!j) return new Response("", { status: 404 });
       return new Response(j, { headers: { "Content-Type": "application/json; charset=utf-8", ...nocache } });
     }
-    const m = JSON.parse((await env.FAJLY.get("jarvis-zhena.json")) || "{}");
+    const m = JSON.parse((await env.FAJLY.get(opis)) || "{}");
     if (m.fajl !== parts[1] || !(m.chastej > 0) || !(m.razmer > 0)) return new Response("", { status: 404 });
     const headers = { "Content-Type": "application/vnd.android.package-archive", "Content-Length": String(m.razmer),
       "Content-Disposition": "attachment; filename=" + m.fajl, ...nocache };

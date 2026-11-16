@@ -11,7 +11,7 @@ import java.util.Collections;
 import me.aap.utils.log.Log;
 
 /**
- * Вкладки «Видео» и «Кинопоиск» в сборке жены (Н7, 16.11.2026: «открывается не целиком, листается непонятно, можно
+ * Вкладки «Видео» и «Кинопоиск» (Н7, 16.11.2026, сначала сборка жены, затем по просьбе пользователя и его: «открывается не целиком, листается непонятно, можно
  * зацепить — всё сбивается»; «как YouTube»). Страница стоит, как у вкладки YouTube: по ширине экрана, без увеличения
  * двумя пальцами и двойным касанием, без сдвига всей страницы вбок; листается только вверх-вниз (ряды фильмов внутри
  * страницы листаются вбок, как и раньше).
@@ -37,7 +37,6 @@ final class StablePage {
 	}
 
 	static void install(WebView webView, String tab) {
-		if (!me.aap.fermata.BuildConfig.ZHENA) return;
 		WebSettings s = webView.getSettings();
 		s.setSupportZoom(false);
 		s.setBuiltInZoomControls(false);

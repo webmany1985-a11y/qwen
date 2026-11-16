@@ -200,7 +200,7 @@ public class MainActivity extends SplitCompatActivityBase
 		}
 
 		if (!BuildConfig.OBNOVLENIE_URL.isEmpty()) {
-			// Сборка жены: своя раздача и установка через KingInstaller, а не выпуски автора Fermata
+			// JARVIS Auto (жены и пользователя): своя раздача и установка через KingInstaller, а не выпуски автора Fermata
 			checkZhenaUpdate(false);
 			return;
 		}
@@ -267,7 +267,7 @@ public class MainActivity extends SplitCompatActivityBase
 		String base = BuildConfig.OBNOVLENIE_URL;
 		if (base.isEmpty()) return;
 		if (manual) android.widget.Toast.makeText(this, "Проверяю обновление…", android.widget.Toast.LENGTH_SHORT).show();
-		String reqUrl = me.aap.fermata.jarvis.Obnovlenie.url(base, me.aap.fermata.jarvis.Obnovlenie.MANIFEST);
+		String reqUrl = me.aap.fermata.jarvis.Obnovlenie.url(base, me.aap.fermata.jarvis.Obnovlenie.manifest(BuildConfig.OBNOVLENIE_IMYA));
 		HttpConnection.connect(o -> o.url(reqUrl), (resp, err) -> {
 			if (err != null) {
 				Log.e(err, "Update: no manifest");
@@ -276,7 +276,7 @@ public class MainActivity extends SplitCompatActivityBase
 			}
 			resp.getPayload((p, perr) -> {
 				if (perr != null) return completedNull();
-				return completed(me.aap.fermata.jarvis.Obnovlenie.parse(TextUtils.toString(p, UTF_8)));
+				return completed(me.aap.fermata.jarvis.Obnovlenie.parse(TextUtils.toString(p, UTF_8), BuildConfig.OBNOVLENIE_IMYA));
 			}).main().onSuccess(v -> {
 				if (v == null) {
 					Log.i("Update: manifest not parsed");
