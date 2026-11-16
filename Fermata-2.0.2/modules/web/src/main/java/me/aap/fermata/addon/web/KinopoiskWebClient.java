@@ -32,6 +32,14 @@ public class KinopoiskWebClient extends FermataWebClient {
 		return super.shouldInterceptRequest(view, request);
 	}
 
+	/** Переход внутри страницы (сайт без перезагрузки) — круглая кнопка должна сразу стать «Назад». */
+	@Override
+	public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+		super.doUpdateVisitedHistory(view, url, isReload);
+		me.aap.fermata.ui.activity.MainActivityDelegate.getActivityDelegate(view.getContext()).onSuccess(a ->
+				a.fireBroadcastEvent(me.aap.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED));
+	}
+
 	@Override
 	public void onPageFinished(WebView view, String url) {
 		super.onPageFinished(view, url);

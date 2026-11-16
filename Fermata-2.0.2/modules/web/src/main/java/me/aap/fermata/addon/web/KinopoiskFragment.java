@@ -55,6 +55,24 @@ public class KinopoiskFragment extends WebBrowserFragment {
 		return me.aap.utils.ui.view.ToolBarView.Mediator.Invisible.instance;
 	}
 
+	/** Открыто окно с плеером поверх страницы — не корневая страница: круглая кнопка становится «Назад» (16.11.2026). */
+	@Override
+	public boolean isRootPage() {
+		FermataWebView v = getWebView();
+		return super.isRootPage() && ((v == null) || !v.isPageOverlay());
+	}
+
+	/** «Назад» при открытом окне с плеером — закрыть окно (assets/kinopoisk_noapp.js), а не уйти со страницы. */
+	@Override
+	public boolean onBackPressed() {
+		FermataWebView v = getWebView();
+		if ((v != null) && v.isPageOverlay()) {
+			v.evaluateJavascript("window.__jarvisKpClose&&window.__jarvisKpClose()", null);
+			return true;
+		}
+		return super.onBackPressed();
+	}
+
 	@Override
 	protected String getSearchUrl() {
 		return "https://hd.kinopoisk.ru/search?text=";

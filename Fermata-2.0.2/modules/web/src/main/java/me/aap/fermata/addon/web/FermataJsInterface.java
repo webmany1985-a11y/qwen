@@ -52,6 +52,23 @@ public class FermataJsInterface {
 		});
 	}
 
+	/**
+	 * assets/kinopoisk_noapp.js: открыто / закрыто окно с плеером поверх страницы (16.11.2026, «нету кнопки назад»):
+	 * пока открыто, круглая кнопка — «Назад» и закрывает его.
+	 */
+	@Keep
+	@SuppressWarnings("unused")
+	@JavascriptInterface
+	public void overlay(boolean on) {
+		App.get().run(() -> {
+			if (webView.isPageOverlay() == on) return;
+			webView.setPageOverlay(on);
+			Log.i("Page overlay: ", on);
+			me.aap.fermata.ui.activity.MainActivityDelegate.getActivityDelegate(webView.getContext()).onSuccess(a ->
+					a.fireBroadcastEvent(me.aap.utils.ui.activity.ActivityListener.FRAGMENT_CONTENT_CHANGED));
+		});
+	}
+
 	protected void handleEvent(int event, String data) {
 		switch (event) {
 			case JS_EDIT:

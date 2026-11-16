@@ -56,6 +56,7 @@
     last = now;
     hideBanner();
     try { hideAds(); } catch (x) { }
+    try { reportOverlay(); } catch (x) { }
     var els = document.querySelectorAll(CLICKABLE);
     var goApp = [];
     for (var i = 0; i < els.length; i++) {
@@ -99,7 +100,8 @@
     target.style.setProperty('display', 'none', 'important');
     log('bottom app banner hidden');
   };
-  // Блок рекламы с пометкой «Реклама» (16.11.2026, снимок пользователя: плакат поверх главной, «РЕКЛАМА», «⋯» и ✕):
+  // Блок рекламы с пометкой «Реклама» (16.11.2026, снимок пользователя: плакат поверх главной, «РЕКЛАМА», «⋯» и ✕;
+  // на www.kinopoisk.ru это закреплённый 200×300 div.styles_root… styles_adfoxSpecialPo…):
   // от надписи вверх — до закреплённого/плавающего блока не крупнее 3/4 экрана; страница и шапка не прячутся
   var AD_MARK = /^(реклама|ad|advertisement)$/i;
   var hideAds = function () {
@@ -108,13 +110,16 @@
       var e = l[i];
       if (e.children.length || e.__jarvisAd || !AD_MARK.test(text(e))) continue;
       e.__jarvisAd = true;
+      // Сама надпись тоже бывает в закреплённой обёртке (53×12, снято 16.11.2026) — останавливаться только на
+      // закреплённом блоке размером с баннер (от 120×80) или на блоке AdFox
       var target = null;
-      for (var p = e.parentElement, k = 0; p && p !== document.body && k < 8; k++, p = p.parentElement) {
+      for (var p = e.parentElement, k = 0; p && p !== document.body && k < 10; k++, p = p.parentElement) {
         var r = p.getBoundingClientRect();
-        if (r.width * r.height > innerWidth * innerHeight * 0.75) break;
+        if (r.width * r.height > innerWidth * innerHeight * 0.75 || text(p).length > 300) break;
         target = p;
+        if (/adfox/i.test(String(p.className)) || /^adfox_/.test(p.id)) break;
         var pos = getComputedStyle(p).position;
-        if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') break;
+        if ((pos === 'fixed' || pos === 'sticky' || pos === 'absolute') && r.width >= 120 && r.height >= 80) break;
       }
       if (target) {
         target.style.setProperty('display', 'none', 'important');
@@ -122,9 +127,68 @@
       }
     }
   };
+  // Окно с плеером поверх страницы (16.11.2026, снимок пользователя: трейлер на весь экран, крестик сайта вверху,
+  // «нету кнопки назад»): закреплённый блок на ≥60% экрана с видео или встроенным плеером. Приложению — открыт / закрыт
+  // (Fermata.overlay): пока открыт, круглая кнопка — «Назад» и вызывает __jarvisKpClose.
+  var overlayEl = function () {
+    var l = document.querySelectorAll('video,iframe');
+    for (var i = 0; i < l.length; i++) {
+      for (var p = l[i].parentElement, k = 0; p && p !== document.body && k < 12; k++, p = p.parentElement) {
+        if (getComputedStyle(p).position !== 'fixed') continue;
+        var r = p.getBoundingClientRect();
+        if (r.width * r.height >= innerWidth * innerHeight * 0.6 && getComputedStyle(p).display !== 'none') return p;
+        break;
+      }
+    }
+    return null;
+  };
+  var overlayOn = false;
+  var reportOverlay = function () {
+    if (window.top !== window) return;
+    var on = !!overlayEl();
+    if (on === overlayOn) return;
+    overlayOn = on;
+    try { if (window.Fermata && window.Fermata.overlay) window.Fermata.overlay(on); } catch (x) { }
+    log('player overlay ' + (on ? 'open' : 'closed'));
+  };
+  var CLOSE_RE = /закрыть|close|назад|back|выйти|exit/i;
+  window.__jarvisKpClose = function () {
+    var o = overlayEl();
+    if (!o) { reportOverlay(); return false; }
+    // 1) кнопка закрытия самого сайта: по подписи или классу, видимая
+    var l = o.querySelectorAll('button,a,[role=button],[aria-label],[class*=lose],[class*=ack]');
+    for (var i = 0; i < l.length; i++) {
+      var e = l[i], t = (e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '') + ' ' + String(e.className);
+      if (!CLOSE_RE.test(t) || !visible(e)) continue;
+      try { e.click(); } catch (x) { }
+      log('player overlay: close clicked');
+      setTimeout(window.__jarvisKpCheck, 700);
+      return true;
+    }
+    // 2) Esc
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    } catch (x) { }
+    setTimeout(window.__jarvisKpCheck, 700);
+    return true;
+  };
+  // 3) не закрылось — спрятать окно, остановить видео в нём
+  window.__jarvisKpCheck = function () {
+    var o = overlayEl();
+    if (o) {
+      var v = o.querySelectorAll('video');
+      for (var i = 0; i < v.length; i++) { try { v[i].pause(); } catch (x) { } }
+      var f = o.querySelectorAll('iframe');
+      for (var j = 0; j < f.length; j++) { try { f[j].src = 'about:blank'; } catch (x) { } }
+      o.style.setProperty('display', 'none', 'important');
+      log('player overlay hidden');
+    }
+    reportOverlay();
+  };
   var style = function () {
     var st = document.createElement('style');
-    st.textContent = BANNER + ',div:has(> ' + BANNER + '),[id^="adfox_"],[id^="yandex_rtb"]{display:none!important}';
+    st.textContent = BANNER + ',div:has(> ' + BANNER + '),[id^="adfox_"],[id^="yandex_rtb"],[class*="adfoxSpecial"]{display:none!important}';
     (document.head || document.documentElement).appendChild(st);
   };
   var start = function () {

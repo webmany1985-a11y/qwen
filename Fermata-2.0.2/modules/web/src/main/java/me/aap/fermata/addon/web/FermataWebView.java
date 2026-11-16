@@ -234,6 +234,17 @@ public class FermataWebView extends WebView
 		return chrome;
 	}
 
+	/** Страница сообщила, что поверх неё открыто окно с плеером (Кинопоиск, assets/kinopoisk_noapp.js, 16.11.2026). */
+	private boolean pageOverlay;
+
+	public boolean isPageOverlay() {
+		return pageOverlay;
+	}
+
+	void setPageOverlay(boolean on) {
+		pageOverlay = on;
+	}
+
 	protected void pageLoaded(String uri) {
 		addFocusHighlight();
 		getAddon().setLastUrl(uri);
