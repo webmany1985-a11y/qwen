@@ -37,6 +37,7 @@ public class KinopoiskFragment extends WebBrowserFragment {
 		FermataChromeClient chromeClient = new FermataChromeClient(webView, fullScreenView);
 		webView.init(addon, new KinopoiskWebClient(), chromeClient);
 		AutoFullScreen.install(webView, "Kinopoisk");
+		StablePage.install(webView, "Kinopoisk");
 		KinopoiskNoApp.install(webView);
 		webView.loadUrl(resumeUrl(webView, addon.getLastUrl()));
 		MainActivityDelegate.getActivityDelegate(ctx).onSuccess(this::registerListeners);

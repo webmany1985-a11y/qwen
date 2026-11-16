@@ -52,6 +52,10 @@ public class VideoSitesWebClient extends FermataWebClient {
 	public WebResourceResponse shouldInterceptRequest(@NonNull WebView view,
 																										@NonNull WebResourceRequest request) {
 		Uri u = request.getUrl();
+		if (me.aap.fermata.BuildConfig.ZHENA && AdHosts.isAd(u.getHost())) {
+			// Н6: реклама и счётчики не грузятся (сборка жены)
+			return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
+		}
 		if (VideoSitesPage.HOST.equals(u.getHost())) {
 			try {
 				WebResourceResponse r = local(view.getContext(), u, request.isForMainFrame());
@@ -85,7 +89,21 @@ public class VideoSitesWebClient extends FermataWebClient {
 			Log.i("Video: store link blocked ", u);
 			return true;
 		}
+		if (me.aap.fermata.BuildConfig.ZHENA && AdHosts.isAd(u.getHost())) {
+			Log.i("Video: ad page blocked ", u.getHost());
+			return true;
+		}
 		return super.shouldOverrideUrlLoading(view, request);
+	}
+
+	@Override
+	public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+		// Ушли со страницы фильма — панели приложения обратно (их прятал zona_play.js, Н6)
+		if (view instanceof FermataWebView w) {
+			FermataChromeClient c = w.getWebChromeClient();
+			if ((c != null) && c.isPageFullScreen()) c.setPageFullScreen(false);
+		}
+		super.onPageStarted(view, url, favicon);
 	}
 
 	@Override

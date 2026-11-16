@@ -73,6 +73,21 @@ public class PogodaTest {
 		assertEquals(0, px[0]);
 	}
 
+	/** Н8: цветной значок (Buick) — красный щит внутри круга keepR в дождь остаётся красным, огонь снаружи — холодный. */
+	@Test
+	public void colorBadgeKeepsRedShield() {
+		int w = 512;
+		int[] px = new int[w * w];
+		int shieldAt = 256 * w + 256 - 48;  // левый щит — красный
+		int fireAt = 256 * w + 256 + 130;   // огонь за кольцом
+		px[shieldAt] = 0xFFC81824;
+		px[fireAt] = 0xFFE07018;
+		Pogoda.recolorBadge(px, w, RAIN, 112f);
+		int s = px[shieldAt], f = px[fireAt];
+		assertTrue("щит остался красным", ((s >> 16) & 255) > 150 && (s & 255) < 80);
+		assertTrue("огонь снаружи стал холодным", (f & 255) > ((f >> 16) & 255));
+	}
+
 	@Test
 	public void particlesStayAroundEmblemAndMove() {
 		for (Pogoda.Kind k : new Pogoda.Kind[]{SNOW, RAIN, FROST}) {

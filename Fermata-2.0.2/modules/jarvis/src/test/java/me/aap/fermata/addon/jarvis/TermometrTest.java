@@ -108,4 +108,17 @@ public class TermometrTest {
 		assertTrue(Termometr.placeUrl(53.7383, 27.5044).contains("lat=53.73830&lon=27.50440"));
 		assertTrue(Termometr.placeUrl(53.7383, 27.5044).contains("accept-language=ru"));
 	}
+
+	/** Н3: старое или пустое последнее место — запросить свежее; свежее (до получаса) — использовать. */
+	@Test
+	public void needFreshFix() {
+		long now = 1_800_000_000_000L;
+		assertTrue(Termometr.needFreshFix(0L, now));
+		assertTrue(Termometr.needFreshFix(now - 31 * 60_000L, now));
+		assertTrue(Termometr.needFreshFix(now - 5 * 3_600_000L, now));
+		assertFalse(Termometr.needFreshFix(now - 29 * 60_000L, now));
+		assertFalse(Termometr.needFreshFix(now, now));
+		// часы телефона перевели назад
+		assertTrue(Termometr.needFreshFix(now + 31 * 60_000L, now));
+	}
 }

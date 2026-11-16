@@ -99,6 +99,14 @@ public final class Pogoda {
 	 * при снеге и морозе по хрому иней (зерно, гуще к краю значка). w — сторона квадратного слоя.
 	 */
 	public static void recolorBadge(@NonNull int[] argb, int w, @NonNull Kind k) {
+		recolorBadge(argb, w, k, 0f);
+	}
+
+	/**
+	 * То же, но круг радиусом keepR (в единицах слоя 512) не перекрашивается: цветной значок (Buick, Н8 16.11.2026 —
+	 * красный щит иначе ушёл бы в палитру погоды) остаётся цветным; иней по краю значка — как прежде.
+	 */
+	public static void recolorBadge(@NonNull int[] argb, int w, @NonNull Kind k, float keepR) {
 		if (k == Kind.FIRE) return;
 		float frost = (k == Kind.SNOW) ? 1f : (k == Kind.FROST) ? 1f : 0f;
 		Random rnd = new Random(7);
@@ -115,6 +123,7 @@ public final class Pogoda {
 				if (a == 0) continue;
 				float r = ((p >> 16) & 255) / 255f, g = ((p >> 8) & 255) / 255f, b = (p & 255) / 255f;
 				float warm = Math.max(0f, Math.min(1f, (r - b) * 2.2f));
+				if ((keepR > 0f) && (Math.hypot(x - c, y - c) / unit < keepR)) warm = 0f;
 				int pc = palette(k, 0.3f * r + 0.55f * g + 0.15f * b);
 				float pr = ((pc >> 16) & 255) / 255f, pg = ((pc >> 8) & 255) / 255f, pb = (pc & 255) / 255f;
 				r = (r * (1 - warm) + pr * warm) * 0.88f;

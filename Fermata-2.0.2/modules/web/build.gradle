@@ -45,6 +45,11 @@ ext {
                     order: 3
             ]
     ]
+    // Сборка жены (-PEMBLEMA=buick, 16.11.2026, Н5): вкладки TikTok нет — «толком не работает, зря место занимает».
+    // Код дополнения остаётся (сборка пользователя его использует), в список вкладок жены оно не попадает.
+    if (project.getProperties().get('EMBLEMA') == 'buick') {
+        addons.removeIf { it.name == 'tiktok' }
+    }
 }
 
 dependencies {

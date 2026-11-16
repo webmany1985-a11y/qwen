@@ -30,6 +30,9 @@
     }
     return null;
   }
+  function fullTab(on) {
+    try { if (window.Fermata && window.Fermata.fullTab) window.Fermata.fullTab(on); } catch (x) { }
+  }
   function pin(v) {
     if (pinned === v) return;
     pinned = v;
@@ -43,9 +46,12 @@
     x.addEventListener('click', function () {
       for (var k in PIN) v.style.removeProperty(k);
       x.remove();
+      fullTab(false);
       log('player back to page');
     });
     document.body.appendChild(x);
+    // Н6 (16.11.2026): и панели приложения спрятать — фильм сразу на весь экран (только сборка жены, решает приложение)
+    fullTab(true);
     log('player on full tab');
   }
   var t = setInterval(function () {

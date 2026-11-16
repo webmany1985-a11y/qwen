@@ -21,6 +21,11 @@ public final class Termometr {
 	public static final long STALE_MS = 60 * 60_000L;
 	/** Переезд дальше километра — название запрашивается заново. */
 	public static final double MOVED_M = 1000.0;
+	/**
+	 * Местоположение старше получаса — запросить свежее (Н3, 16.11.2026: у жены температура не обновлялась —
+	 * на телефоне без навигатора последнее известное место подолгу не обновляется или его нет вовсе).
+	 */
+	public static final long FIX_FRESH_MS = 30 * 60_000L;
 	/** Пусто — значения нет. */
 	public static final String NO_TEMP = "—°";
 	public static final String CAPTION = "за бортом";
@@ -153,6 +158,11 @@ public final class Termometr {
 	/** Пора ли запросить температуру заново (часы могли перевести назад — тогда тоже пора). */
 	public static boolean due(long lastAt, long now) {
 		return (lastAt <= 0L) || (now - lastAt) >= REFRESH_MS || (now < lastAt);
+	}
+
+	/** Последнее известное местоположение (время фиксации fixTime) слишком старое или его нет — нужно свежее. */
+	public static boolean needFreshFix(long fixTime, long now) {
+		return (fixTime <= 0L) || (now - fixTime) > FIX_FRESH_MS || (fixTime - now) > FIX_FRESH_MS;
 	}
 
 	/** Телефон переехал дальше километра от места, для которого известно название. */

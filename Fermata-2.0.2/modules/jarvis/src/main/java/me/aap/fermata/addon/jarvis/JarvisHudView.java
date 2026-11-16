@@ -126,6 +126,8 @@ public class JarvisHudView extends View {
 	/** Слои значка, перекрашенные под погоду; null — огонь, исходные слои. */
 	@Nullable
 	private Bitmap opelK, ogonK;
+	/** Цветной значок (сборка жены, Buick): круг значка этого радиуса погода не перекрашивает; 0 — перекрашивает. */
+	private final float badgeKeepR;
 	/** Сосульки, капли, иней — поверх значка, в его масштабе. */
 	@Nullable
 	private Bitmap weatherOverlay;
@@ -151,6 +153,7 @@ public class JarvisHudView extends View {
 	public JarvisHudView(Context ctx) {
 		super(ctx);
 		light = ctx.getResources().getBoolean(R.bool.jarvis_legkij_pokaz);
+		badgeKeepR = ctx.getResources().getBoolean(R.bool.jarvis_znachok_cvetnoj) ? 112f : 0f;
 		dp = ctx.getResources().getDisplayMetrics().density;
 		title = ctx.getString(R.string.jarvis_hud_title);
 		listening = ctx.getString(R.string.jarvis_hud_listening);
@@ -208,8 +211,8 @@ public class JarvisHudView extends View {
 			mistPaint = null;
 		} else {
 			try {
-				opelK = recolored(opel, k, true);
-				ogonK = recolored(ogon, k, false);
+				opelK = recolored(opel, k, true, badgeKeepR);
+				ogonK = recolored(ogon, k, false, 0f);
 				weatherOverlay = overlayFor(k, opel.getWidth());
 				weatherPuff = puffPaints(k);
 				weatherFx = new Pogoda.Fx(k);
@@ -230,11 +233,11 @@ public class JarvisHudView extends View {
 		return weatherKind;
 	}
 
-	private static Bitmap recolored(Bitmap src, Pogoda.Kind k, boolean badge) {
+	private static Bitmap recolored(Bitmap src, Pogoda.Kind k, boolean badge, float keepR) {
 		int w = src.getWidth(), h = src.getHeight();
 		int[] px = new int[w * h];
 		src.getPixels(px, 0, w, 0, 0, w, h);
-		if (badge) Pogoda.recolorBadge(px, w, k);
+		if (badge) Pogoda.recolorBadge(px, w, k, keepR);
 		else Pogoda.recolorRing(px, k);
 		return Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
 	}

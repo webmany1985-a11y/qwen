@@ -41,6 +41,17 @@ public class FermataJsInterface {
 		App.get().run(() -> WebBrowserFragment.onTabMedia(webView, playing, time, duration));
 	}
 
+	/** assets/zona_play.js: фильм растянут на всю страницу (true) / ✕ — обратно к странице (false). */
+	@Keep
+	@SuppressWarnings("unused")
+	@JavascriptInterface
+	public void fullTab(boolean on) {
+		App.get().run(() -> {
+			FermataChromeClient c = webView.getWebChromeClient();
+			if (c != null) c.setPageFullScreen(on);
+		});
+	}
+
 	protected void handleEvent(int event, String data) {
 		switch (event) {
 			case JS_EDIT:

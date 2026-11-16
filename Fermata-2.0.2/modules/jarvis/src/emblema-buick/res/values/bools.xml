@@ -2,4 +2,6 @@
 <resources>
     <!-- Сборка жены (16.11.2026): сфера 30 кадров/с, огонь в покое 15 кадров/с — телефон слабее -->
     <bool name="jarvis_legkij_pokaz">true</bool>
+    <!-- Сборка жены (16.11.2026, Н8): щиты Buick цветные — в дождь и снег не перекрашивать -->
+    <bool name="jarvis_znachok_cvetnoj">true</bool>
 </resources>

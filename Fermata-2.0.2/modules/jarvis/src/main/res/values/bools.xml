@@ -2,4 +2,6 @@
 <resources>
     <!-- Облегчённый показ сферы (30 кадров/с, покой 15): включает только сборка жены -PEMBLEMA=buick -->
     <bool name="jarvis_legkij_pokaz">false</bool>
+    <!-- Значок цветной (Buick) — погода его не перекрашивает; только сборка жены -->
+    <bool name="jarvis_znachok_cvetnoj">false</bool>
 </resources>

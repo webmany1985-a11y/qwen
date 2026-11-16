@@ -1,4 +1,4 @@
-"""Свой рисунок эмблемы Buick (хромированное кольцо и три щита) на слое значка JARVIS Auto.
+"""Свой рисунок эмблемы Buick (хромированное кольцо и три цветных щита: красный, серебристый, синий) на слое значка JARVIS Auto.
 Берёт прежний слой jarvis_opel_znachok.webp, оставляет в нём только слабый огонь снаружи кольца (r >= 104),
 внутри рисует хром. Запуск: python3 narisovat.py <прежний znachok.webp> <новый znachok.webp> [превью.png ogon.webp]"""
 import sys, math
@@ -67,11 +67,16 @@ layers = []
 layers.append(chrome(ring))
 o_rgb, o_a = chrome(sh_out)
 layers.append((o_rgb, o_a))
-# внутренность щита — тёмная сталь (огонь за ней не просвечивает, как и за значком Opel)
-i_a = np.asarray(sh_in, dtype=np.float32) / 255
+# внутренность щитов — цветная, как у настоящего значка (Н8, 16.11.2026): левый красный, средний серебристый,
+# правый синий; блик сверху, тень снизу — эмаль, огонь за ней не просвечивает
 yy = np.linspace(0, 1, N)[:, None] * np.ones((1, N))
-dv = np.interp(yy, [0, .5, 1], [.30, .12, .22])
-layers.append((np.stack([dv * 200 + 15, dv * 205 + 15, dv * 220 + 20], -1), i_a))
+shade = np.interp(yy, [0, .38, .5, .62, 1], [1.15, 1.0, .78, .95, .70])
+COLORS = [(200, 24, 36), (196, 200, 208), (28, 70, 190)]         # красный, серебристый, синий
+for pts, col in zip(inner, COLORS):
+    m = mask(lambda d, pts=pts: d.polygon(pts, fill=255))
+    a = np.asarray(m, dtype=np.float32) / 255
+    rgb = np.stack([np.clip(ch * shade, 0, 255) for ch in col], -1)
+    layers.append((rgb, a))
 layers.append(chrome(bar, flip=True))
 
 rgb = np.zeros((N, N, 3), np.float32); al = np.zeros((N, N), np.float32)

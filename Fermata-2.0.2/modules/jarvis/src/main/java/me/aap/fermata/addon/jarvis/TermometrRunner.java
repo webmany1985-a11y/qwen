@@ -122,11 +122,27 @@ final class TermometrRunner {
 		boolean ok = false;
 		try {
 			Location l = lastLocation();
-			if (l == null) {
+			if ((l == null) || Termometr.needFreshFix(l.getTime(), System.currentTimeMillis())) {
+				// Последнее известное место старое или его нет: само оно не обновится, если ни одно приложение
+				// не спрашивает местоположение (телефон жены, Н3) — спросить один раз
+				Location f = currentLocation();
+				Log.i("JARVIS temp: last fix ", (l == null) ? "none" : ((System.currentTimeMillis() - l.getTime()) / 60_000L + " min old"),
+						", fresh fix ", (f == null) ? "none" : "ok");
+				if (f != null) l = f;
+			}
+			double lat, lon;
+			if (l != null) {
+				lat = l.getLatitude();
+				lon = l.getLongitude();
+			} else if (prefs.contains("plat")) {
+				// Места нет совсем — температура для последнего известного места лучше, чем «—°»
+				lat = Double.longBitsToDouble(prefs.getLong("plat", 0L));
+				lon = Double.longBitsToDouble(prefs.getLong("plon", 0L));
+				Log.i("JARVIS temp: no location, using saved place");
+			} else {
 				Log.i("JARVIS temp: no location (permission or none)");
 				return;
 			}
-			double lat = l.getLatitude(), lon = l.getLongitude();
 			String reply = get(Termometr.weatherUrl(lat, lon));
 			Double t = Termometr.parseTemp(reply);
 			Integer code = Termometr.parseCode(reply);
@@ -191,6 +207,45 @@ final class TermometrRunner {
 		} finally {
 			if (c != null) c.disconnect();
 		}
+	}
+
+	/** Свежее местоположение (сеть, затем GPS), ждём до 20 с; null — не получилось. Вызывать не в главном потоке. */
+	@Nullable
+	private Location currentLocation() {
+		if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+				ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+			return null;
+		}
+		LocationManager lm = (LocationManager) ctx.getSystemService(Context.LOCATION_SERVICE);
+		if (lm == null) return null;
+		for (String p : new String[]{LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER}) {
+			try {
+				if (!lm.isProviderEnabled(p)) continue;
+				java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+				Location[] got = new Location[1];
+				if (android.os.Build.VERSION.SDK_INT >= 30) {
+					android.os.CancellationSignal cancel = new android.os.CancellationSignal();
+					//noinspection MissingPermission
+					lm.getCurrentLocation(p, cancel, Runnable::run, loc -> {
+						got[0] = loc;
+						done.countDown();
+					});
+					if (!done.await(20, java.util.concurrent.TimeUnit.SECONDS)) cancel.cancel();
+				} else {
+					android.location.LocationListener ll = loc -> {
+						got[0] = loc;
+						done.countDown();
+					};
+					//noinspection MissingPermission,deprecation
+					lm.requestSingleUpdate(p, ll, Looper.getMainLooper());
+					if (!done.await(20, java.util.concurrent.TimeUnit.SECONDS)) lm.removeUpdates(ll);
+				}
+				if (got[0] != null) return got[0];
+			} catch (Exception e) {
+				Log.i("JARVIS temp: fresh fix ", p, " failed ", e.getClass().getSimpleName());
+			}
+		}
+		return null;
 	}
 
 	/** Последнее известное местоположение — как в {@link FuelRunner}; null — нет или нет разрешения. */

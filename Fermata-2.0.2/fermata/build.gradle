@@ -7,6 +7,8 @@ android {
         versionCode VERSION_CODE
         versionName VERSION_NAME
         base.archivesName = "fermata-$versionName"
+        // Сборка жены (-PEMBLEMA=buick, 16.11.2026): поведение вкладок «Видео» и «Кинопоиск» только для неё
+        buildConfigField "boolean", 'ZHENA', "${project.getProperties().get('EMBLEMA') == 'buick'}"
 
         ndk {
             //noinspection ChromeOsAbiSupport
