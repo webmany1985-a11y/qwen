@@ -270,6 +270,35 @@ public final class HudMath {
 		return clamp(rawSeconds, 0f, MAX_DT);
 	}
 
+	/** Облегчённый показ (сборка жены, 16.11.2026): шаг кадра при сфере и разговоре, мс (30 кадров/с). */
+	public static final long LIGHT_FRAME_MS = 33L;
+	/** Облегчённый показ: шаг кадра в покое (значок и огонь), мс (15 кадров/с). */
+	public static final long LIGHT_IDLE_FRAME_MS = 66L;
+
+	/**
+	 * Шаг между кадрами, мс; 0 — каждый кадр экрана (обычная сборка). В облегчённом показе покой —
+	 * только когда значок раскрыт полностью (morph = 0): превращение в сферу идёт с частотой разговора.
+	 */
+	public static long frameIntervalMs(boolean light, Phase phase, float morph) {
+		if (!light) return 0L;
+		return ((phase == Phase.IDLE) && (morph <= 0f)) ? LIGHT_IDLE_FRAME_MS : LIGHT_FRAME_MS;
+	}
+
+	/**
+	 * Шаг времени кадра при заданном шаге кадров: предел не меньше полутора шагов кадра, иначе при
+	 * 15 кадрах/с (66 мс) предел {@link #MAX_DT} срезал бы время и огонь шёл бы медленнее настоящего.
+	 */
+	public static float clampDt(float rawSeconds, long frameMs) {
+		return clamp(rawSeconds, 0f, max(MAX_DT, frameMs * 1.5f / 1000f));
+	}
+
+	/** Сколько ждать до следующего кадра, мс; 0 — следующий кадр экрана. elapsedMs — сколько уже занял кадр. */
+	public static long frameDelayMs(long intervalMs, long elapsedMs) {
+		if (intervalMs <= 0L) return 0L;
+		// Запас 4 мс: перерисовка совпадает с кадром экрана, иначе ушла бы на следующий (лишние 16 мс)
+		return max(0L, intervalMs - max(0L, elapsedMs) - 4L);
+	}
+
 	/** Секунды от startNanos до nowNanos; отрицательным не бывает. */
 	public static float sinceSeconds(long nowNanos, long startNanos) {
 		return max(0L, nowNanos - startNanos) / 1_000_000_000f;

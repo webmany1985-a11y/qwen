@@ -142,9 +142,15 @@ public class JarvisHudView extends View {
 	private long start = -1L;
 	private long prev = -1L;
 	private float since;
+	/** Облегчённый показ — только сборка жены (ресурс jarvis_legkij_pokaz в src/emblema-buick). */
+	private final boolean light;
+	/** Шаг кадров текущего кадра, мс (0 — каждый кадр экрана). */
+	private long frameMs;
+	private final Runnable tick = this::postInvalidateOnAnimation;
 
 	public JarvisHudView(Context ctx) {
 		super(ctx);
+		light = ctx.getResources().getBoolean(R.bool.jarvis_legkij_pokaz);
 		dp = ctx.getResources().getDisplayMetrics().density;
 		title = ctx.getString(R.string.jarvis_hud_title);
 		listening = ctx.getString(R.string.jarvis_hud_listening);
@@ -321,7 +327,7 @@ public class JarvisHudView extends View {
 	private void drawWeatherFx(Canvas c, float cx, float cy, float ringPx, float alpha) {
 		Pogoda.Fx fx = weatherFx;
 		if ((fx == null) || (alpha <= 0.01f)) return;
-		fx.step(HudMath.clampDt(fireDt));
+		fx.step(HudMath.clampDt(fireDt, frameMs));
 		for (int i = 0; i < fx.count; i++) {
 			float x = cx + fx.x[i] * ringPx, y = cy + fx.y[i] * ringPx;
 			float a = clamp(fx.alpha(i) * alpha, 0f, 1f);
@@ -493,7 +499,8 @@ public class JarvisHudView extends View {
 			prev = now;
 		}
 		float t = HudMath.sinceSeconds(now, start);
-		float dt = HudMath.clampDt(HudMath.sinceSeconds(now, prev));
+		frameMs = HudMath.frameIntervalMs(light, phase, morph);
+		float dt = HudMath.clampDt(HudMath.sinceSeconds(now, prev), frameMs);
 		fireDt = dt;
 		float real = (phase == HudMath.Phase.SPEAK) ? HudMath.speakLevel(t) : micLevel;
 		animator.advance(phase, real, t, dt);
@@ -515,7 +522,12 @@ public class JarvisHudView extends View {
 		}
 		drawWeather(c);
 
-		if (isShown()) postInvalidateOnAnimation();
+		if (!isShown()) return;
+		long wait = HudMath.frameDelayMs(frameMs, (System.nanoTime() - now) / 1_000_000L);
+		// Одна цепочка кадров: invalidate() извне (фаза, погода) не должен добавлять вторую — иначе частота удвоится
+		removeCallbacks(tick);
+		if (wait > 0L) postDelayed(tick, wait);
+		else postInvalidateOnAnimation();
 	}
 
 	/** Цвета кадра по смешению золото/бирюза; фильтр сферы-картинки — только когда смешение изменилось. */
@@ -854,7 +866,7 @@ public class JarvisHudView extends View {
 		fireMesh(f, cx, cy, sc, 1f, 0f, t, 0f);
 		image.setAlpha(Math.round(255f * clamp(alpha * 0.55f * Pogoda.ringGain(wk) * EmblemMorph.flicker(t, 0f), 0f, 1f)));
 		c.drawBitmapMesh(f, FIRE_MESH, FIRE_MESH, opelMesh, 0, null, 0, image);
-		fire.step(HudMath.clampDt(fireDt));
+		fire.step(HudMath.clampDt(fireDt, frameMs));
 		for (int i = 0; i < EmblemMorph.Fire.MAX; i++) {
 			if (!fire.alive[i]) continue;
 			float a = fire.alpha(i) * alpha * puffGain;

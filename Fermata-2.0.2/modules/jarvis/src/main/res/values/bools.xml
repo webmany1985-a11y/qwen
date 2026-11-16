@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Облегчённый показ сферы (30 кадров/с, покой 15): включает только сборка жены -PEMBLEMA=buick -->
+    <bool name="jarvis_legkij_pokaz">false</bool>
+</resources>

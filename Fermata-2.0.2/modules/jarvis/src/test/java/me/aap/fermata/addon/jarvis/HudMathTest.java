@@ -187,4 +187,44 @@ public class HudMathTest {
 		// Разные участки края в один момент сдвинуты по-разному
 		assertTrue(Math.abs(HudMath.warp(0f, 1f, 1f, 1f) - HudMath.warp(1.5f, 1f, 1f, 1f)) > 0.005f);
 	}
+
+	/** Н2 (16.11.2026): обычная сборка — каждый кадр экрана, как было. */
+	@Test
+	public void normalBuildDrawsEveryFrame() {
+		for (Phase p : Phase.values()) {
+			assertEquals(0L, HudMath.frameIntervalMs(false, p, 0f));
+			assertEquals(0L, HudMath.frameIntervalMs(false, p, 1f));
+		}
+		assertEquals(0L, HudMath.frameDelayMs(0L, 5L));
+		assertEquals(HudMath.MAX_DT, HudMath.clampDt(10f, 0L), 0f);
+		assertEquals(HudMath.clampDt(0.03f), HudMath.clampDt(0.03f, 0L), 0f);
+	}
+
+	/** Н2: облегчённый показ — 30 кадров/с при сфере и разговоре, 15 в покое со значком. */
+	@Test
+	public void lightBuildFrameRates() {
+		assertEquals(66L, HudMath.frameIntervalMs(true, Phase.IDLE, 0f));
+		assertEquals(66L, HudMath.frameIntervalMs(true, Phase.IDLE, -1f));
+		assertEquals(33L, HudMath.frameIntervalMs(true, Phase.IDLE, 0.5f));
+		assertEquals(33L, HudMath.frameIntervalMs(true, Phase.LISTEN, 0f));
+		assertEquals(33L, HudMath.frameIntervalMs(true, Phase.THINK, 1f));
+		assertEquals(33L, HudMath.frameIntervalMs(true, Phase.SPEAK, 1f));
+	}
+
+	/** Н2: при 15 кадрах/с огонь идёт с настоящей скоростью — шаг 66 мс не срезается, долгая пауза срезается. */
+	@Test
+	public void lightBuildKeepsRealTime() {
+		assertEquals(0.066f, HudMath.clampDt(0.066f, 66L), 1e-6f);
+		assertEquals(0.033f, HudMath.clampDt(0.033f, 33L), 1e-6f);
+		assertEquals(0.099f, HudMath.clampDt(5f, 66L), 1e-6f);
+		assertEquals(0f, HudMath.clampDt(-1f, 66L), 0f);
+	}
+
+	@Test
+	public void frameDelayAccountsForDrawTime() {
+		assertEquals(29L, HudMath.frameDelayMs(33L, 0L));
+		assertEquals(19L, HudMath.frameDelayMs(33L, 10L));
+		assertEquals(0L, HudMath.frameDelayMs(33L, 40L));
+		assertEquals(62L, HudMath.frameDelayMs(66L, -3L));
+	}
 }

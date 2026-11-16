@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Сборка жены (16.11.2026): сфера 30 кадров/с, огонь в покое 15 кадров/с — телефон слабее -->
+    <bool name="jarvis_legkij_pokaz">true</bool>
+</resources>
