@@ -199,6 +199,12 @@ public class MainActivity extends SplitCompatActivityBase
 			}, 1, MINUTES);
 		}
 
+		if (!BuildConfig.OBNOVLENIE_URL.isEmpty()) {
+			// Сборка жены: своя раздача и установка через KingInstaller, а не выпуски автора Fermata
+			checkZhenaUpdate(false);
+			return;
+		}
+
 		String reqUrl = "https://api.github.com/repos/AndreyPavlenko/Fermata/releases/latest";
 		HttpConnection.connect(o -> o.url(reqUrl), (resp, err) -> {
 			if (err != null) {
@@ -252,8 +258,93 @@ public class MainActivity extends SplitCompatActivityBase
 		});
 	}
 
+	/**
+	 * Сборка жены (16.11.2026): есть ли сборка новее установленной на jarvis-zhena-vypusk ({@link
+	 * me.aap.fermata.jarvis.Obnovlenie}); есть — спросить и скачать, затем открыть в KingInstaller. manual — нажата кнопка
+	 * «Обновить приложение»: сказать и «установлена последняя», и об ошибке; при запуске — молча.
+	 */
+	public void checkZhenaUpdate(boolean manual) {
+		String base = BuildConfig.OBNOVLENIE_URL;
+		if (base.isEmpty()) return;
+		if (manual) android.widget.Toast.makeText(this, "Проверяю обновление…", android.widget.Toast.LENGTH_SHORT).show();
+		String reqUrl = me.aap.fermata.jarvis.Obnovlenie.url(base, me.aap.fermata.jarvis.Obnovlenie.MANIFEST);
+		HttpConnection.connect(o -> o.url(reqUrl), (resp, err) -> {
+			if (err != null) {
+				Log.e(err, "Update: no manifest");
+				if (manual) App.get().run(() -> showAlert(this, "Не удалось проверить обновление: нет связи с сервером."));
+				return failed(err);
+			}
+			resp.getPayload((p, perr) -> {
+				if (perr != null) return completedNull();
+				return completed(me.aap.fermata.jarvis.Obnovlenie.parse(TextUtils.toString(p, UTF_8)));
+			}).main().onSuccess(v -> {
+				if (v == null) {
+					Log.i("Update: manifest not parsed");
+					if (manual) showAlert(this, "Не удалось проверить обновление: сервер ответил не то.");
+				} else if (!me.aap.fermata.jarvis.Obnovlenie.novee(v, BuildConfig.VERSION_CODE)) {
+					Log.i("Update: up to date ", BuildConfig.VERSION_CODE, ", latest ", v.nomer);
+					if (manual) showAlert(this, "Установлена последняя сборка (" + BuildConfig.VERSION_CODE + ").");
+				} else {
+					Log.i("Update: available ", v.nomer);
+					PreferenceStore ps = FermataApplication.get().getPreferenceStore();
+					UiUtils.showQuestion(getContext(), "Обновить приложение",
+									"Есть новая сборка " + v.nomer + " (" + (v.razmer / 1_000_000) + " МБ). Скачать и открыть в " +
+											"KingInstaller? Там нажмите «Установить».",
+									AppCompatResources.getDrawable(getContext(), R.drawable.notification))
+							.onSuccess(r -> {
+								android.widget.Toast.makeText(this, "Скачиваю сборку " + v.nomer + "…",
+										android.widget.Toast.LENGTH_LONG).show();
+								update(me.aap.fermata.jarvis.Obnovlenie.url(base, v.fajl), ps,
+										sa("DELETE_ON_STARTUP", new String[0]), true);
+							});
+				}
+			});
+			return completedVoid();
+		});
+	}
+
+	/**
+	 * Открыть скачанную сборку в KingInstaller (способ «Shizuku» записывает установку от Google Play — без этого
+	 * Android Auto приложение не пустит). Системным установщиком не ставить: Android Auto потеряет приложение.
+	 */
+	private void openInKingInstaller(Uri u, File f) {
+		Intent i = new Intent(Intent.ACTION_VIEW);
+		i.setDataAndType(u, "application/vnd.android.package-archive");
+		i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+		i.setClassName(me.aap.fermata.jarvis.Obnovlenie.KING_PKG, me.aap.fermata.jarvis.Obnovlenie.KING_ACTIVITY);
+		try {
+			startActivity(i);
+			Log.i("Update: opened in KingInstaller ", f);
+			return;
+		} catch (Exception ex) {
+			Log.e(ex, "Update: KingInstaller ApkHandler not started");
+		}
+		// Другой вариант KingInstaller: любое его окно, принимающее APK
+		i.setComponent(null);
+		for (android.content.pm.ResolveInfo ri : getPackageManager().queryIntentActivities(i, 0)) {
+			String pkg = ri.activityInfo.packageName;
+			if (pkg.toLowerCase(java.util.Locale.ROOT).contains("kinginstaller")) {
+				i.setClassName(pkg, ri.activityInfo.name);
+				try {
+					startActivity(i);
+					Log.i("Update: opened in ", pkg);
+					return;
+				} catch (Exception ex) {
+					Log.e(ex, "Update: ", pkg, " not started");
+				}
+			}
+		}
+		showAlert(this, "Сборка скачана: " + f.getAbsolutePath() +
+				"\nKingInstaller не открылся — откройте этот файл в KingInstaller вручную (способ «Shizuku»).");
+	}
+
 	private FutureSupplier<Void> update(String uri, PreferenceStore ps,
 																			Pref<Supplier<String[]>> deletePref) {
+		return update(uri, ps, deletePref, false);
+	}
+
+	private FutureSupplier<Void> update(String uri, PreferenceStore ps,
+																			Pref<Supplier<String[]>> deletePref, boolean king) {
 		if (!BuildConfig.AUTO) return completedVoid();
 		try {
 			File tmp;
@@ -288,6 +379,10 @@ public class MainActivity extends SplitCompatActivityBase
 						FileProvider.getUriForFile(getApplicationContext(), getPackageName() + ".FileProvider",
 								f) : Uri.fromFile(f);
 
+				if (king) {
+					App.get().run(() -> openInKingInstaller(u, f));
+					return completedVoid();
+				}
 				try {
 					installApk(u, true);
 				} catch (Exception ex) {
@@ -299,7 +394,8 @@ public class MainActivity extends SplitCompatActivityBase
 				return completedVoid();
 			}).onFailure(err -> {
 				Log.e(err, "Failed to download apk: ", uri);
-				App.get().run(() -> showAlert(this, "Failed to download apk: " + uri));
+				App.get().run(() -> showAlert(this, king ? "Не удалось скачать сборку. Проверьте интернет и нажмите ещё раз." :
+					"Failed to download apk: " + uri));
 			});
 		} catch (Exception ex) {
 			Log.e(ex, "Update failed");

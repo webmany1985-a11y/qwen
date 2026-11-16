@@ -1,0 +1,15 @@
+# Раздача сборки JARVIS Auto жены для кнопки «Обновить приложение» (16.11.2026, по образцу «Домашки»).
+# Файлы — в KV «jarvis-zhena-vypusk» частями по 24 МБ (предел значения KV — 25 МиБ), кладёт vypusk/vypusk-zhena.sh.
+# Воркер только отдаёт их по адресу с секретом.
+name = "jarvis-zhena-vypusk"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+SEKRET = "6314a4bb6004a75abd09a3a7"
+
+[[kv_namespaces]]
+binding = "FAJLY"
+id = "b2f0a5c4130348388b5f66bc6a330697"

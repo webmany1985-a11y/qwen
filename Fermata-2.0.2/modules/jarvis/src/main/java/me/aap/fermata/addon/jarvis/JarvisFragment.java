@@ -178,17 +178,11 @@ public class JarvisFragment extends MainActivityFragment
 		startWatchdog();
 		preloadHome(ctx);
 		chatRoot = root;
-		if (dynCtx(ctx).getResources().getBoolean(R.bool.jarvis_legkij_pokaz)) {
-			// Сборка жены (облегчение, 16.11.2026): страница чата не создаётся и не грузится заранее — только при
-			// первом вопросе (ask сам её грузит) или касании шара с удержанием; телефон слабее
-			Log.i("[CHAT] no preload (light build)");
-		} else {
-			WebChat q = chat(ctx, mainSite());
-			// Страница основного сайта — через 3 с, если не идёт разговор (иначе — при вопросе)
-			main.postDelayed(() -> {
-				if ((chats.get(q.site) == q) && !busy) q.load();
-			}, QWEN_LOAD_DELAY_MS);
-		}
+		WebChat q = chat(ctx, mainSite());
+		// Страница основного сайта — через 3 с, если не идёт разговор (иначе — при вопросе)
+		main.postDelayed(() -> {
+			if ((chats.get(q.site) == q) && !busy) q.load();
+		}, QWEN_LOAD_DELAY_MS);
 
 		JarvisHudView v = new JarvisHudView(dynCtx(ctx));
 		// Голос — только касанием шара; касание в любом другом месте показывает

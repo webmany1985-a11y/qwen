@@ -657,6 +657,16 @@ public class SettingsFragment extends MainActivityFragment
 					o.title = R.string.open_log;
 					o.onClick = () -> openLog(a);
 				});
+				if (!BuildConfig.OBNOVLENIE_URL.isEmpty()) {
+					// Сборка жены (16.11.2026): обновление кнопкой, как в «Домашке», установка — через KingInstaller
+					sub1.addButton(o -> {
+						o.title = R.string.jarvis_obnovit;
+						o.subtitle = R.string.jarvis_obnovit_sub;
+						o.onClick = () -> {
+							if (a.getAppActivity() instanceof me.aap.fermata.ui.activity.MainActivity m) m.checkZhenaUpdate(true);
+						};
+					});
+				}
 			}
 		}
 

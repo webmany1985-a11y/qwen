@@ -9,6 +9,9 @@ android {
         base.archivesName = "fermata-$versionName"
         // Сборка жены (-PEMBLEMA=buick, 16.11.2026): поведение вкладок «Видео» и «Кинопоиск» только для неё
         buildConfigField "boolean", 'ZHENA', "${project.getProperties().get('EMBLEMA') == 'buick'}"
+        // Кнопка «Обновить приложение» сборки жены: раздача qwen/vypusk/zhena-worker (секрет — в его wrangler.toml)
+        buildConfigField "String", 'OBNOVLENIE_URL', (project.getProperties().get('EMBLEMA') == 'buick') ?
+                '"https://jarvis-zhena-vypusk.jarvisauto.workers.dev/6314a4bb6004a75abd09a3a7"' : '""'
 
         ndk {
             //noinspection ChromeOsAbiSupport
