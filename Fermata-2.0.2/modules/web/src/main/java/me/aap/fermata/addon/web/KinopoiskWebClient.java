@@ -6,6 +6,7 @@ import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.webkit.WebResourceErrorCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -17,6 +18,19 @@ import me.aap.utils.log.Log;
  * Яндекс (passport.yandex.*) — обычными страницами внутри вкладки.
  */
 public class KinopoiskWebClient extends FermataWebClient {
+
+	/** Реклама (сеть Яндекса, AdFox, счётчики) не грузится — 16.11.2026: «во вкладке Кинопоиска выдаёт рекламу». */
+	@Nullable
+	@Override
+	public android.webkit.WebResourceResponse shouldInterceptRequest(@NonNull WebView view,
+																																	 @NonNull WebResourceRequest request) {
+		Uri u = request.getUrl();
+		if (AdHosts.isAdUrl(u.getHost(), u.getPath())) {
+			return new android.webkit.WebResourceResponse("text/plain", "utf-8",
+					new java.io.ByteArrayInputStream(new byte[0]));
+		}
+		return super.shouldInterceptRequest(view, request);
+	}
 
 	@Override
 	public void onPageFinished(WebView view, String url) {

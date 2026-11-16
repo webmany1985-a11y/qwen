@@ -26,7 +26,10 @@ final class StablePage {
 			"if(m.content!==c)m.content=c;" +
 			"if(!document.getElementById('jarvis-stable')){var s=document.createElement('style');s.id='jarvis-stable';" +
 			"s.textContent='html,body{overflow-x:hidden!important;max-width:100vw!important;overscroll-behavior-x:none!important}" +
-			"html{touch-action:pan-x pan-y!important;-webkit-text-size-adjust:100%!important}';h.appendChild(s);}}" +
+			"html{touch-action:pan-x pan-y!important;-webkit-text-size-adjust:100%!important}'+" +
+			// Зона (16.11.2026, снимок пользователя): своя реклама — полоса «Новый дизайн. Без рекламы… Перейти» в шапке
+			// (.header-banner; меню сайта — соседний .header-nav, не трогается) и «Zona для Android — Установить» внизу
+			"(/zona/.test(location.hostname)?'#zona-android,.header-banner{display:none!important}':'');h.appendChild(s);}}" +
 			// Сайт может переписать viewport позже — следим только за <head> (телефон слабый, вся страница — дорого)
 			"fix();document.addEventListener('DOMContentLoaded',function(){fix();if(document.head)" +
 			"new MutationObserver(function(){var m=document.querySelector('meta[name=viewport]');if(!m||m.content!==c)fix();})" +

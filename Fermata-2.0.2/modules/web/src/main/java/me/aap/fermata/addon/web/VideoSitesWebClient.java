@@ -52,7 +52,7 @@ public class VideoSitesWebClient extends FermataWebClient {
 	public WebResourceResponse shouldInterceptRequest(@NonNull WebView view,
 																										@NonNull WebResourceRequest request) {
 		Uri u = request.getUrl();
-		if (AdHosts.isAd(u.getHost())) {
+		if (AdHosts.isAdUrl(u.getHost(), u.getPath())) {
 			// Н6: реклама и счётчики не грузятся (сборка жены 16.11; сборка пользователя — по его просьбе 16.11)
 			return new WebResourceResponse("text/plain", "utf-8", new ByteArrayInputStream(new byte[0]));
 		}

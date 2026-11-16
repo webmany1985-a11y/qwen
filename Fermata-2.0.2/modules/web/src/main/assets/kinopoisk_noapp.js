@@ -55,6 +55,7 @@
     if (now - last < 400) return;
     last = now;
     hideBanner();
+    try { hideAds(); } catch (x) { }
     var els = document.querySelectorAll(CLICKABLE);
     var goApp = [];
     for (var i = 0; i < els.length; i++) {
@@ -98,9 +99,32 @@
     target.style.setProperty('display', 'none', 'important');
     log('bottom app banner hidden');
   };
+  // Блок рекламы с пометкой «Реклама» (16.11.2026, снимок пользователя: плакат поверх главной, «РЕКЛАМА», «⋯» и ✕):
+  // от надписи вверх — до закреплённого/плавающего блока не крупнее 3/4 экрана; страница и шапка не прячутся
+  var AD_MARK = /^(реклама|ad|advertisement)$/i;
+  var hideAds = function () {
+    var l = document.querySelectorAll('span,div,p,small');
+    for (var i = 0; i < l.length; i++) {
+      var e = l[i];
+      if (e.children.length || e.__jarvisAd || !AD_MARK.test(text(e))) continue;
+      e.__jarvisAd = true;
+      var target = null;
+      for (var p = e.parentElement, k = 0; p && p !== document.body && k < 8; k++, p = p.parentElement) {
+        var r = p.getBoundingClientRect();
+        if (r.width * r.height > innerWidth * innerHeight * 0.75) break;
+        target = p;
+        var pos = getComputedStyle(p).position;
+        if (pos === 'fixed' || pos === 'absolute' || pos === 'sticky') break;
+      }
+      if (target) {
+        target.style.setProperty('display', 'none', 'important');
+        log('ad hidden: ' + (target.id || target.className || target.tagName).toString().slice(0, 60));
+      }
+    }
+  };
   var style = function () {
     var st = document.createElement('style');
-    st.textContent = BANNER + ',div:has(> ' + BANNER + '){display:none!important}';
+    st.textContent = BANNER + ',div:has(> ' + BANNER + '),[id^="adfox_"],[id^="yandex_rtb"]{display:none!important}';
     (document.head || document.documentElement).appendChild(st);
   };
   var start = function () {
