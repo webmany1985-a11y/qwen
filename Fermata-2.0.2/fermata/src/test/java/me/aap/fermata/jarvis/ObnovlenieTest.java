@@ -55,4 +55,11 @@ public class ObnovlenieTest {
 		assertEquals("https://x.workers.dev/s/jarvis-zhena.json", Obnovlenie.url("https://x.workers.dev/s/", "jarvis-zhena.json"));
 		assertEquals("https://x.workers.dev/s/a.apk", Obnovlenie.url("https://x.workers.dev/s", "a.apk"));
 	}
+
+	/** Имена файлов в «Загрузках» (17.11.2026): без путаницы, чья сборка. */
+	@Test
+	public void fileNames() {
+		assertEquals("JARVIS Auto 274.apk", Obnovlenie.imyaFajla(Obnovlenie.AUTO, 274));
+		assertEquals("JARVIS Auto жена 274.apk", Obnovlenie.imyaFajla(Obnovlenie.ZHENA, 274));
+	}
 }

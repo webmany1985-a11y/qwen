@@ -295,7 +295,8 @@ public class MainActivity extends SplitCompatActivityBase
 								android.widget.Toast.makeText(this, "Скачиваю сборку " + v.nomer + "…",
 										android.widget.Toast.LENGTH_LONG).show();
 								update(me.aap.fermata.jarvis.Obnovlenie.url(base, v.fajl), ps,
-										sa("DELETE_ON_STARTUP", new String[0]), true);
+										sa("DELETE_ON_STARTUP", new String[0]), true,
+										me.aap.fermata.jarvis.Obnovlenie.imyaFajla(BuildConfig.OBNOVLENIE_IMYA, v.nomer));
 							});
 				}
 			});
@@ -340,24 +341,25 @@ public class MainActivity extends SplitCompatActivityBase
 
 	private FutureSupplier<Void> update(String uri, PreferenceStore ps,
 																			Pref<Supplier<String[]>> deletePref) {
-		return update(uri, ps, deletePref, false);
+		return update(uri, ps, deletePref, false, null);
 	}
 
+	/** name — имя файла в «Загрузках» («JARVIS Auto 274.apk», 17.11.2026); null — временное «Fermata-….apk». */
 	private FutureSupplier<Void> update(String uri, PreferenceStore ps,
-																			Pref<Supplier<String[]>> deletePref, boolean king) {
+																			Pref<Supplier<String[]>> deletePref, boolean king, @Nullable String name) {
 		if (!BuildConfig.AUTO) return completedVoid();
 		try {
 			File tmp;
 			File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
 
-			if ((tmp = createTempFile(dir)) == null) {
+			if ((tmp = createTempFile(dir, name)) == null) {
 				App app = App.get();
 				File cache = app.getExternalCacheDir();
 				if (cache == null) cache = app.getCacheDir();
 				dir = new File(cache, "updates");
 				//noinspection ResultOfMethodCallIgnored
 				dir.mkdirs();
-				if ((tmp = createTempFile(dir)) == null) {
+				if ((tmp = createTempFile(dir, name)) == null) {
 					App.get()
 							.run(() -> showAlert(this, "Update failed - unable to create a temporary " + "file"
 							));
@@ -404,9 +406,16 @@ public class MainActivity extends SplitCompatActivityBase
 		}
 	}
 
-	private static File createTempFile(File dir) {
+	private static File createTempFile(File dir, @Nullable String name) {
 		try {
 			if (dir == null) return null;
+			if (name != null) {
+				// Понятное имя (17.11.2026: «что это за название файла»); прежний файл с тем же именем — заменить
+				File f = new File(dir, name);
+				//noinspection ResultOfMethodCallIgnored
+				f.delete();
+				if (f.createNewFile()) return f;
+			}
 			return File.createTempFile("Fermata-", ".apk", dir);
 		} catch (Exception ex) {
 			Log.e(ex, "Failed to create a temporary file in the directory ", dir);

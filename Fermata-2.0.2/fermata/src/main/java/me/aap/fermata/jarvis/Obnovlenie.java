@@ -64,6 +64,15 @@ public final class Obnovlenie {
 		return new Vypusk(nomer, fajl, razmer);
 	}
 
+	/**
+	 * Имя скачанной сборки в «Загрузках» (17.11.2026, просьба пользователя): «JARVIS Auto 274.apk» — его сборка,
+	 * «JARVIS Auto жена 274.apk» — сборка жены.
+	 */
+	@NonNull
+	public static String imyaFajla(@NonNull String imya, int nomer) {
+		return (ZHENA.equals(imya) ? "JARVIS Auto жена " : "JARVIS Auto ") + nomer + ".apk";
+	}
+
 	/** Выпуск новее установленной сборки. */
 	public static boolean novee(@Nullable Vypusk v, int installed) {
 		return (v != null) && (v.nomer > installed);
